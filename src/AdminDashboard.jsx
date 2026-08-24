@@ -1,10 +1,901 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
+const styles = {
+  app: {
+    minHeight: "100vh",
+    display: "flex",
+    background: "#F5F7FA",
+    color: "#172033",
+    fontFamily: "'Cairo', 'Segoe UI', sans-serif",
+  },
 
-/* =========================================================
-   أنواع الأعمال
-========================================================= */
+  loadingBox: {
+    background: "#fff",
+    border: "1px solid #E7EBF0",
+    borderRadius: 16,
+    padding: 35,
+    textAlign: "center",
+    boxShadow: "0 10px 30px rgba(15,41,66,.08)",
+  },
+
+  loadingIcon: {
+    fontSize: 48,
+    marginBottom: 10,
+  },
+
+  sidebar: {
+    width: "280px",
+    background: "#0F2942",
+    color: "#fff",
+    padding: "22px 14px",
+    flexShrink: 0,
+    minHeight: "100vh",
+    boxSizing: "border-box",
+    overflowY: "auto",
+  },
+
+  brand: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "8px 10px 24px",
+  },
+
+  logo: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    background: "#2563EB",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 26,
+  },
+
+  college: {
+    fontSize: 19,
+    fontWeight: 800,
+  },
+
+  department: {
+    fontSize: 13,
+    color: "#AFC0D2",
+    marginTop: 3,
+  },
+
+  sidebarLabel: {
+    color: "#71869C",
+    fontSize: 12,
+    fontWeight: 800,
+    padding: "12px 12px 6px",
+  },
+
+  menuButton: {
+    width: "100%",
+    border: 0,
+    color: "#C9D4DF",
+    background: "transparent",
+    padding: "12px 13px",
+    borderRadius: 10,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    cursor: "pointer",
+    fontSize: 15,
+    textAlign: "right",
+    marginBottom: 4,
+  },
+
+  menuButtonActive: {
+    background: "#2563EB",
+    color: "#fff",
+    boxShadow: "0 5px 15px rgba(37,99,235,.25)",
+  },
+
+  smallMenuButton: {
+    width: "100%",
+    border: 0,
+    color: "#B7C6D5",
+    background: "transparent",
+    padding: "9px 13px",
+    borderRadius: 8,
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    cursor: "pointer",
+    fontSize: 13,
+    textAlign: "right",
+    marginBottom: 2,
+  },
+
+  smallMenuButtonActive: {
+    background: "#2563EB",
+    color: "#fff",
+    boxShadow: "0 4px 12px rgba(37,99,235,.22)",
+  },
+
+  sidebarDivider: {
+    height: 1,
+    background: "#28445E",
+    margin: "14px 8px",
+  },
+
+  main: {
+    flex: 1,
+    padding: 28,
+    minWidth: 0,
+  },
+
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 20,
+    marginBottom: 22,
+  },
+
+  breadcrumb: {
+    color: "#64748B",
+    fontSize: 12,
+    marginBottom: 5,
+  },
+
+  pageTitle: {
+    margin: 0,
+    fontSize: 28,
+    fontWeight: 900,
+  },
+
+  pageSub: {
+    margin: "5px 0 0",
+    color: "#64748B",
+    fontSize: 14,
+  },
+
+  primaryButton: {
+    border: 0,
+    background: "#2563EB",
+    color: "#fff",
+    borderRadius: 9,
+    padding: "12px 18px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+    whiteSpace: "nowrap",
+  },
+
+  secondaryButton: {
+    border: "1px solid #CBD5E1",
+    background: "#fff",
+    color: "#334155",
+    borderRadius: 9,
+    padding: "11px 18px",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: 14,
+  },
+
+  excelButton: {
+    border: "1px solid #2563EB",
+    background: "#EFF6FF",
+    color: "#1D4ED8",
+    borderRadius: 9,
+    padding: "11px 16px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+    whiteSpace: "nowrap",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  excelButtonLarge: {
+    border: 0,
+    background: "#2563EB",
+    color: "#fff",
+    borderRadius: 10,
+    padding: "13px 22px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  manualClaimButton: {
+    border: 0,
+    background: "#047857",
+    color: "#fff",
+    borderRadius: 9,
+    padding: "11px 16px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+    whiteSpace: "nowrap",
+  },
+
+  manualClaimButtonLarge: {
+    border: 0,
+    background: "#047857",
+    color: "#fff",
+    borderRadius: 10,
+    padding: "13px 22px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+
+  claimHeaderButtons: {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    flexWrap: "wrap",
+  },
+
+  emptyClaimButtons: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+
+  manualClaimIntro: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    background: "#ECFDF5",
+    border: "1px solid #A7F3D0",
+    color: "#065F46",
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 18,
+    fontSize: 14,
+  },
+
+  manualClaimIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    background: "#D1FAE5",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 22,
+  },
+
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 14,
+    marginBottom: 16,
+  },
+
+  statCard: {
+    background: "#fff",
+    border: "1px solid #E7EBF0",
+    borderRadius: 14,
+    padding: 18,
+    display: "flex",
+    alignItems: "center",
+    gap: 13,
+    boxShadow: "0 2px 8px rgba(15,41,66,.035)",
+  },
+
+  statIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 11,
+    background: "#EFF6FF",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 22,
+  },
+
+  statTitle: {
+    fontSize: 13,
+    color: "#64748B",
+    marginBottom: 4,
+  },
+
+  statValue: {
+    fontSize: 26,
+    fontWeight: 900,
+  },
+
+  claimStat: {
+    background: "#F8FAFC",
+    border: "1px solid #E2E8F0",
+    borderRadius: 12,
+    padding: 15,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  claimStatIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    background: "#EAF2FF",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 19,
+  },
+
+  claimStatValue: {
+    fontSize: 21,
+    fontWeight: 900,
+  },
+
+  dashboardGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 16,
+    marginBottom: 16,
+  },
+
+  card: {
+    background: "#fff",
+    border: "1px solid #E7EBF0",
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 16,
+    boxShadow: "0 2px 8px rgba(15,41,66,.035)",
+  },
+
+  cardHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 16,
+  },
+
+  claimsHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 15,
+    marginBottom: 18,
+  },
+
+  cardTitle: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 900,
+  },
+
+  cardSub: {
+    margin: "4px 0 0",
+    color: "#64748B",
+    fontSize: 13,
+  },
+
+  linkButton: {
+    border: 0,
+    background: "transparent",
+    color: "#2563EB",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+
+  scoreCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: "50%",
+    background: "#EFF6FF",
+    color: "#2563EB",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 19,
+    fontWeight: 900,
+  },
+
+  progressWrap: {
+    marginBottom: 15,
+  },
+
+  progressLabel: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: 13,
+    marginBottom: 6,
+  },
+
+  progressTrack: {
+    height: 9,
+    background: "#E2E8F0",
+    borderRadius: 99,
+    overflow: "hidden",
+  },
+
+  progressFill: {
+    height: "100%",
+    background: "#2563EB",
+    borderRadius: 99,
+  },
+
+  gradeBox: {
+    marginTop: 17,
+    background: "#F8FAFC",
+    borderRadius: 10,
+    padding: 13,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: 14,
+  },
+
+  workGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: 10,
+  },
+
+  workCard: {
+    border: "1px solid #E5E7EB",
+    background: "#fff",
+    borderRadius: 11,
+    padding: 13,
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    cursor: "pointer",
+    textAlign: "right",
+    fontSize: 14,
+  },
+
+  workIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 19,
+    flexShrink: 0,
+  },
+
+  workInfo: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    gap: 3,
+  },
+
+  workCount: {
+    color: "#2563EB",
+    fontWeight: 900,
+    fontSize: 15,
+  },
+
+  taskMini: {
+    width: "100%",
+    border: 0,
+    background: "#F8FAFC",
+    borderRadius: 10,
+    padding: 11,
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    cursor: "pointer",
+    textAlign: "right",
+    marginBottom: 7,
+    fontSize: 14,
+  },
+
+  taskMiniIcon: {
+    width: 34,
+    height: 34,
+    background: "#fff",
+    borderRadius: 8,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 18,
+  },
+
+  taskMiniInfo: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 3,
+  },
+
+  statusBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "6px 9px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
+
+  sectionHeading: {
+    margin: 0,
+    fontSize: 22,
+  },
+
+  filterRow: {
+    display: "flex",
+    gap: 10,
+    marginBottom: 15,
+    flexWrap: "wrap",
+  },
+
+  filter: {
+    border: "1px solid #CBD5E1",
+    background: "#fff",
+    padding: "10px 12px",
+    borderRadius: 8,
+    fontSize: 14,
+    minWidth: 200,
+  },
+
+  claimSearch: {
+    flex: 1,
+    minWidth: 280,
+    border: "1px solid #CBD5E1",
+    borderRadius: 8,
+    padding: "11px 12px",
+    fontSize: 14,
+    boxSizing: "border-box",
+  },
+
+  claimSelect: {
+    minWidth: 220,
+    border: "1px solid #CBD5E1",
+    background: "#fff",
+    borderRadius: 8,
+    padding: "11px 12px",
+    fontSize: 14,
+  },
+
+  claimStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+    gap: 10,
+    marginBottom: 18,
+  },
+
+  resultText: {
+    color: "#64748B",
+    fontSize: 13,
+    marginBottom: 10,
+  },
+
+  claimTableWrapper: {
+    overflow: "auto",
+    maxHeight: "520px",
+    border: "1px solid #E5E7EB",
+    borderRadius: 10,
+  },
+
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontSize: 13,
+    minWidth: 850,
+  },
+
+  th: {
+    padding: "13px 10px",
+    background: "#F8FAFC",
+    borderBottom: "1px solid #E2E8F0",
+    textAlign: "right",
+    whiteSpace: "nowrap",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+
+  td: {
+    padding: "13px 10px",
+    borderBottom: "1px solid #EEF2F6",
+    verticalAlign: "middle",
+    fontSize: 13,
+  },
+
+  tr: {
+    background: "#fff",
+  },
+
+  viewButton: {
+    border: 0,
+    background: "#DBEAFE",
+    color: "#1D4ED8",
+    borderRadius: 6,
+    padding: "6px 9px",
+    cursor: "pointer",
+    fontSize: 12,
+    marginLeft: 5,
+  },
+
+  deleteButton: {
+    border: 0,
+    background: "#FEE2E2",
+    color: "#DC2626",
+    borderRadius: 6,
+    padding: "6px 9px",
+    cursor: "pointer",
+    fontSize: 12,
+  },
+
+  infoBox: {
+    background: "#EFF6FF",
+    color: "#1D4ED8",
+    borderRadius: 9,
+    padding: 11,
+    marginBottom: 12,
+    fontSize: 13,
+  },
+
+  errorBox: {
+    background: "#FEE2E2",
+    color: "#B91C1C",
+    borderRadius: 9,
+    padding: 11,
+    marginBottom: 12,
+    fontSize: 13,
+  },
+
+  emptyClaims: {
+    minHeight: 260,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    color: "#64748B",
+    fontSize: 14,
+  },
+
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 8,
+  },
+
+  performanceBox: {
+    background: "#F8FAFC",
+    borderRadius: 13,
+    padding: 20,
+    display: "flex",
+    alignItems: "center",
+    gap: 18,
+    marginBottom: 18,
+  },
+
+  bigScore: {
+    fontSize: 42,
+    fontWeight: 900,
+    color: "#2563EB",
+  },
+
+  criteriaList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 13,
+  },
+
+  criteriaRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    fontSize: 13,
+  },
+
+  criteriaBar: {
+    flex: 1,
+    height: 10,
+    background: "#E2E8F0",
+    borderRadius: 99,
+    overflow: "hidden",
+  },
+
+  criteriaFill: {
+    height: "100%",
+    background: "#2563EB",
+    borderRadius: 99,
+  },
+
+  weight: {
+    display: "block",
+    color: "#64748B",
+    marginTop: 3,
+    fontSize: 11,
+  },
+
+  criteriaCard: {
+    border: "1px solid #E5E7EB",
+    borderRadius: 10,
+    padding: 15,
+    marginTop: 10,
+    fontSize: 14,
+  },
+
+  criteriaTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 15,
+  },
+
+  criteriaDescription: {
+    color: "#64748B",
+    fontSize: 13,
+    margin: "5px 0 0",
+  },
+
+  monthInput: {
+    border: "1px solid #CBD5E1",
+    borderRadius: 8,
+    padding: "9px 10px",
+    fontSize: 14,
+  },
+
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15,23,42,.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+    padding: 20,
+  },
+
+  modal: {
+    background: "#fff",
+    borderRadius: 15,
+    width: "min(850px, 100%)",
+    maxHeight: "90vh",
+    overflowY: "auto",
+    padding: 22,
+    boxSizing: "border-box",
+  },
+
+  modalHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottom: "1px solid #E5E7EB",
+    paddingBottom: 13,
+    marginBottom: 18,
+  },
+
+  modalTitle: {
+    margin: 0,
+    fontSize: 21,
+  },
+
+  closeButton: {
+    border: 0,
+    background: "#F1F5F9",
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 16,
+  },
+
+  formGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 14,
+  },
+
+  label: {
+    display: "block",
+    fontSize: 13,
+    fontWeight: 800,
+    marginBottom: 5,
+  },
+
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #CBD5E1",
+    borderRadius: 8,
+    padding: "11px 12px",
+    fontSize: 14,
+    outline: "none",
+  },
+
+  modalActions: {
+    display: "flex",
+    justifyContent: "flex-start",
+    gap: 9,
+    marginTop: 20,
+    paddingTop: 15,
+    borderTop: "1px solid #E5E7EB",
+  },
+
+  detailHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 15,
+    alignItems: "center",
+    background: "#F8FAFC",
+    padding: 15,
+    borderRadius: 10,
+    fontSize: 14,
+  },
+
+  detailGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
+    marginTop: 14,
+  },
+
+  detailItem: {
+    background: "#F8FAFC",
+    borderRadius: 9,
+    padding: 13,
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+    fontSize: 13,
+  },
+
+  statusActions: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 7,
+    marginTop: 16,
+  },
+
+  actionTitle: {
+    fontSize: 13,
+    fontWeight: 800,
+    width: "100%",
+    marginBottom: 3,
+  },
+
+  statusButton: {
+    border: "1px solid",
+    borderRadius: 8,
+    padding: "8px 10px",
+    cursor: "pointer",
+    fontSize: 12,
+  },
+
+  checkRow: {
+    display: "flex",
+    gap: 22,
+    marginTop: 15,
+    fontSize: 13,
+    fontWeight: 700,
+  },
+
+  deleteLargeButton: {
+    border: 0,
+    background: "#FEE2E2",
+    color: "#DC2626",
+    borderRadius: 9,
+    padding: "11px 16px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+
+  empty: {
+    padding: 25,
+    textAlign: "center",
+    color: "#94A3B8",
+    fontSize: 14,
+  },
+};
 
 const TASK_TYPES = [
   {
@@ -94,7 +985,7 @@ const TASK_TYPES = [
 ];
 
 /* =========================================================
-   الحالات
+    الحالات
 ========================================================= */
 
 const STATUS = {
@@ -135,7 +1026,7 @@ const STATUS = {
 };
 
 /* =========================================================
-   مهمة فارغة
+    مهمة فارغة
 ========================================================= */
 
 const createEmptyTask = () => ({
@@ -151,7 +1042,7 @@ const createEmptyTask = () => ({
 });
 
 /* =========================================================
-   مطالبة يدوية فارغة
+    مطالبة يدوية فارغة
 ========================================================= */
 
 const createEmptyClaim = () => ({
@@ -165,7 +1056,7 @@ const createEmptyClaim = () => ({
 });
 
 /* =========================================================
-   البيانات التجريبية
+    البيانات التجريبية
 ========================================================= */
 
 const initialTasks = [
@@ -197,7 +1088,7 @@ const initialTasks = [
 ];
 
 /* =========================================================
-   تحويل بيانات Supabase إلى شكل البرنامج
+    تحويل بيانات Supabase إلى شكل البرنامج
 ========================================================= */
 
 function mapTaskFromDatabase(row) {
@@ -216,7 +1107,7 @@ function mapTaskFromDatabase(row) {
 }
 
 /* =========================================================
-   تحويل المهمة إلى شكل قاعدة البيانات
+    تحويل المهمة إلى شكل قاعدة البيانات
 ========================================================= */
 
 function mapTaskToDatabase(task) {
@@ -234,7 +1125,7 @@ function mapTaskToDatabase(task) {
 }
 
 /* =========================================================
-   التطبيق الرئيسي
+    التطبيق الرئيسي
 ========================================================= */
 
 export default function AdminDashboard() {
@@ -250,7 +1141,7 @@ export default function AdminDashboard() {
   const [selectedMonth, setSelectedMonth] = useState("2026-08");
 
   /* =====================================================
-     المطالبات
+      المطالبات
   ===================================================== */
 
   const [claims, setClaims] = useState([]);
@@ -261,7 +1152,7 @@ export default function AdminDashboard() {
   const [claimError, setClaimError] = useState("");
 
   /* =====================================================
-     إضافة مطالبة يدويًا
+      إضافة مطالبة يدويًا
   ===================================================== */
 
   const [showClaimForm, setShowClaimForm] = useState(false);
@@ -270,14 +1161,14 @@ export default function AdminDashboard() {
   );
 
   /* =====================================================
-     حالة تحميل البرنامج
+      حالة تحميل البرنامج
   ===================================================== */
 
   const [appLoading, setAppLoading] = useState(true);
   const [appError, setAppError] = useState("");
 
   /* =====================================================
-     تحميل البيانات من Supabase
+      تحميل البيانات من Supabase
   ===================================================== */
 
   useEffect(() => {
@@ -286,7 +1177,7 @@ export default function AdminDashboard() {
   }, []);
 
   /* =====================================================
-     تحميل المهام
+      تحميل المهام
   ===================================================== */
 
   const loadTasks = async () => {
@@ -328,7 +1219,7 @@ export default function AdminDashboard() {
   };
 
   /* =====================================================
-     تحميل المطالبات
+      تحميل المطالبات
   ===================================================== */
 
   const loadClaims = async () => {
@@ -388,10 +1279,10 @@ export default function AdminDashboard() {
   };
 
   /* =====================================================
-     استيراد Excel وحفظ المطالبات في Supabase
-     
-     مهم:
-     لا يوجد file_name هنا لأن العمود غير موجود في جدول claims
+      استيراد Excel وحفظ المطالبات في Supabase
+      
+      مهم:
+      لا يوجد file_name هنا لأن العمود غير موجود في جدول claims
   ===================================================== */
 
   const importClaimsExcel = async (event) => {
@@ -477,7 +1368,7 @@ export default function AdminDashboard() {
   };
 
   /* =====================================================
-     إضافة مطالبة يدويًا
+      إضافة مطالبة يدويًا
   ===================================================== */
 
   const addManualClaim = async () => {
@@ -561,7 +1452,7 @@ export default function AdminDashboard() {
   };
 
   /* =====================================================
-     فلترة المطالبات
+      فلترة المطالبات
   ===================================================== */
 
   const filteredClaims = useMemo(() => {
@@ -593,7 +1484,7 @@ export default function AdminDashboard() {
   ]);
 
   /* =====================================================
-     فلترة المهام
+      فلترة المهام
   ===================================================== */
 
   const filteredTasks = useMemo(() => {
@@ -615,7 +1506,7 @@ export default function AdminDashboard() {
   ]);
 
   /* =====================================================
-     الإحصائيات
+      الإحصائيات
   ===================================================== */
 
   const stats = useMemo(() => {
@@ -675,7 +1566,7 @@ export default function AdminDashboard() {
   }, [tasks]);
 
   /* =====================================================
-     التقييم
+      التقييم
   ===================================================== */
 
   const performance = useMemo(() => {
@@ -764,7 +1655,7 @@ export default function AdminDashboard() {
   }, [tasks, stats]);
 
   /* =====================================================
-     إضافة مهمة
+      إضافة مهمة
   ===================================================== */
 
   const addTask = async () => {
@@ -822,7 +1713,7 @@ export default function AdminDashboard() {
   };
 
   /* =====================================================
-     تعديل مهمة
+      تعديل مهمة
   ===================================================== */
 
   const updateTask = async (
@@ -892,7 +1783,7 @@ export default function AdminDashboard() {
   };
 
   /* =====================================================
-     حذف مهمة
+      حذف مهمة
   ===================================================== */
 
   const deleteTask = async (id) => {
@@ -939,38 +1830,24 @@ export default function AdminDashboard() {
   };
 
   /* =====================================================
-     القائمة الرئيسية
+      القائمة الرئيسية
   ===================================================== */
 
   const menuItems = [
     {
-      id: "home",
-      title: "الرئيسية",
-      icon: "🏠",
-    },
-
-    {
-      id: "daily",
-      title: "المتابعة اليومية",
-      icon: "📅",
-    },
-
-    {
-      id: "weekly",
-      title: "التقييم الأسبوعي",
-      icon: "📊",
-    },
-
-    {
-      id: "monthly",
-      title: "التقييم الشهري",
-      icon: "📈",
-    },
-
-    {
       id: "criteria",
       title: "معايير تقييم الأداء",
       icon: "⭐",
+    },
+    {
+      id: "service_requests",
+      title: "الطلبات الواردة",
+      icon: "📥",
+    },
+    {
+      id: "claims",
+      title: "المطالبات",
+      icon: "📥",
     },
   ];
 
@@ -984,7 +1861,7 @@ export default function AdminDashboard() {
         "الرئيسية";
 
   /* =====================================================
-     واجهة التحميل
+      واجهة التحميل
   ===================================================== */
 
   if (appLoading) {
@@ -992,10 +1869,10 @@ export default function AdminDashboard() {
       <div
         dir="rtl"
         style={{
-          ...styles.app,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
+  ...(styles?.app || {}),
+  alignItems: "center",
+  justifyContent: "center",
+}}
       >
         <div style={styles.loadingBox}>
           <div style={styles.loadingIcon}>
@@ -1012,276 +1889,226 @@ export default function AdminDashboard() {
         </div>
       </div>
     );
-  }
+  }return (
+  <div
+    dir="rtl"
+    style={styles.app}
+  >
+    {/* =================================================
+        SIDEBAR
+    ================================================= */}
 
-  return (
-    <div
-      dir="rtl"
-      style={styles.app}
-    >
-      {/* =================================================
-          SIDEBAR
-      ================================================= */}
+    <aside style={styles.sidebar}>
+      <div style={styles.brand}>
+        <div style={styles.logo}>
+          🏛️
+        </div>
 
-      <aside style={styles.sidebar}>
-        <div style={styles.brand}>
-          <div style={styles.logo}>
-            🏛️
+        <div>
+          <div style={styles.college}>
+            كلية الهندسة
           </div>
 
-          <div>
-            <div style={styles.college}>
-              كلية الهندسة
-            </div>
-
-            <div style={styles.department}>
-              قسم الاستحقاقات
-            </div>
+          <div style={styles.department}>
+            قسم الاستحقاقات
           </div>
         </div>
+      </div>
 
-        <div style={styles.sidebarLabel}>
-          لوحة التحكم
-        </div>
+      <div style={styles.sidebarLabel}>
+        لوحة التحكم
+      </div>
 
-        {menuItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() =>
-              setActiveMenu(item.id)
-            }
-            style={{
-              ...styles.menuButton,
-
-              ...(activeMenu === item.id
-                ? styles.menuButtonActive
-                : {}),
-            }}
-          >
-            <span>{item.icon}</span>
-            <span>{item.title}</span>
-          </button>
-        ))}
-
-        <div style={styles.sidebarDivider} />
-
-        <div style={styles.sidebarLabel}>
-          الأعمال
-        </div>
-
-        {TASK_TYPES.map((type) => (
-          <button
-            key={type.id}
-            onClick={() => {
-              setFilterType(type.id);
-              setActiveMenu("daily");
-            }}
-            style={{
-              ...styles.smallMenuButton,
-
-              ...(activeMenu === "daily" &&
-              filterType === type.id
-                ? styles.smallMenuButtonActive
-                : {}),
-            }}
-          >
-            <span>{type.icon}</span>
-            <span>{type.title}</span>
-          </button>
-        ))}
-
-        {/* المطالبات */}
-
+      {menuItems.map((item) => (
         <button
+          key={item.id}
+          onClick={() =>
+            setActiveMenu(item.id)
+          }
+          style={{
+            ...styles.menuButton,
+
+            ...(activeMenu === item.id
+              ? styles.menuButtonActive
+              : {}),
+          }}
+        >
+          <span>{item.icon}</span>
+          <span>{item.title}</span>
+        </button>
+      ))}
+
+      <div style={styles.sidebarDivider} />
+
+      <div style={styles.sidebarLabel}>
+        الأعمال
+      </div>
+
+      {TASK_TYPES.map((type) => (
+        <button
+          key={type.id}
           onClick={() => {
-            setActiveMenu("claims");
+            setFilterType(type.id);
+            setActiveMenu("daily");
           }}
           style={{
             ...styles.smallMenuButton,
 
-            ...(activeMenu === "claims"
+            ...(activeMenu === "daily" &&
+            filterType === type.id
               ? styles.smallMenuButtonActive
               : {}),
           }}
         >
-          <span>📋</span>
-          <span>المطالبات</span>
+          <span>{type.icon}</span>
+          <span>{type.title}</span>
         </button>
-      </aside>
+      ))}
+
+      {/* المطالبات */}
+
+      <button
+        onClick={() => {
+          setActiveMenu("claims");
+        }}
+        style={{
+          ...styles.smallMenuButton,
+
+          ...(activeMenu === "claims"
+            ? styles.smallMenuButtonActive
+            : {}),
+        }}
+      >
+        <span>📋</span>
+        <span>المطالبات</span>
+      </button>
+    </aside>
+
+    {/* =================================================
+        MAIN
+    ================================================= */}
+
+    <main style={styles.main}>
+      <header style={styles.header}>
+        <div>
+          <div style={styles.breadcrumb}>
+            قسم الاستحقاقات /{" "}
+            {currentTitle}
+          </div>
+
+          <h1 style={styles.pageTitle}>
+            {currentTitle}
+          </h1>
+
+          <p style={styles.pageSub}>
+            متابعة الأعمال وتقييم الأداء بصورة
+            يومية وأسبوعية وشهرية
+          </p>
+        </div>
+
+        {activeMenu !== "claims" && (
+          <button
+            style={styles.primaryButton}
+            onClick={() => {
+              setTaskForm(
+                createEmptyTask()
+              );
+              setShowTaskForm(true);
+            }}
+          >
+            ＋ إضافة مهمة جديدة
+          </button>
+        )}
+      </header>
+
+      {appError && (
+        <div style={styles.errorBox}>
+          {appError}
+        </div>
+      )}
 
       {/* =================================================
-          MAIN
+          HOME
       ================================================= */}
 
-      <main style={styles.main}>
-        <header style={styles.header}>
-          <div>
-            <div style={styles.breadcrumb}>
-              قسم الاستحقاقات /{" "}
-              {currentTitle}
-            </div>
+      {activeMenu === "home" && (
+        <>
+          <div style={styles.statsGrid}>
+            <StatCard
+              title="إجمالي المهام"
+              value={stats.total}
+              icon="📋"
+            />
 
-            <h1 style={styles.pageTitle}>
-              {currentTitle}
-            </h1>
+            <StatCard
+              title="تم التنفيذ"
+              value={stats.completed}
+              icon="✅"
+            />
 
-            <p style={styles.pageSub}>
-              متابعة الأعمال وتقييم الأداء بصورة
-              يومية وأسبوعية وشهرية
-            </p>
+            <StatCard
+              title="جاري التنفيذ"
+              value={stats.inProgress}
+              icon="🔄"
+            />
+
+            <StatCard
+              title="متأخر"
+              value={stats.late}
+              icon="⚠️"
+            />
           </div>
 
-          {activeMenu !== "claims" && (
-            <button
-              style={styles.primaryButton}
-              onClick={() => {
-                setTaskForm(
-                  createEmptyTask()
-                );
-                setShowTaskForm(true);
-              }}
-            >
-              ＋ إضافة مهمة جديدة
-            </button>
-          )}
-        </header>
-
-        {appError && (
-          <div style={styles.errorBox}>
-            {appError}
-          </div>
-        )}
-
-        {/* =================================================
-            HOME
-        ================================================= */}
-
-        {activeMenu === "home" && (
-          <>
-            <div style={styles.statsGrid}>
-              <StatCard
-                title="إجمالي المهام"
-                value={stats.total}
-                icon="📋"
-              />
-
-              <StatCard
-                title="تم التنفيذ"
-                value={stats.completed}
-                icon="✅"
-              />
-
-              <StatCard
-                title="جاري التنفيذ"
-                value={stats.inProgress}
-                icon="🔄"
-              />
-
-              <StatCard
-                title="متأخر"
-                value={stats.late}
-                icon="⚠️"
-              />
-            </div>
-
-            <div style={styles.dashboardGrid}>
-              <div style={styles.card}>
-                <div style={styles.cardHeader}>
-                  <div>
-                    <h2
-                      style={styles.cardTitle}
-                    >
-                      أداء القسم
-                    </h2>
-
-                    <p
-                      style={styles.cardSub}
-                    >
-                      التقييم الحالي بناءً على
-                      المهام المسجلة
-                    </p>
-                  </div>
-
-                  <div
-                    style={styles.scoreCircle}
+          <div style={styles.dashboardGrid}>
+            <div style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <h2
+                    style={styles.cardTitle}
                   >
-                    {performance.score}%
-                  </div>
+                    أداء القسم
+                  </h2>
+
+                  <p
+                    style={styles.cardSub}
+                  >
+                    التقييم الحالي بناءً على
+                    المهام المسجلة
+                  </p>
                 </div>
 
-                <MetricBar
-                  label="نسبة الإنجاز"
-                  value={
-                    stats.completionRate
-                  }
-                />
-
-                <MetricBar
-                  label="المراجعة"
-                  value={stats.reviewRate}
-                />
-
-                <MetricBar
-                  label="الرفع"
-                  value={stats.uploadRate}
-                />
-
-                <div style={styles.gradeBox}>
-                  <span>
-                    التقدير العام
-                  </span>
-
-                  <strong>
-                    {performance.grade}
-                  </strong>
+                <div
+                  style={styles.scoreCircle}
+                >
+                  {performance.score}%
                 </div>
               </div>
 
-              <div style={styles.card}>
-                <div style={styles.cardHeader}>
-                  <div>
-                    <h2
-                      style={styles.cardTitle}
-                    >
-                      مهام اليوم
-                    </h2>
+              <MetricBar
+                label="نسبة الإنجاز"
+                value={
+                  stats.completionRate
+                }
+              />
 
-                    <p
-                      style={styles.cardSub}
-                    >
-                      المهام الحالية
-                    </p>
-                  </div>
+              <MetricBar
+                label="المراجعة"
+                value={stats.reviewRate}
+              />
 
-                  <button
-                    style={styles.linkButton}
-                    onClick={() =>
-                      setActiveMenu("daily")
-                    }
-                  >
-                    عرض الكل
-                  </button>
-                </div>
+              <MetricBar
+                label="الرفع"
+                value={stats.uploadRate}
+              />
 
-                {tasks
-                  .slice(0, 5)
-                  .map((task) => (
-                    <TaskMini
-                      key={task.id}
-                      task={task}
-                      onClick={() =>
-                        setSelectedTask(
-                          task
-                        )
-                      }
-                    />
-                  ))}
+              <div style={styles.gradeBox}>
+                <span>
+                  التقدير العام
+                </span>
 
-                {!tasks.length && (
-                  <EmptyState
-                    text="لا توجد مهام مسجلة."
-                  />
-                )}
+                <strong>
+                  {performance.grade}
+                </strong>
               </div>
             </div>
 
@@ -1291,848 +2118,935 @@ export default function AdminDashboard() {
                   <h2
                     style={styles.cardTitle}
                   >
-                    أعمال قسم الاستحقاقات
+                    مهام اليوم
                   </h2>
 
                   <p
                     style={styles.cardSub}
                   >
-                    التصنيف حسب طبيعة العمل
-                    والتكرار
+                    المهام الحالية
                   </p>
                 </div>
+
+                <button
+                  style={styles.linkButton}
+                  onClick={() =>
+                    setActiveMenu("daily")
+                  }
+                >
+                  عرض الكل
+                </button>
               </div>
 
-              <div style={styles.workGrid}>
-                {TASK_TYPES.map((type) => {
-                  const count =
-                    tasks.filter(
-                      (task) =>
-                        task.type ===
-                        type.id
-                    ).length;
+              {tasks
+                .slice(0, 5)
+                .map((task) => (
+                  <TaskMini
+                    key={task.id}
+                    task={task}
+                    onClick={() =>
+                      setSelectedTask(
+                        task
+                      )
+                    }
+                  />
+                ))}
 
-                  return (
-                    <button
-                      key={type.id}
-                      style={styles.workCard}
-                      onClick={() => {
-                        setFilterType(
-                          type.id
-                        );
-                        setActiveMenu(
-                          "daily"
-                        );
-                      }}
-                    >
-                      <span
-                        style={{
-                          ...styles.workIcon,
-                          background:
-                            type.color,
-                        }}
-                      >
-                        {type.icon}
-                      </span>
-
-                      <span
-                        style={
-                          styles.workInfo
-                        }
-                      >
-                        <b>
-                          {type.title}
-                        </b>
-
-                        <small>
-                          {type.frequency}
-                        </small>
-                      </span>
-
-                      <span
-                        style={
-                          styles.workCount
-                        }
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              {!tasks.length && (
+                <EmptyState
+                  text="لا توجد مهام مسجلة."
+                />
+              )}
             </div>
-          </>
-        )}
-
-        {/* =================================================
-            DAILY
-        ================================================= */}
-
-        {activeMenu === "daily" && (
-          <DailyView
-            tasks={filteredTasks}
-            filterType={filterType}
-            setFilterType={
-              setFilterType
-            }
-            filterStatus={
-              filterStatus
-            }
-            setFilterStatus={
-              setFilterStatus
-            }
-            onAdd={() =>
-              setShowTaskForm(true)
-            }
-            onSelect={
-              setSelectedTask
-            }
-            onDelete={deleteTask}
-            onUpdate={updateTask}
-          />
-        )}
-
-        {/* =================================================
-            CLAIMS
-        ================================================= */}
-
-        {activeMenu === "claims" && (
-          <ClaimsPage
-            claims={filteredClaims}
-            allClaims={claims}
-            sheets={claimSheets}
-            search={claimSearch}
-            setSearch={
-              setClaimSearch
-            }
-            sheetFilter={
-              claimSheetFilter
-            }
-            setSheetFilter={
-              setClaimSheetFilter
-            }
-            loading={
-              claimLoading
-            }
-            error={claimError}
-            onImport={
-              importClaimsExcel
-            }
-            onAddManual={() => {
-              setClaimForm(
-                createEmptyClaim()
-              );
-              setShowClaimForm(true);
-            }}
-          />
-        )}
-
-        {/* =================================================
-            WEEKLY
-        ================================================= */}
-
-        {activeMenu === "weekly" && (
-          <div style={styles.card}>
-            <PerformanceView
-              title="التقييم الأسبوعي"
-              period="هذا الأسبوع"
-              performance={
-                performance
-              }
-              stats={stats}
-            />
           </div>
-        )}
 
-        {/* =================================================
-            MONTHLY
-        ================================================= */}
-
-        {activeMenu === "monthly" && (
           <div style={styles.card}>
             <div style={styles.cardHeader}>
               <div>
                 <h2
                   style={styles.cardTitle}
                 >
-                  التقييم الشهري
+                  أعمال قسم الاستحقاقات
                 </h2>
 
                 <p
                   style={styles.cardSub}
                 >
-                  تقرير أداء القسم خلال الشهر
-                  المحدد
+                  التصنيف حسب طبيعة العمل
+                  والتكرار
                 </p>
               </div>
-
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) =>
-                  setSelectedMonth(
-                    e.target.value
-                  )
-                }
-                style={
-                  styles.monthInput
-                }
-              />
             </div>
 
-            <PerformanceView
-              title=""
-              period={selectedMonth}
-              performance={
-                performance
-              }
-              stats={stats}
-            />
-          </div>
-        )}
+            <div style={styles.workGrid}>
+              {TASK_TYPES.map((type) => {
+                const count =
+                  tasks.filter(
+                    (task) =>
+                      task.type ===
+                      type.id
+                  ).length;
 
-        {/* =================================================
-            CRITERIA
-        ================================================= */}
-
-        {activeMenu === "criteria" && (
-          <CriteriaView />
-        )}
-      </main>
-
-      {/* =================================================
-          ADD TASK MODAL
-      ================================================= */}
-
-      {showTaskForm && (
-        <Modal
-          title="إضافة مهمة / معاملة جديدة"
-          onClose={() =>
-            setShowTaskForm(false)
-          }
-        >
-          <div style={styles.formGrid}>
-            <Field label="اسم المهمة / المعاملة">
-              <input
-                value={taskForm.title}
-                onChange={(e) =>
-                  setTaskForm({
-                    ...taskForm,
-                    title:
-                      e.target.value,
-                  })
-                }
-                placeholder="اسم المهمة"
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="نوع العمل">
-              <select
-                value={taskForm.type}
-                onChange={(e) =>
-                  setTaskForm({
-                    ...taskForm,
-                    type:
-                      e.target.value,
-                  })
-                }
-                style={styles.input}
-              >
-                {TASK_TYPES.map(
-                  (type) => (
-                    <option
-                      key={type.id}
-                      value={type.id}
+                return (
+                  <button
+                    key={type.id}
+                    style={styles.workCard}
+                    onClick={() => {
+                      setFilterType(
+                        type.id
+                      );
+                      setActiveMenu(
+                        "daily"
+                      );
+                    }}
+                  >
+                    <span
+                      style={{
+                        ...styles.workIcon,
+                        background:
+                          type.color,
+                      }}
                     >
-                      {type.title}
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
+                      {type.icon}
+                    </span>
 
-            <Field label="المسؤول">
-              <input
-                value={
-                  taskForm.responsible
-                }
-                onChange={(e) =>
-                  setTaskForm({
-                    ...taskForm,
-                    responsible:
-                      e.target.value,
-                  })
-                }
-                placeholder="اسم الموظف المسؤول"
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="تاريخ ورود المعاملة">
-              <input
-                type="date"
-                value={
-                  taskForm.receivedDate
-                }
-                onChange={(e) =>
-                  setTaskForm({
-                    ...taskForm,
-                    receivedDate:
-                      e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="موعد الاستحقاق">
-              <input
-                type="date"
-                value={
-                  taskForm.dueDate
-                }
-                onChange={(e) =>
-                  setTaskForm({
-                    ...taskForm,
-                    dueDate:
-                      e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="الحالة">
-              <select
-                value={taskForm.status}
-                onChange={(e) =>
-                  setTaskForm({
-                    ...taskForm,
-                    status:
-                      e.target.value,
-                  })
-                }
-                style={styles.input}
-              >
-                {Object.entries(
-                  STATUS
-                ).map(
-                  ([
-                    key,
-                    value,
-                  ]) => (
-                    <option
-                      key={key}
-                      value={key}
+                    <span
+                      style={
+                        styles.workInfo
+                      }
                     >
-                      {value.label}
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
+                      <b>
+                        {type.title}
+                      </b>
 
-            <Field
-              label="ملاحظات"
-              full
-            >
-              <textarea
-                value={
-                  taskForm.notes
-                }
-                onChange={(e) =>
-                  setTaskForm({
-                    ...taskForm,
-                    notes:
-                      e.target.value,
-                  })
-                }
-                style={{
-                  ...styles.input,
-                  minHeight: "90px",
-                  resize: "vertical",
-                }}
-              />
-            </Field>
+                      <small>
+                        {type.frequency}
+                      </small>
+                    </span>
+
+                    <span
+                      style={
+                        styles.workCount
+                      }
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-
-          <div
-            style={
-              styles.modalActions
-            }
-          >
-            <button
-              style={
-                styles.secondaryButton
-              }
-              onClick={() =>
-                setShowTaskForm(false)
-              }
-            >
-              إلغاء
-            </button>
-
-            <button
-              style={
-                styles.primaryButton
-              }
-              onClick={addTask}
-            >
-              حفظ المهمة
-            </button>
-          </div>
-        </Modal>
+        </>
       )}
 
       {/* =================================================
-          ADD CLAIM MODAL
+          DAILY
       ================================================= */}
 
-      {showClaimForm && (
-        <Modal
-          title="＋ إضافة مطالبة جديدة"
-          onClose={() =>
-            setShowClaimForm(false)
+      {activeMenu === "daily" && (
+        <DailyView
+          tasks={filteredTasks}
+          filterType={filterType}
+          setFilterType={
+            setFilterType
           }
-        >
-          <div style={styles.manualClaimIntro}>
-            <span style={styles.manualClaimIcon}>
-              📋
-            </span>
+          filterStatus={
+            filterStatus
+          }
+          setFilterStatus={
+            setFilterStatus
+          }
+          onAdd={() =>
+            setShowTaskForm(true)
+          }
+          onSelect={
+            setSelectedTask
+          }
+          onDelete={deleteTask}
+          onUpdate={updateTask}
+        />
+      )}
 
+      {/* =================================================
+          CLAIMS
+      ================================================= */}
+
+      {/* =================================================
+          SERVICE REQUESTS
+      ================================================= */}
+
+      {activeMenu === "service_requests" && (
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
             <div>
-              <strong>
-                إضافة مطالبة يدويًا
-              </strong>
-
-              <p>
-                البيانات سيتم حفظها مباشرة في
-                قاعدة بيانات Supabase.
+              <h2 style={styles.cardTitle}>
+                📥 الطلبات الواردة
+              </h2>
+              <p style={styles.cardSubtitle}>
+                طلبات الخدمات الإلكترونية الواردة
               </p>
             </div>
           </div>
 
-          <div style={styles.formGrid}>
-            <Field label="اسم صاحب المطالبة">
-              <input
-                value={
-                  claimForm.claimantName
-                }
-                onChange={(e) =>
-                  setClaimForm({
-                    ...claimForm,
-                    claimantName:
-                      e.target.value,
-                  })
-                }
-                placeholder="اسم صاحب المطالبة"
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="رقم المطالبة">
-              <input
-                value={
-                  claimForm.claimNumber
-                }
-                onChange={(e) =>
-                  setClaimForm({
-                    ...claimForm,
-                    claimNumber:
-                      e.target.value,
-                  })
-                }
-                placeholder="رقم المطالبة"
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="التصنيف / الشيت">
-              <input
-                value={
-                  claimForm.sheetName
-                }
-                onChange={(e) =>
-                  setClaimForm({
-                    ...claimForm,
-                    sheetName:
-                      e.target.value,
-                  })
-                }
-                placeholder="مثال: مطالبات أغسطس"
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="تاريخ المطالبة">
-              <input
-                type="date"
-                value={
-                  claimForm.claimDate
-                }
-                onChange={(e) =>
-                  setClaimForm({
-                    ...claimForm,
-                    claimDate:
-                      e.target.value,
-                  })
-                }
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="المبلغ">
-              <input
-                type="number"
-                value={
-                  claimForm.amount
-                }
-                onChange={(e) =>
-                  setClaimForm({
-                    ...claimForm,
-                    amount:
-                      e.target.value,
-                  })
-                }
-                placeholder="قيمة المطالبة"
-                style={styles.input}
-              />
-            </Field>
-
-            <Field label="الحالة">
-              <select
-                value={
-                  claimForm.status
-                }
-                onChange={(e) =>
-                  setClaimForm({
-                    ...claimForm,
-                    status:
-                      e.target.value,
-                  })
-                }
-                style={styles.input}
-              >
-                <option value="">
-                  اختاري الحالة
-                </option>
-
-                <option value="جديدة">
-                  جديدة
-                </option>
-
-                <option value="قيد المراجعة">
-                  قيد المراجعة
-                </option>
-
-                <option value="في انتظار مستندات">
-                  في انتظار مستندات
-                </option>
-
-                <option value="تم التنفيذ">
-                  تم التنفيذ
-                </option>
-
-                <option value="مرفوضة">
-                  مرفوضة
-                </option>
-              </select>
-            </Field>
-
-            <Field
-              label="ملاحظات"
-              full
-            >
-              <textarea
-                value={
-                  claimForm.notes
-                }
-                onChange={(e) =>
-                  setClaimForm({
-                    ...claimForm,
-                    notes:
-                      e.target.value,
-                  })
-                }
-                placeholder="أي ملاحظات إضافية..."
-                style={{
-                  ...styles.input,
-                  minHeight: 100,
-                  resize: "vertical",
-                }}
-              />
-            </Field>
-          </div>
-
           <div
-            style={
-              styles.modalActions
-            }
+            style={{
+              padding: "40px",
+              textAlign: "center",
+              color: "#64748B",
+            }}
           >
-            <button
-              style={
-                styles.secondaryButton
-              }
-              onClick={() =>
-                setShowClaimForm(false)
-              }
+            <div
+              style={{
+                fontSize: "48px",
+                marginBottom: "15px",
+              }}
             >
-              إلغاء
-            </button>
-
-            <button
-              style={
-                styles.primaryButton
-              }
-              onClick={
-                addManualClaim
-              }
-              disabled={claimLoading}
-            >
-              {claimLoading
-                ? "جاري الحفظ..."
-                : "💾 حفظ المطالبة"}
-            </button>
+              📥
+            </div>
+            <h3>الطلبات الواردة</h3>
+            <p>
+              سيتم عرض طلبات الخدمات الإلكترونية
+              الواردة هنا.
+            </p>
           </div>
-        </Modal>
+        </div>
+      )}
+
+      {activeMenu === "claims" && (
+        <ClaimsPage
+          claims={filteredClaims}
+          allClaims={claims}
+          sheets={claimSheets}
+          search={claimSearch}
+          setSearch={
+            setClaimSearch
+          }
+          sheetFilter={
+            claimSheetFilter
+          }
+          setSheetFilter={
+            setClaimSheetFilter
+          }
+          loading={
+            claimLoading
+          }
+          error={claimError}
+          onImport={
+            importClaimsExcel
+          }
+          onAddManual={() => {
+            setClaimForm(
+              createEmptyClaim()
+            );
+            setShowClaimForm(true);
+          }}
+        />
       )}
 
       {/* =================================================
-          TASK DETAILS
+          WEEKLY
       ================================================= */}
 
-      {selectedTask && (
-        <Modal
-          title="تفاصيل المهمة"
-          onClose={() =>
-            setSelectedTask(null)
-          }
-        >
-          <div
-            style={
-              styles.detailHeader
+      {activeMenu === "weekly" && (
+        <div style={styles.card}>
+          <PerformanceView
+            title="التقييم الأسبوعي"
+            period="هذا الأسبوع"
+            performance={
+              performance
             }
-          >
+            stats={stats}
+          />
+        </div>
+      )}
+
+      {/* =================================================
+          MONTHLY
+      ================================================= */}
+
+      {activeMenu === "monthly" && (
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
             <div>
-              <h3
-                style={{
-                  margin: 0,
-                }}
+              <h2
+                style={styles.cardTitle}
               >
-                {selectedTask.title}
-              </h3>
+                التقييم الشهري
+              </h2>
 
               <p
-                style={
-                  styles.cardSub
-                }
+                style={styles.cardSub}
               >
-                {
-                  getType(
-                    selectedTask.type
-                  )?.title
-                }
+                تقرير أداء القسم خلال الشهر
+                المحدد
               </p>
             </div>
 
-            <StatusBadge
-              status={
-                selectedTask.status
-              }
-            />
-          </div>
-
-          <div
-            style={
-              styles.detailGrid
-            }
-          >
-            <Detail
-              label="المسؤول"
-              value={
-                selectedTask.responsible ||
-                "—"
-              }
-            />
-
-            <Detail
-              label="تاريخ الورود"
-              value={
-                selectedTask.receivedDate ||
-                "—"
-              }
-            />
-
-            <Detail
-              label="موعد التنفيذ"
-              value={
-                selectedTask.dueDate ||
-                "غير محدد"
-              }
-            />
-
-            <Detail
-              label="المراجعة"
-              value={
-                selectedTask.reviewed
-                  ? "تمت"
-                  : "لم تتم"
-              }
-            />
-
-            <Detail
-              label="الرفع"
-              value={
-                selectedTask.uploaded
-                  ? "تم"
-                  : "لم يتم"
-              }
-            />
-
-            <Detail
-              label="الملاحظات"
-              value={
-                selectedTask.notes ||
-                "لا توجد"
-              }
-            />
-          </div>
-
-          <div
-            style={
-              styles.statusActions
-            }
-          >
-            <span
-              style={
-                styles.actionTitle
-              }
-            >
-              تحديث الحالة:
-            </span>
-
-            {Object.entries(
-              STATUS
-            ).map(
-              ([
-                key,
-                value,
-              ]) => (
-                <button
-                  key={key}
-                  onClick={() =>
-                    updateTask(
-                      selectedTask.id,
-                      {
-                        status: key,
-                      }
-                    )
-                  }
-                  style={{
-                    ...styles.statusButton,
-
-                    background:
-                      selectedTask.status ===
-                      key
-                        ? value.bg
-                        : "#fff",
-
-                    borderColor:
-                      selectedTask.status ===
-                      key
-                        ? value.color
-                        : "#E5E7EB",
-
-                    color:
-                      value.color,
-                  }}
-                >
-                  {value.icon}{" "}
-                  {value.label}
-                </button>
-              )
-            )}
-          </div>
-
-          <div
-            style={
-              styles.checkRow
-            }
-          >
-            <label>
-              <input
-                type="checkbox"
-                checked={
-                  selectedTask.reviewed
-                }
-                onChange={(e) =>
-                  updateTask(
-                    selectedTask.id,
-                    {
-                      reviewed:
-                        e.target.checked,
-                    }
-                  )
-                }
-              />{" "}
-              تمت المراجعة
-            </label>
-
-            <label>
-              <input
-                type="checkbox"
-                checked={
-                  selectedTask.uploaded
-                }
-                onChange={(e) =>
-                  updateTask(
-                    selectedTask.id,
-                    {
-                      uploaded:
-                        e.target.checked,
-                    }
-                  )
-                }
-              />{" "}
-              تم الرفع
-            </label>
-          </div>
-
-          <div
-            style={
-              styles.modalActions
-            }
-          >
-            <button
-              style={
-                styles.deleteLargeButton
-              }
-              onClick={() =>
-                deleteTask(
-                  selectedTask.id
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) =>
+                setSelectedMonth(
+                  e.target.value
                 )
               }
-            >
-              حذف المهمة
-            </button>
-
-            <button
               style={
-                styles.primaryButton
+                styles.monthInput
               }
-              onClick={() =>
-                setSelectedTask(null)
+            />
+          </div>
+
+          <PerformanceView
+            title=""
+            period={selectedMonth}
+            performance={
+              performance
+            }
+            stats={stats}
+          />
+        </div>
+      )}
+
+      {/* =================================================
+          CRITERIA
+      ================================================= */}
+
+      {activeMenu === "criteria" && (
+        <CriteriaView />
+      )}
+    </main>
+
+    {/* =================================================
+        ADD TASK MODAL
+    ================================================= */}
+
+    {showTaskForm && (
+      <Modal
+        title="إضافة مهمة / معاملة جديدة"
+        onClose={() =>
+          setShowTaskForm(false)
+        }
+      >
+        <div style={styles.formGrid}>
+          <Field label="اسم المهمة / المعاملة">
+            <input
+              value={taskForm.title}
+              onChange={(e) =>
+                setTaskForm({
+                  ...taskForm,
+                  title:
+                    e.target.value,
+                })
+              }
+              placeholder="اسم المهمة"
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="نوع العمل">
+            <select
+              value={taskForm.type}
+              onChange={(e) =>
+                setTaskForm({
+                  ...taskForm,
+                  type:
+                    e.target.value,
+                })
+              }
+              style={styles.input}
+            >
+              {TASK_TYPES.map(
+                (type) => (
+                  <option
+                    key={type.id}
+                    value={type.id}
+                  >
+                    {type.title}
+                  </option>
+                )
+              )}
+            </select>
+          </Field>
+
+          <Field label="المسؤول">
+            <input
+              value={
+                taskForm.responsible
+              }
+              onChange={(e) =>
+                setTaskForm({
+                  ...taskForm,
+                  responsible:
+                    e.target.value,
+                })
+              }
+              placeholder="اسم الموظف المسؤول"
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="تاريخ ورود المعاملة">
+            <input
+              type="date"
+              value={
+                taskForm.receivedDate
+              }
+              onChange={(e) =>
+                setTaskForm({
+                  ...taskForm,
+                  receivedDate:
+                    e.target.value,
+                })
+              }
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="موعد الاستحقاق">
+            <input
+              type="date"
+              value={
+                taskForm.dueDate
+              }
+              onChange={(e) =>
+                setTaskForm({
+                  ...taskForm,
+                  dueDate:
+                    e.target.value,
+                })
+              }
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="الحالة">
+            <select
+              value={taskForm.status}
+              onChange={(e) =>
+                setTaskForm({
+                  ...taskForm,
+                  status:
+                    e.target.value,
+                })
+              }
+              style={styles.input}
+            >
+              {Object.entries(
+                STATUS
+              ).map(
+                ([
+                  key,
+                  value,
+                ]) => (
+                  <option
+                    key={key}
+                    value={key}
+                  >
+                    {value.label}
+                  </option>
+                )
+              )}
+            </select>
+          </Field>
+
+          <Field
+            label="ملاحظات"
+            full
+          >
+            <textarea
+              value={
+                taskForm.notes
+              }
+              onChange={(e) =>
+                setTaskForm({
+                  ...taskForm,
+                  notes:
+                    e.target.value,
+                })
+              }
+              style={{
+                ...styles.input,
+                minHeight: "90px",
+                resize: "vertical",
+              }}
+            />
+          </Field>
+        </div>
+
+        <div
+          style={
+            styles.modalActions
+          }
+        >
+          <button
+            style={
+              styles.secondaryButton
+            }
+            onClick={() =>
+              setShowTaskForm(false)
+            }
+          >
+            إلغاء
+          </button>
+
+          <button
+            style={
+              styles.primaryButton
+            }
+            onClick={addTask}
+          >
+            حفظ المهمة
+          </button>
+        </div>
+      </Modal>
+    )}
+
+    {/* =================================================
+        ADD CLAIM MODAL
+    ================================================= */}
+
+    {showClaimForm && (
+      <Modal
+        title="＋ إضافة مطالبة جديدة"
+        onClose={() =>
+          setShowClaimForm(false)
+        }
+      >
+        <div style={styles.manualClaimIntro}>
+          <span style={styles.manualClaimIcon}>
+            📋
+          </span>
+
+          <div>
+            <strong>
+              إضافة مطالبة يدويًا
+            </strong>
+
+            <p>
+              البيانات سيتم حفظها مباشرة في
+              قاعدة بيانات Supabase.
+            </p>
+          </div>
+        </div>
+
+        <div style={styles.formGrid}>
+          <Field label="اسم صاحب المطالبة">
+            <input
+              value={
+                claimForm.claimantName
+              }
+              onChange={(e) =>
+                setClaimForm({
+                  ...claimForm,
+                  claimantName:
+                    e.target.value,
+                })
+              }
+              placeholder="اسم صاحب المطالبة"
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="رقم المطالبة">
+            <input
+              value={
+                claimForm.claimNumber
+              }
+              onChange={(e) =>
+                setClaimForm({
+                  ...claimForm,
+                  claimNumber:
+                    e.target.value,
+                })
+              }
+              placeholder="رقم المطالبة"
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="التصنيف / الشيت">
+            <input
+              value={
+                claimForm.sheetName
+              }
+              onChange={(e) =>
+                setClaimForm({
+                  ...claimForm,
+                  sheetName:
+                    e.target.value,
+                })
+              }
+              placeholder="مثال: مطالبات أغسطس"
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="تاريخ المطالبة">
+            <input
+              type="date"
+              value={
+                claimForm.claimDate
+              }
+              onChange={(e) =>
+                setClaimForm({
+                  ...claimForm,
+                  claimDate:
+                    e.target.value,
+                })
+              }
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="المبلغ">
+            <input
+              type="number"
+              value={
+                claimForm.amount
+              }
+              onChange={(e) =>
+                setClaimForm({
+                  ...claimForm,
+                  amount:
+                    e.target.value,
+                })
+              }
+              placeholder="قيمة المطالبة"
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="الحالة">
+            <select
+              value={
+                claimForm.status
+              }
+              onChange={(e) =>
+                setClaimForm({
+                  ...claimForm,
+                  status:
+                    e.target.value,
+                })
+              }
+              style={styles.input}
+            >
+              <option value="">
+                اختار الحالة
+              </option>
+
+              <option value="جديدة">
+                جديدة
+              </option>
+
+              <option value="قيد المراجعة">
+                قيد المراجعة
+              </option>
+
+              <option value="في انتظار مستندات">
+                في انتظار مستندات
+              </option>
+
+              <option value="تم التنفيذ">
+                تم التنفيذ
+              </option>
+
+              <option value="مرفوضة">
+                مرفوضة
+              </option>
+            </select>
+          </Field>
+
+          <Field
+            label="ملاحظات"
+            full
+          >
+            <textarea
+              value={
+                claimForm.notes
+              }
+              onChange={(e) =>
+                setClaimForm({
+                  ...claimForm,
+                  notes:
+                    e.target.value,
+                })
+              }
+              placeholder="أي ملاحظات إضافية..."
+              style={{
+                ...styles.input,
+                minHeight: 100,
+                resize: "vertical",
+              }}
+            />
+          </Field>
+        </div>
+
+        <div
+          style={
+            styles.modalActions
+          }
+        >
+          <button
+            style={
+              styles.secondaryButton
+            }
+            onClick={() =>
+              setShowClaimForm(false)
+            }
+          >
+            إلغاء
+          </button>
+
+          <button
+            style={
+              styles.primaryButton
+            }
+            onClick={
+              addManualClaim
+            }
+            disabled={claimLoading}
+          >
+            {claimLoading
+              ? "جاري الحفظ..."
+              : "💾 حفظ المطالبة"}
+          </button>
+        </div>
+      </Modal>
+    )}
+
+    {/* =================================================
+        TASK DETAILS
+    ================================================= */}
+
+    {selectedTask && (
+      <Modal
+        title="تفاصيل المهمة"
+        onClose={() =>
+          setSelectedTask(null)
+        }
+      >
+        <div
+          style={
+            styles.detailHeader
+          }
+        >
+          <div>
+            <h3
+              style={{
+                margin: 0,
+              }}
+            >
+              {selectedTask.title}
+            </h3>
+
+            <p
+              style={
+                styles.cardSub
               }
             >
-              إغلاق
-            </button>
+              {
+                getType(
+                  selectedTask.type
+                )?.title
+              }
+            </p>
           </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
+
+          <StatusBadge
+            status={
+              selectedTask.status
+            }
+          />
+        </div>
+
+        <div
+          style={
+            styles.detailGrid
+          }
+        >
+          <Detail
+            label="المسؤول"
+            value={
+              selectedTask.responsible ||
+              "—"
+            }
+          />
+
+          <Detail
+            label="تاريخ الورود"
+            value={
+              selectedTask.receivedDate ||
+              "—"
+            }
+          />
+
+          <Detail
+            label="موعد التنفيذ"
+            value={
+              selectedTask.dueDate ||
+              "غير محدد"
+            }
+          />
+
+          <Detail
+            label="المراجعة"
+            value={
+              selectedTask.reviewed
+                ? "تمت"
+                : "لم تتم"
+            }
+          />
+
+          <Detail
+            label="الرفع"
+            value={
+              selectedTask.uploaded
+                ? "تم"
+                : "لم يتم"
+            }
+          />
+                    <Detail
+            label="الملاحظات"
+            value={
+              selectedTask.notes ||
+              "لا توجد"
+            }
+          />
+        </div>
+
+        <div
+          style={
+            styles.statusActions
+          }
+        >
+          <span
+            style={
+              styles.actionTitle
+            }
+          >
+            تحديث الحالة:
+          </span>
+
+          {Object.entries(
+            STATUS
+          ).map(
+            ([
+              key,
+              value,
+            ]) => (
+              <button
+                key={key}
+                onClick={() =>
+                  updateTask(
+                    selectedTask.id,
+                    {
+                      status: key,
+                    }
+                  )
+                }
+                style={{
+                  ...styles.statusButton,
+
+                  background:
+                    selectedTask.status ===
+                    key
+                      ? value.bg
+                      : "#fff",
+
+                  borderColor:
+                    selectedTask.status ===
+                    key
+                      ? value.color
+                      : "#E5E7EB",
+
+                  color:
+                    value.color,
+                }}
+              >
+                {value.icon}{" "}
+                {value.label}
+              </button>
+            )
+          )}
+        </div>
+
+        <div
+          style={
+            styles.checkRow
+          }
+        >
+          <label>
+            <input
+              type="checkbox"
+              checked={
+                selectedTask.reviewed
+              }
+              onChange={(e) =>
+                updateTask(
+                  selectedTask.id,
+                  {
+                    reviewed:
+                      e.target.checked,
+                  }
+                )
+              }
+            />{" "}
+            تمت المراجعة
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={
+                selectedTask.uploaded
+              }
+              onChange={(e) =>
+                updateTask(
+                  selectedTask.id,
+                  {
+                    uploaded:
+                      e.target.checked,
+                  }
+                )
+              }
+            />{" "}
+            تم الرفع
+          </label>
+        </div>
+
+        <div
+          style={
+            styles.modalActions
+          }
+        >
+          <button
+            style={
+              styles.deleteLargeButton
+            }
+            onClick={() =>
+              deleteTask(
+                selectedTask.id
+              )
+            }
+          >
+            حذف المهمة
+          </button>
+
+          <button
+            style={
+              styles.primaryButton
+            }
+            onClick={() =>
+              setSelectedTask(null)
+            }
+          >
+            إغلاق
+          </button>
+        </div>
+      </Modal>
+    )}
+  </div>
+);
 
 /* =========================================================
    صفحة المطالبات
@@ -2178,7 +3092,6 @@ function ClaimsPage({
             item.sheet_name ===
             sheetFilter
         ).length;
-
   return (
     <div>
       <div style={styles.card}>
@@ -2551,298 +3464,6 @@ function ClaimsPage({
               </div>
             </div>
           )}
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   Daily View
-========================================================= */
-
-function DailyView({
-  tasks,
-  filterType,
-  setFilterType,
-  filterStatus,
-  setFilterStatus,
-  onAdd,
-  onSelect,
-  onDelete,
-  onUpdate,
-}) {
-  return (
-    <div style={styles.card}>
-      <div
-        style={
-          styles.cardHeader
-        }
-      >
-        <div>
-          <h2
-            style={
-              styles.cardTitle
-            }
-          >
-            المتابعة اليومية
-          </h2>
-
-          <p
-            style={
-              styles.cardSub
-            }
-          >
-            متابعة كل معاملة من ورودها
-            حتى الإنجاز
-          </p>
-        </div>
-
-        <button
-          style={
-            styles.primaryButton
-          }
-          onClick={onAdd}
-        >
-          ＋ إضافة مهمة
-        </button>
-      </div>
-
-      <div
-        style={
-          styles.filterRow
-        }
-      >
-        <select
-          value={filterType}
-          onChange={(e) =>
-            setFilterType(
-              e.target.value
-            )
-          }
-          style={styles.filter}
-        >
-          <option value="all">
-            كل أنواع الأعمال
-          </option>
-
-          {TASK_TYPES.map(
-            (type) => (
-              <option
-                key={type.id}
-                value={type.id}
-              >
-                {type.title}
-              </option>
-            )
-          )}
-        </select>
-
-        <select
-          value={filterStatus}
-          onChange={(e) =>
-            setFilterStatus(
-              e.target.value
-            )
-          }
-          style={styles.filter}
-        >
-          <option value="all">
-            كل الحالات
-          </option>
-
-          {Object.entries(
-            STATUS
-          ).map(
-            ([
-              key,
-              value,
-            ]) => (
-              <option
-                key={key}
-                value={key}
-              >
-                {value.label}
-              </option>
-            )
-          )}
-        </select>
-      </div>
-
-      <div
-        style={{
-          overflowX: "auto",
-        }}
-      >
-        <table
-          style={
-            styles.table
-          }
-        >
-          <thead>
-            <tr>
-              <th style={styles.th}>
-                المهمة
-              </th>
-
-              <th style={styles.th}>
-                النوع
-              </th>
-
-              <th style={styles.th}>
-                المسؤول
-              </th>
-
-              <th style={styles.th}>
-                الورود
-              </th>
-
-              <th style={styles.th}>
-                الاستحقاق
-              </th>
-
-              <th style={styles.th}>
-                الحالة
-              </th>
-
-              <th style={styles.th}>
-                مراجعة
-              </th>
-
-              <th style={styles.th}>
-                رفع
-              </th>
-
-              <th style={styles.th}>
-                إجراء
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {tasks.map(
-              (task) => (
-                <tr
-                  key={task.id}
-                  style={
-                    styles.tr
-                  }
-                >
-                  <td style={styles.td}>
-                    <b>
-                      {task.title}
-                    </b>
-                  </td>
-
-                  <td style={styles.td}>
-                    {getType(
-                      task.type
-                    )?.title ||
-                      "—"}
-                  </td>
-
-                  <td style={styles.td}>
-                    {task.responsible ||
-                      "—"}
-                  </td>
-
-                  <td style={styles.td}>
-                    {task.receivedDate ||
-                      "—"}
-                  </td>
-
-                  <td style={styles.td}>
-                    {task.dueDate ||
-                      "—"}
-                  </td>
-
-                  <td style={styles.td}>
-                    <StatusBadge
-                      status={
-                        task.status
-                      }
-                    />
-                  </td>
-
-                  <td style={styles.td}>
-                    <input
-                      type="checkbox"
-                      checked={
-                        task.reviewed
-                      }
-                      onChange={(
-                        e
-                      ) =>
-                        onUpdate(
-                          task.id,
-                          {
-                            reviewed:
-                              e.target
-                                .checked,
-                          }
-                        )
-                      }
-                    />
-                  </td>
-
-                  <td style={styles.td}>
-                    <input
-                      type="checkbox"
-                      checked={
-                        task.uploaded
-                      }
-                      onChange={(
-                        e
-                      ) =>
-                        onUpdate(
-                          task.id,
-                          {
-                            uploaded:
-                              e.target
-                                .checked,
-                          }
-                        )
-                      }
-                    />
-                  </td>
-
-                  <td style={styles.td}>
-                    <button
-                      style={
-                        styles.viewButton
-                      }
-                      onClick={() =>
-                        onSelect(
-                          task
-                        )
-                      }
-                    >
-                      عرض
-                    </button>
-
-                    <button
-                      style={
-                        styles.deleteButton
-                      }
-                      onClick={() =>
-                        onDelete(
-                          task.id
-                        )
-                      }
-                    >
-                      حذف
-                    </button>
-                  </td>
-                </tr>
-              )
-            )}
-          </tbody>
-        </table>
-
-        {!tasks.length && (
-          <EmptyState
-            text="لا توجد نتائج."
-          />
-        )}
       </div>
     </div>
   );
@@ -3451,909 +4072,5 @@ function getType(id) {
   );
 }
 
-/* =========================================================
-   STYLES
-========================================================= */
+}
 
-const styles = {
-  app: {
-    minHeight: "100vh",
-    display: "flex",
-    background: "#F5F7FA",
-    color: "#172033",
-    fontFamily: "'Cairo', 'Segoe UI', sans-serif",
-  },
-
-  loadingBox: {
-    background: "#fff",
-    border: "1px solid #E7EBF0",
-    borderRadius: 16,
-    padding: 35,
-    textAlign: "center",
-    boxShadow: "0 10px 30px rgba(15,41,66,.08)",
-  },
-
-  loadingIcon: {
-    fontSize: 48,
-    marginBottom: 10,
-  },
-
-  sidebar: {
-    width: "280px",
-    background: "#0F2942",
-    color: "#fff",
-    padding: "22px 14px",
-    flexShrink: 0,
-    minHeight: "100vh",
-    boxSizing: "border-box",
-    overflowY: "auto",
-  },
-
-  brand: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "8px 10px 24px",
-  },
-
-  logo: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    background: "#2563EB",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 26,
-  },
-
-  college: {
-    fontSize: 19,
-    fontWeight: 800,
-  },
-
-  department: {
-    fontSize: 13,
-    color: "#AFC0D2",
-    marginTop: 3,
-  },
-
-  sidebarLabel: {
-    color: "#71869C",
-    fontSize: 12,
-    fontWeight: 800,
-    padding: "12px 12px 6px",
-  },
-
-  menuButton: {
-    width: "100%",
-    border: 0,
-    color: "#C9D4DF",
-    background: "transparent",
-    padding: "12px 13px",
-    borderRadius: 10,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    cursor: "pointer",
-    fontSize: 15,
-    textAlign: "right",
-    marginBottom: 4,
-  },
-
-  menuButtonActive: {
-    background: "#2563EB",
-    color: "#fff",
-    boxShadow: "0 5px 15px rgba(37,99,235,.25)",
-  },
-
-  smallMenuButton: {
-    width: "100%",
-    border: 0,
-    color: "#B7C6D5",
-    background: "transparent",
-    padding: "9px 13px",
-    borderRadius: 8,
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    cursor: "pointer",
-    fontSize: 13,
-    textAlign: "right",
-    marginBottom: 2,
-  },
-
-  smallMenuButtonActive: {
-    background: "#2563EB",
-    color: "#fff",
-    boxShadow: "0 4px 12px rgba(37,99,235,.22)",
-  },
-
-  sidebarDivider: {
-    height: 1,
-    background: "#28445E",
-    margin: "14px 8px",
-  },
-
-  main: {
-    flex: 1,
-    padding: 28,
-    minWidth: 0,
-  },
-
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 20,
-    marginBottom: 22,
-  },
-
-  breadcrumb: {
-    color: "#64748B",
-    fontSize: 12,
-    marginBottom: 5,
-  },
-
-  pageTitle: {
-    margin: 0,
-    fontSize: 28,
-    fontWeight: 900,
-  },
-
-  pageSub: {
-    margin: "5px 0 0",
-    color: "#64748B",
-    fontSize: 14,
-  },
-
-  primaryButton: {
-    border: 0,
-    background: "#2563EB",
-    color: "#fff",
-    borderRadius: 9,
-    padding: "12px 18px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-    whiteSpace: "nowrap",
-  },
-
-  secondaryButton: {
-    border: "1px solid #CBD5E1",
-    background: "#fff",
-    color: "#334155",
-    borderRadius: 9,
-    padding: "11px 18px",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: 14,
-  },
-
-  excelButton: {
-    border: "1px solid #2563EB",
-    background: "#EFF6FF",
-    color: "#1D4ED8",
-    borderRadius: 9,
-    padding: "11px 16px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-    whiteSpace: "nowrap",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  excelButtonLarge: {
-    border: 0,
-    background: "#2563EB",
-    color: "#fff",
-    borderRadius: 10,
-    padding: "13px 22px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  manualClaimButton: {
-    border: 0,
-    background: "#047857",
-    color: "#fff",
-    borderRadius: 9,
-    padding: "11px 16px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-    whiteSpace: "nowrap",
-  },
-
-  manualClaimButtonLarge: {
-    border: 0,
-    background: "#047857",
-    color: "#fff",
-    borderRadius: 10,
-    padding: "13px 22px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-  },
-
-  claimHeaderButtons: {
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    flexWrap: "wrap",
-  },
-
-  emptyClaimButtons: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-
-  manualClaimIntro: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    background: "#ECFDF5",
-    border: "1px solid #A7F3D0",
-    color: "#065F46",
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 18,
-    fontSize: 14,
-  },
-
-  manualClaimIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
-    background: "#D1FAE5",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 22,
-  },
-
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 14,
-    marginBottom: 16,
-  },
-
-  statCard: {
-    background: "#fff",
-    border: "1px solid #E7EBF0",
-    borderRadius: 14,
-    padding: 18,
-    display: "flex",
-    alignItems: "center",
-    gap: 13,
-    boxShadow: "0 2px 8px rgba(15,41,66,.035)",
-  },
-
-  statIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 11,
-    background: "#EFF6FF",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 22,
-  },
-
-  statTitle: {
-    fontSize: 13,
-    color: "#64748B",
-    marginBottom: 4,
-  },
-
-  statValue: {
-    fontSize: 26,
-    fontWeight: 900,
-  },
-
-  claimStat: {
-    background: "#F8FAFC",
-    border: "1px solid #E2E8F0",
-    borderRadius: 12,
-    padding: 15,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
-
-  claimStatIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    background: "#EAF2FF",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 19,
-  },
-
-  claimStatValue: {
-    fontSize: 21,
-    fontWeight: 900,
-  },
-
-  dashboardGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 16,
-    marginBottom: 16,
-  },
-
-  card: {
-    background: "#fff",
-    border: "1px solid #E7EBF0",
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 16,
-    boxShadow: "0 2px 8px rgba(15,41,66,.035)",
-  },
-
-  cardHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 16,
-  },
-
-  claimsHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 15,
-    marginBottom: 18,
-  },
-
-  cardTitle: {
-    margin: 0,
-    fontSize: 20,
-    fontWeight: 900,
-  },
-
-  cardSub: {
-    margin: "4px 0 0",
-    color: "#64748B",
-    fontSize: 13,
-  },
-
-  linkButton: {
-    border: 0,
-    background: "transparent",
-    color: "#2563EB",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-  },
-
-  scoreCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: "50%",
-    background: "#EFF6FF",
-    color: "#2563EB",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 19,
-    fontWeight: 900,
-  },
-
-  progressWrap: {
-    marginBottom: 15,
-  },
-
-  progressLabel: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: 13,
-    marginBottom: 6,
-  },
-
-  progressTrack: {
-    height: 9,
-    background: "#E2E8F0",
-    borderRadius: 99,
-    overflow: "hidden",
-  },
-
-  progressFill: {
-    height: "100%",
-    background: "#2563EB",
-    borderRadius: 99,
-  },
-
-  gradeBox: {
-    marginTop: 17,
-    background: "#F8FAFC",
-    borderRadius: 10,
-    padding: 13,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: 14,
-  },
-
-  workGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 10,
-  },
-
-  workCard: {
-    border: "1px solid #E5E7EB",
-    background: "#fff",
-    borderRadius: 11,
-    padding: 13,
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    cursor: "pointer",
-    textAlign: "right",
-    fontSize: 14,
-  },
-
-  workIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 9,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 19,
-    flexShrink: 0,
-  },
-
-  workInfo: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 3,
-  },
-
-  workInfo: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 3,
-  },
-
-  workCount: {
-    color: "#2563EB",
-    fontWeight: 900,
-    fontSize: 15,
-  },
-
-  taskMini: {
-    width: "100%",
-    border: 0,
-    background: "#F8FAFC",
-    borderRadius: 10,
-    padding: 11,
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    cursor: "pointer",
-    textAlign: "right",
-    marginBottom: 7,
-    fontSize: 14,
-  },
-
-  taskMiniIcon: {
-    width: 34,
-    height: 34,
-    background: "#fff",
-    borderRadius: 8,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 18,
-  },
-
-  taskMiniInfo: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-start",
-    gap: 3,
-  },
-
-  statusBadge: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 4,
-    padding: "6px 9px",
-    borderRadius: 999,
-    fontSize: 11,
-    fontWeight: 800,
-    whiteSpace: "nowrap",
-  },
-
-  sectionHeading: {
-    margin: 0,
-    fontSize: 22,
-  },
-
-  filterRow: {
-    display: "flex",
-    gap: 10,
-    marginBottom: 15,
-    flexWrap: "wrap",
-  },
-
-  filter: {
-    border: "1px solid #CBD5E1",
-    background: "#fff",
-    padding: "10px 12px",
-    borderRadius: 8,
-    fontSize: 14,
-    minWidth: 200,
-  },
-
-  claimSearch: {
-    flex: 1,
-    minWidth: 280,
-    border: "1px solid #CBD5E1",
-    borderRadius: 8,
-    padding: "11px 12px",
-    fontSize: 14,
-    boxSizing: "border-box",
-  },
-
-  claimSelect: {
-    minWidth: 220,
-    border: "1px solid #CBD5E1",
-    background: "#fff",
-    borderRadius: 8,
-    padding: "11px 12px",
-    fontSize: 14,
-  },
-
-  claimStats: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-    gap: 10,
-    marginBottom: 18,
-  },
-
-  resultText: {
-    color: "#64748B",
-    fontSize: 13,
-    marginBottom: 10,
-  },
-
-  claimTableWrapper: {
-    overflow: "auto",
-    maxHeight: "520px",
-    border: "1px solid #E5E7EB",
-    borderRadius: 10,
-  },
-
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: 13,
-    minWidth: 850,
-  },
-
-  th: {
-    padding: "13px 10px",
-    background: "#F8FAFC",
-    borderBottom: "1px solid #E2E8F0",
-    textAlign: "right",
-    whiteSpace: "nowrap",
-    fontSize: 13,
-    fontWeight: 800,
-  },
-
-  td: {
-    padding: "13px 10px",
-    borderBottom: "1px solid #EEF2F6",
-    verticalAlign: "middle",
-    fontSize: 13,
-  },
-
-  tr: {
-    background: "#fff",
-  },
-
-  viewButton: {
-    border: 0,
-    background: "#DBEAFE",
-    color: "#1D4ED8",
-    borderRadius: 6,
-    padding: "6px 9px",
-    cursor: "pointer",
-    fontSize: 12,
-    marginLeft: 5,
-  },
-
-  deleteButton: {
-    border: 0,
-    background: "#FEE2E2",
-    color: "#DC2626",
-    borderRadius: 6,
-    padding: "6px 9px",
-    cursor: "pointer",
-    fontSize: 12,
-  },
-
-  infoBox: {
-    background: "#EFF6FF",
-    color: "#1D4ED8",
-    borderRadius: 9,
-    padding: 11,
-    marginBottom: 12,
-    fontSize: 13,
-  },
-
-  errorBox: {
-    background: "#FEE2E2",
-    color: "#B91C1C",
-    borderRadius: 9,
-    padding: 11,
-    marginBottom: 12,
-    fontSize: 13,
-  },
-
-  emptyClaims: {
-    minHeight: 260,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    textAlign: "center",
-    color: "#64748B",
-    fontSize: 14,
-  },
-
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-
-  performanceBox: {
-    background: "#F8FAFC",
-    borderRadius: 13,
-    padding: 20,
-    display: "flex",
-    alignItems: "center",
-    gap: 18,
-    marginBottom: 18,
-  },
-
-  bigScore: {
-    fontSize: 42,
-    fontWeight: 900,
-    color: "#2563EB",
-  },
-
-  criteriaList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 13,
-  },
-
-  criteriaRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    fontSize: 13,
-  },
-
-  criteriaBar: {
-    flex: 1,
-    height: 10,
-    background: "#E2E8F0",
-    borderRadius: 99,
-    overflow: "hidden",
-  },
-
-  criteriaFill: {
-    height: "100%",
-    background: "#2563EB",
-    borderRadius: 99,
-  },
-
-  weight: {
-    display: "block",
-    color: "#64748B",
-    marginTop: 3,
-    fontSize: 11,
-  },
-
-  criteriaCard: {
-    border: "1px solid #E5E7EB",
-    borderRadius: 10,
-    padding: 15,
-    marginTop: 10,
-    fontSize: 14,
-  },
-
-  criteriaTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 15,
-  },
-
-  criteriaDescription: {
-    color: "#64748B",
-    fontSize: 13,
-    margin: "5px 0 0",
-  },
-
-  monthInput: {
-    border: "1px solid #CBD5E1",
-    borderRadius: 8,
-    padding: "9px 10px",
-    fontSize: 14,
-  },
-
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(15,23,42,.55)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    padding: 20,
-  },
-
-  modal: {
-    background: "#fff",
-    borderRadius: 15,
-    width: "min(850px, 100%)",
-    maxHeight: "90vh",
-    overflowY: "auto",
-    padding: 22,
-    boxSizing: "border-box",
-  },
-
-  modalHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottom: "1px solid #E5E7EB",
-    paddingBottom: 13,
-    marginBottom: 18,
-  },
-
-  modalTitle: {
-    margin: 0,
-    fontSize: 21,
-  },
-
-  closeButton: {
-    border: 0,
-    background: "#F1F5F9",
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    cursor: "pointer",
-    fontSize: 16,
-  },
-
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14,
-  },
-
-  label: {
-    display: "block",
-    fontSize: 13,
-    fontWeight: 800,
-    marginBottom: 5,
-  },
-
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #CBD5E1",
-    borderRadius: 8,
-    padding: "11px 12px",
-    fontSize: 14,
-    outline: "none",
-  },
-
-  modalActions: {
-    display: "flex",
-    justifyContent: "flex-start",
-    gap: 9,
-    marginTop: 20,
-    paddingTop: 15,
-    borderTop: "1px solid #E5E7EB",
-  },
-
-  detailHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 15,
-    alignItems: "center",
-    background: "#F8FAFC",
-    padding: 15,
-    borderRadius: 10,
-    fontSize: 14,
-  },
-
-  detailGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 10,
-    marginTop: 14,
-  },
-
-  detailItem: {
-    background: "#F8FAFC",
-    borderRadius: 9,
-    padding: 13,
-    display: "flex",
-    flexDirection: "column",
-    gap: 5,
-    fontSize: 13,
-  },
-
-  statusActions: {
-    display: "flex",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 7,
-    marginTop: 16,
-  },
-
-  actionTitle: {
-    fontSize: 13,
-    fontWeight: 800,
-    width: "100%",
-    marginBottom: 3,
-  },
-
-  statusButton: {
-    border: "1px solid",
-    borderRadius: 8,
-    padding: "8px 10px",
-    cursor: "pointer",
-    fontSize: 12,
-  },
-
-  checkRow: {
-    display: "flex",
-    gap: 22,
-    marginTop: 15,
-    fontSize: 13,
-    fontWeight: 700,
-  },
-
-  deleteLargeButton: {
-    border: 0,
-    background: "#FEE2E2",
-    color: "#DC2626",
-    borderRadius: 9,
-    padding: "11px 16px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-  },
-
-  empty: {
-    padding: 25,
-    textAlign: "center",
-    color: "#94A3B8",
-    fontSize: 14,
-  },
-};

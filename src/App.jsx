@@ -1,15 +1,25 @@
-
 import logo from "./assets/logo.png";
 import background from "./assets/engineering.jpg";
 import AdminDashboard from "./AdminDashboard";
 import React, { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import { supabase } from "./supabaseClient";
 
 function App() {
   const [activePage, setActivePage] = useState("home");
   const [showLogin, setShowLogin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [adminData, setAdminData] = useState([]);
+  const [showServiceForm, setShowServiceForm] = useState(false);
+  const [selectedService, setSelectedService] = useState(null);
+  const [serviceLoading, setServiceLoading] = useState(false);
+  const [serviceForm, setServiceForm] = useState({
+    name: "",
+    job: "",
+    phone: "",
+    requestedMonth: "",
+    requestedYear: new Date().getFullYear(),
+  });
 
   const menuItems = [
     { id: "home", title: "الرئيسية" },
@@ -77,6 +87,86 @@ function App() {
         item.id === id ? { ...item, status: newStatus } : item
       )
     );
+  };
+
+  const openServiceForm = (service) => {
+    setSelectedService(service);
+    setServiceForm({
+      name: "",
+      job: "",
+      phone: "",
+      requestedMonth: "",
+      requestedYear: new Date().getFullYear(),
+    });
+    setShowServiceForm(true);
+  };
+
+  const submitServiceRequest = async () => {
+    if (
+      !serviceForm.name.trim() ||
+      !serviceForm.job.trim() ||
+      !serviceForm.requestedMonth ||
+      !serviceForm.requestedYear
+    ) {
+      alert("من فضلك أدخلي الاسم والوظيفة والشهر والسنة المطلوبة.");
+      return;
+    }
+
+    try {
+      setServiceLoading(true);
+
+      const { data, error } = await supabase
+        .from("service_requests")
+        .insert({
+          service_type: selectedService?.title || "خدمة إلكترونية",
+          name: serviceForm.name.trim(),
+          job_title: serviceForm.job.trim(),
+          phone: serviceForm.phone.trim() || null,
+          request_month: {
+            يناير: 1,
+            فبراير: 2,
+            مارس: 3,
+            أبريل: 4,
+            مايو: 5,
+            يونيو: 6,
+            يوليو: 7,
+            أغسطس: 8,
+            سبتمبر: 9,
+            أكتوبر: 10,
+            نوفمبر: 11,
+            ديسمبر: 12,
+          }[serviceForm.requestedMonth],
+          request_year: Number(serviceForm.requestedYear),
+          status: "جديد",
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error(error);
+        alert("حدث خطأ أثناء إرسال الطلب:\n" + error.message);
+        return;
+      }
+
+      setShowServiceForm(false);
+      setSelectedService(null);
+      setServiceForm({
+        name: "",
+        job: "",
+        phone: "",
+        requestedMonth: "",
+        requestedYear: new Date().getFullYear(),
+      });
+
+      alert(
+        `تم إرسال طلب ${selectedService?.title || "الخدمة"} بنجاح.\nرقم الطلب: ${data.id}`
+      );
+    } catch (error) {
+      console.error(error);
+      alert("تعذر الاتصال بقاعدة البيانات.");
+    } finally {
+      setServiceLoading(false);
+    }
   };
 
   return (
@@ -267,6 +357,7 @@ function App() {
                       e.currentTarget.style.color = service.color;
                       e.currentTarget.style.transform = "translateY(0)";
                     }}
+                    onClick={() => openServiceForm(service)}
                   >
                     <span>تقديم الطلب</span>
                     <span style={styles.serviceButtonArrow}>←</span>
@@ -435,6 +526,123 @@ function App() {
             </div>
           </section>
         </main>
+      )}
+
+      {/* ================= SERVICE REQUEST FORM ================= */}
+      {showServiceForm && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => {
+            if (!serviceLoading) setShowServiceForm(false);
+          }}
+        >
+          <div
+            style={{ ...styles.loginBox, width: "min(520px, 100%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={styles.closeButton}
+              onClick={() => {
+                if (!serviceLoading) setShowServiceForm(false);
+              }}
+            >
+              ×
+            </button>
+
+            <div style={{ fontSize: "42px", marginBottom: "8px" }}>
+              {selectedService?.icon || "📄"}
+            </div>
+
+            <h2 style={styles.loginTitle}>
+              تقديم طلب {selectedService?.title || "خدمة إلكترونية"}
+            </h2>
+
+            <p style={styles.loginDescription}>
+              برجاء إدخال البيانات المطلوبة لإرسال الطلب إلى قسم الاستحقاقات.
+            </p>
+
+            <input
+              type="text"
+              placeholder="الاسم"
+              value={serviceForm.name}
+              onChange={(e) =>
+                setServiceForm((prev) => ({ ...prev, name: e.target.value }))
+              }
+              style={styles.input}
+            />
+
+            <input
+              type="text"
+              placeholder="الوظيفة"
+              value={serviceForm.job}
+              onChange={(e) =>
+                setServiceForm((prev) => ({ ...prev, job: e.target.value }))
+              }
+              style={styles.input}
+            />
+
+            <input
+              type="tel"
+              placeholder="رقم التليفون (اختياري)"
+              value={serviceForm.phone}
+              onChange={(e) =>
+                setServiceForm((prev) => ({ ...prev, phone: e.target.value }))
+              }
+              style={styles.input}
+            />
+
+            <select
+              value={serviceForm.requestedMonth}
+              onChange={(e) =>
+                setServiceForm((prev) => ({
+                  ...prev,
+                  requestedMonth: e.target.value,
+                }))
+              }
+              style={styles.input}
+            >
+              <option value="">اختاري الشهر المطلوب</option>
+              <option value="يناير">يناير</option>
+              <option value="فبراير">فبراير</option>
+              <option value="مارس">مارس</option>
+              <option value="أبريل">أبريل</option>
+              <option value="مايو">مايو</option>
+              <option value="يونيو">يونيو</option>
+              <option value="يوليو">يوليو</option>
+              <option value="أغسطس">أغسطس</option>
+              <option value="سبتمبر">سبتمبر</option>
+              <option value="أكتوبر">أكتوبر</option>
+              <option value="نوفمبر">نوفمبر</option>
+              <option value="ديسمبر">ديسمبر</option>
+            </select>
+
+            <input
+              type="number"
+              min="2000"
+              max="2100"
+              placeholder="السنة المطلوبة"
+              value={serviceForm.requestedYear}
+              onChange={(e) =>
+                setServiceForm((prev) => ({
+                  ...prev,
+                  requestedYear: e.target.value,
+                }))
+              }
+              style={styles.input}
+            />
+
+            <button
+              onClick={submitServiceRequest}
+              disabled={serviceLoading}
+              style={{
+                ...styles.loginButton,
+                opacity: serviceLoading ? 0.7 : 1,
+              }}
+            >
+              {serviceLoading ? "جاري إرسال الطلب..." : "إرسال الطلب"}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ================= FOOTER ================= */}
