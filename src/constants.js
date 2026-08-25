@@ -10,7 +10,7 @@ export const TASK_TYPES = [
   { id: "care", title: "خدمة الرعاية", icon: "🤲", color: "#CCFBF1", frequency: "حسب الطلب" },
   { id: "fellowship", title: "الزمالة", icon: "🤝", color: "#DCFCE7", frequency: "حسب الحالة" },
   { id: "taxes", title: "الضرائب", icon: "💼", color: "#FDE68A", frequency: "دوري" },
-  { id: "staff_changes", title: "الترقيات والاستقالات والغياب", icon: "👥", color: "#F1F5F9", frequency: "حسب الوارد" },
+  { id: "staff_changes", title: "الإجازات الدراسية", icon: "🎓", color: "#F1F5F9", frequency: "حسب الوارد" },
 ];
 
 export const STATUS = {

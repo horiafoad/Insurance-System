@@ -20,6 +20,13 @@ function App() {
     requestedMonth: "",
     requestedYear: new Date().getFullYear(),
   });
+  const [loginForm, setLoginForm] = useState({
+    username: "",
+    password: "",
+  });
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
 
   const menuItems = [
     { id: "home", title: "الرئيسية" },
@@ -169,6 +176,77 @@ function App() {
     }
   };
 
+  const handleLogin = async () => {
+    if (!loginForm.username || !loginForm.password) {
+      setLoginError("من فضلك أدخلي اسم المستخدم وكلمة المرور.");
+      return;
+    }
+
+    try {
+      setLoginLoading(true);
+      setLoginError("");
+
+      console.log("محاولة تسجيل الدخول:", loginForm.username);
+      console.log("كلمة المرور:", loginForm.password);
+
+      // تجربة البحث عن المستخدم أولاً
+      const { data: allUsers, error: allError } = await supabase
+        .from("users")
+        .select("username, password");
+
+      console.log("جميع المستخدمين:", allUsers, allError);
+
+      if (allError) {
+        console.error("خطأ في جلب المستخدمين:", allError);
+        setLoginError("خطأ في الاتصال بقاعدة البيانات: " + allError.message);
+        return;
+      }
+
+      // البحث عن المستخدم المطابق
+      const matchedUser = allUsers?.find(
+        user => user.username === loginForm.username && user.password === loginForm.password
+      );
+
+      console.log("المستخدم المطابق:", matchedUser);
+
+      if (!matchedUser) {
+        console.log("لم يتم العثور على المستخدم المطابق");
+        setLoginError("اسم المستخدم أو كلمة المرور غير صحيحة.");
+        return;
+      }
+
+      // جلب بيانات المستخدم الكاملة
+      const { data: fullUser, error: fullError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("username", matchedUser.username)
+        .single();
+
+      if (fullError) {
+        console.error("خطأ في جلب بيانات المستخدم الكاملة:", fullError);
+        setLoginError("خطأ في جلب بيانات المستخدم: " + fullError.message);
+        return;
+      }
+
+      console.log("تم تسجيل الدخول بنجاح:", fullUser);
+      setCurrentUser(fullUser);
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      setLoginForm({ username: "", password: "" });
+    } catch (error) {
+      console.error("خطأ عام:", error);
+      setLoginError("حدث خطأ أثناء تسجيل الدخول: " + error.message);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsLoggedIn(false);
+    setActivePage("home");
+  };
+
   return (
     <div dir="rtl" style={styles.page}>
       {/* ================= HEADER ================= */}
@@ -207,17 +285,38 @@ function App() {
 
         {/* ADMIN BUTTON */}
 
-        <button
-          style={styles.adminButton}
-          onClick={() => setShowLogin(true)}
-        >
-          <span>🔐</span>
-          <span>دخول الإدارة</span>
-        </button>
+        {isLoggedIn ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: "12px", color: "#64748B" }}>
+                مرحباً،
+              </div>
+              <div style={{ fontSize: "14px", fontWeight: "700", color: "#102d4a" }}>
+                {currentUser?.full_name || currentUser?.username}
+              </div>
+            </div>
+            <button
+              style={{ ...styles.adminButton, background: "#DC2626" }}
+              onClick={handleLogout}
+            >
+              <span>🚪</span>
+              <span>خروج</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            style={styles.adminButton}
+            onClick={() => setShowLogin(true)}
+          >
+            <span>🔐</span>
+            <span>دخول الإدارة</span>
+          </button>
+        )}
       </header>
 
       {isLoggedIn ? (
         <AdminDashboard
+          currentUser={currentUser}
           adminData={adminData}
           handleStatusChange={handleStatusChange}
           styles={styles}
@@ -496,7 +595,7 @@ function App() {
 
           <section id="contact" style={styles.contactSection}>
             <div style={styles.contactContent}>
-              <div>
+              <div style={styles.contactHeader}>
                 <div style={styles.contactSmallTitle}>تواصل معنا</div>
 
                 <h2 style={styles.contactTitle}>قسم الاستحقاقات</h2>
@@ -506,21 +605,39 @@ function App() {
                 </p>
               </div>
 
-              <div style={styles.contactItems}>
-                <div style={styles.contactItem}>
-                  <span>☎️</span>
-                  <div>
-                    <strong>التليفون</strong>
-                    <p>يتم إضافة أرقام التواصل</p>
-                  </div>
-                </div>
+              <div style={styles.contactCards}>
+                <a
+                  href="tel:01055662546"
+                  style={styles.contactCard}
+                >
+                  <div style={styles.contactCardIcon}>📞</div>
+                  <h3 style={styles.contactCardTitle}>التليفون</h3>
+                  <p style={styles.contactCardPhone}>01055662546</p>
+                </a>
 
-                <div style={styles.contactItem}>
-                  <span>✉️</span>
-                  <div>
-                    <strong>البريد الإلكتروني</strong>
-                    <p>يتم إضافة البريد الإلكتروني</p>
-                  </div>
+                <a
+                  href="https://wa.me/201055662546"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={styles.contactCard}
+                >
+                  <div style={styles.contactCardIcon}>💬</div>
+                  <h3 style={styles.contactCardTitle}>واتساب</h3>
+                  <p style={styles.contactCardPhone}>مراسلة مباشرة</p>
+                </a>
+
+                <div style={styles.contactCard}>
+                  <div style={styles.contactCardIcon}>🏛️</div>
+                  <h3 style={styles.contactCardTitle}>الموقع</h3>
+                  <p style={styles.contactCardPhone}>كلية الهندسة</p>
+                </div>
+              </div>
+
+              <div style={styles.contactFooter}>
+                <div style={styles.contactFooterIcon}>⏰</div>
+                <div>
+                  <strong style={styles.contactFooterTitle}>ساعات العمل</strong>
+                  <p style={styles.contactFooterText}>الأحد - الخميس: 9:00 ص - 2:15 م</p>
                 </div>
               </div>
             </div>
@@ -688,24 +805,39 @@ function App() {
             <input
               type="text"
               placeholder="اسم المستخدم"
+              value={loginForm.username}
+              onChange={(e) =>
+                setLoginForm({ ...loginForm, username: e.target.value })
+              }
               style={styles.input}
             />
 
             <input
               type="password"
               placeholder="كلمة المرور"
+              value={loginForm.password}
+              onChange={(e) =>
+                setLoginForm({ ...loginForm, password: e.target.value })
+              }
               style={styles.input}
             />
 
             <button
-              onClick={() => {
-                setIsLoggedIn(true);
-                setShowLogin(false);
+              onClick={handleLogin}
+              disabled={loginLoading}
+              style={{
+                ...styles.loginButton,
+                opacity: loginLoading ? 0.7 : 1,
               }}
-              style={styles.loginButton}
             >
-              تسجيل الدخول
+              {loginLoading ? "جاري تسجيل الدخول..." : "تسجيل الدخول"}
             </button>
+
+            {loginError && (
+              <div style={{ color: "#DC2626", fontSize: "13px", marginTop: "10px" }}>
+                {loginError}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1335,49 +1467,110 @@ const styles = {
 
   contactSection: {
     background: "#123653",
-    padding: "65px 8%",
+    padding: "70px 8%",
     color: "#ffffff",
   },
 
   contactContent: {
-    maxWidth: "1050px",
+    maxWidth: "1000px",
     margin: "0 auto",
     display: "flex",
-    justifyContent: "space-between",
-    gap: "50px",
+    flexDirection: "column",
+    gap: "40px",
     alignItems: "center",
-    flexWrap: "wrap",
+  },
+
+  contactHeader: {
+    textAlign: "center",
+    maxWidth: "700px",
   },
 
   contactSmallTitle: {
     color: "#7c9cff",
     fontWeight: "800",
-    marginBottom: "8px",
+    marginBottom: "10px",
+    fontSize: "14px",
   },
 
   contactTitle: {
-    fontSize: "30px",
-    margin: "0 0 10px",
+    fontSize: "32px",
+    margin: "0 0 12px",
+    fontWeight: "800",
   },
 
   contactText: {
     color: "#d5e1eb",
+    fontSize: "16px",
+    lineHeight: "1.7",
   },
 
-  contactItems: {
+  contactCards: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: "24px",
+    width: "100%",
+    maxWidth: "850px",
+  },
+
+  contactCard: {
+    background: "rgba(255, 255, 255, 0.08)",
+    borderRadius: "12px",
+    padding: "30px 24px",
+    color: "#ffffff",
+    textDecoration: "none",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
     display: "flex",
-    gap: "25px",
-    flexWrap: "wrap",
+    flexDirection: "column",
+    alignItems: "center",
+    textAlign: "center",
+    transition: "background 0.3s ease",
   },
 
-  contactItem: {
+  contactCardIcon: {
+    fontSize: "40px",
+    marginBottom: "14px",
+  },
+
+  contactCardTitle: {
+    fontSize: "18px",
+    fontWeight: "700",
+    margin: "0 0 8px",
+    color: "#ffffff",
+  },
+
+  contactCardPhone: {
+    fontSize: "15px",
+    color: "rgba(255, 255, 255, 0.85)",
+    margin: "0",
+    fontWeight: "500",
+  },
+
+  contactFooter: {
     display: "flex",
     alignItems: "center",
-    gap: "12px",
-    background: "rgba(255,255,255,0.07)",
-    padding: "15px 20px",
+    gap: "16px",
+    background: "rgba(255, 255, 255, 0.06)",
+    padding: "18px 24px",
     borderRadius: "10px",
-    minWidth: "220px",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+  },
+
+  contactFooterIcon: {
+    fontSize: "28px",
+  },
+
+  contactFooterTitle: {
+    display: "block",
+    fontSize: "15px",
+    fontWeight: "700",
+    color: "#ffffff",
+    marginBottom: "4px",
+  },
+
+  contactFooterText: {
+    margin: 0,
+    fontSize: "14px",
+    color: "rgba(255, 255, 255, 0.8)",
   },
 
   footer: {
