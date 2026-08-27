@@ -1,7 +1,7 @@
 import logo from "./assets/logo.png";
 import background from "./assets/engineering.jpg";
 import AdminDashboard from "./AdminDashboard";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
 
@@ -37,6 +37,19 @@ function App() {
   const [loginError, setLoginError] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+      setIsTablet(window.innerWidth < 1024 && window.innerWidth >= 640);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const menuItems = [
     { id: "home", title: "الرئيسية" },
@@ -368,7 +381,10 @@ function App() {
 
         {/* NAVIGATION */}
 
-        <nav style={styles.nav}>
+        <nav style={{
+          ...styles.nav,
+          display: isMobile ? "none" : "flex",
+        }}>
           {menuItems.map((item) => (
             <button
               key={item.id}
@@ -385,7 +401,10 @@ function App() {
 
         {/* MOBILE MENU BUTTON */}
         <button
-          style={styles.mobileMenuButton}
+          style={{
+            ...styles.mobileMenuButton,
+            display: isMobile ? "block" : "none",
+          }}
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
         >
           <span style={styles.mobileMenuIcon}>☰</span>
@@ -459,16 +478,26 @@ function App() {
             style={{
               ...styles.hero,
               backgroundImage: "url(" + background + ")",
+              minHeight: isMobile ? "450px" : "560px",
             }}
           >
             <div style={styles.heroOverlay}></div>
 
-            <div style={styles.heroContent}>
+            <div style={{
+              ...styles.heroContent,
+              padding: isMobile ? "40px 20px" : "70px 20px",
+            }}>
               <div style={styles.smallTitle}>جامعة عين شمس</div>
 
-              <h1 style={styles.heroTitle}>كلية الهندسة</h1>
+              <h1 style={{
+                ...styles.heroTitle,
+                fontSize: isMobile ? "36px" : "58px",
+              }}>كلية الهندسة</h1>
 
-              <h2 style={styles.heroDepartment}>
+              <h2 style={{
+                ...styles.heroDepartment,
+                fontSize: isMobile ? "28px" : "38px",
+              }}>
                 <span style={styles.heroAccent}>قسم الاستحقاقات</span>
               </h2>
 
@@ -476,12 +505,18 @@ function App() {
 
               <h3 style={styles.heroSubtitle}>البوابة الإلكترونية الذكية</h3>
 
-              <p style={styles.heroText}>
+              <p style={{
+                ...styles.heroText,
+                fontSize: isMobile ? "15px" : "17px",
+              }}>
                 منظومة إلكترونية متطورة لإنجاز جميع معاملات قسم الاستحقاقات
                 بسهولة وسرعة، وتقديم الطلبات والخدمات إلكترونيًا.
               </p>
 
-              <div style={styles.heroButtons}>
+              <div style={{
+                ...styles.heroButtons,
+                flexDirection: isMobile ? "column" : "row",
+              }}>
                 <button
                   style={styles.primaryButton}
                   onClick={() => handleMenuClick("services")}
@@ -518,14 +553,19 @@ function App() {
               </p>
             </div>
 
-            <div style={styles.servicesGrid} className="services-grid">
+            <div style={{
+              ...styles.servicesGrid,
+              gridTemplateColumns: isMobile ? "1fr" : isTablet ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
+              gap: isMobile ? "16px" : "24px",
+            }}>
               {services.map((service) => (
                 <div
                   key={service.title}
-                  className="service-card"
                   style={{
                     ...styles.serviceCard,
                     borderColor: service.borderColor,
+                    padding: isMobile ? "30px 20px 20px" : "38px 25px 27px",
+                    minHeight: isMobile ? "280px" : "335px",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = "translateY(-8px)";
@@ -548,14 +588,19 @@ function App() {
                   ></div>
 
                   <div
-                    className="service-icon"
                     style={{
                       ...styles.serviceIcon,
                       background: service.lightColor,
                       border: "1px solid " + service.borderColor,
+                      width: isMobile ? "60px" : "76px",
+                      height: isMobile ? "60px" : "76px",
+                      margin: isMobile ? "0 auto 15px" : "0 auto 20px",
                     }}
                   >
-                    <span className="service-emoji" style={styles.serviceEmoji}>{service.icon}</span>
+                    <span style={{
+                      ...styles.serviceEmoji,
+                      fontSize: isMobile ? "28px" : "34px",
+                    }}>{service.icon}</span>
                   </div>
 
                   <h3
@@ -649,11 +694,17 @@ function App() {
 
           {/* ================= ABOUT ================= */}
 
-          <section id="about" style={styles.aboutSection} className="about-section">
+          <section id="about" style={{
+            ...styles.aboutSection,
+            display: isMobile || isTablet ? "block" : "grid",
+            gridTemplateColumns: isMobile || isTablet ? "1fr" : "minmax(0, 1.35fr) minmax(360px, 0.8fr)",
+            gap: isMobile ? "30px" : isTablet ? "40px" : "80px",
+            padding: isMobile ? "40px 5%" : isTablet ? "60px 6%" : "95px 8%",
+          }}>
             <div style={styles.aboutShapeOne}></div>
             <div style={styles.aboutShapeTwo}></div>
 
-            <div style={styles.aboutContent} className="about-content">
+            <div style={styles.aboutContent}>
               <div style={styles.aboutLabel}>
                 <span style={styles.aboutLabelLine}></span>
                 عن القسم
@@ -683,7 +734,10 @@ function App() {
 
             {/* PREMIUM ABOUT CARD */}
 
-            <div style={styles.aboutBox}>
+            <div style={{
+              ...styles.aboutBox,
+              maxWidth: isMobile ? "100%" : "360px",
+            }}>
               <div style={styles.aboutBoxGlow}></div>
 
               <div style={styles.aboutBoxIcon}>⚙</div>
@@ -736,7 +790,10 @@ function App() {
 
           {/* ================= CONTACT ================= */}
 
-          <section id="contact" style={styles.contactSection}>
+          <section id="contact" style={{
+            ...styles.contactSection,
+            padding: isMobile ? "50px 5%" : "70px 8%",
+          }}>
             <div style={styles.contactContent}>
               <div style={styles.contactHeader}>
                 <div style={styles.contactSmallTitle}>تواصل معنا</div>
@@ -748,31 +805,74 @@ function App() {
                 </p>
               </div>
 
-              <div style={styles.contactCards}>
+              <div style={{
+                ...styles.contactCards,
+                gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: isMobile ? "20px" : "28px",
+              }}>
                 <a
                   href="tel:01055662546"
-                  style={styles.contactCard}
+                  style={{
+                    ...styles.contactCard,
+                    padding: isMobile ? "25px 20px" : "35px 28px",
+                    minHeight: isMobile ? "180px" : "220px",
+                  }}
                 >
-                  <div style={styles.contactCardIcon}>📞</div>
-                  <h3 style={styles.contactCardTitle}>التليفون</h3>
-                  <p style={styles.contactCardPhone}>01055662546</p>
+                  <div style={{
+                    ...styles.contactCardIcon,
+                    fontSize: isMobile ? "36px" : "48px",
+                  }}>📞</div>
+                  <h3 style={{
+                    ...styles.contactCardTitle,
+                    fontSize: isMobile ? "18px" : "22px",
+                  }}>التليفون</h3>
+                  <p style={{
+                    ...styles.contactCardPhone,
+                    fontSize: isMobile ? "14px" : "16px",
+                  }}>01055662546</p>
                 </a>
 
                 <a
                   href="https://wa.me/201055662546"
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={styles.contactCard}
+                  style={{
+                    ...styles.contactCard,
+                    padding: isMobile ? "25px 20px" : "35px 28px",
+                    minHeight: isMobile ? "180px" : "220px",
+                  }}
                 >
-                  <div style={styles.contactCardIcon}>💬</div>
-                  <h3 style={styles.contactCardTitle}>واتساب</h3>
-                  <p style={styles.contactCardPhone}>مراسلة مباشرة</p>
+                  <div style={{
+                    ...styles.contactCardIcon,
+                    fontSize: isMobile ? "36px" : "48px",
+                  }}>💬</div>
+                  <h3 style={{
+                    ...styles.contactCardTitle,
+                    fontSize: isMobile ? "18px" : "22px",
+                  }}>واتساب</h3>
+                  <p style={{
+                    ...styles.contactCardPhone,
+                    fontSize: isMobile ? "14px" : "16px",
+                  }}>مراسلة مباشرة</p>
                 </a>
 
-                <div style={styles.contactCard}>
-                  <div style={styles.contactCardIcon}>🏛️</div>
-                  <h3 style={styles.contactCardTitle}>الموقع</h3>
-                  <p style={styles.contactCardPhone}>كلية الهندسة</p>
+                <div style={{
+                  ...styles.contactCard,
+                    padding: isMobile ? "25px 20px" : "35px 28px",
+                    minHeight: isMobile ? "180px" : "220px",
+                  }}>
+                  <div style={{
+                    ...styles.contactCardIcon,
+                    fontSize: isMobile ? "36px" : "48px",
+                  }}>🏛️</div>
+                  <h3 style={{
+                    ...styles.contactCardTitle,
+                    fontSize: isMobile ? "18px" : "22px",
+                  }}>الموقع</h3>
+                  <p style={{
+                    ...styles.contactCardPhone,
+                    fontSize: isMobile ? "14px" : "16px",
+                  }}>كلية الهندسة</p>
                 </div>
               </div>
 
@@ -1219,9 +1319,6 @@ const styles = {
     fontSize: "24px",
     cursor: "pointer",
     color: "#102d4a",
-    "@media (max-width: 768px)": {
-      display: "block",
-    },
   },
 
   mobileMenuIcon: {
