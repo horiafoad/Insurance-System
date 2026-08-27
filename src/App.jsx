@@ -36,6 +36,7 @@ function App() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const menuItems = [
     { id: "home", title: "الرئيسية" },
@@ -382,6 +383,35 @@ function App() {
           ))}
         </nav>
 
+        {/* MOBILE MENU BUTTON */}
+        <button
+          style={styles.mobileMenuButton}
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          <span style={styles.mobileMenuIcon}>☰</span>
+        </button>
+
+        {/* MOBILE MENU */}
+        {mobileMenuOpen && (
+          <div style={styles.mobileMenu}>
+            {menuItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  handleMenuClick(item.id);
+                  setMobileMenuOpen(false);
+                }}
+                style={{
+                  ...styles.mobileMenuItem,
+                  ...(activePage === item.id ? styles.mobileMenuItemActive : {}),
+                }}
+              >
+                {item.title}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ADMIN BUTTON */}
 
         {isLoggedIn ? (
@@ -488,10 +518,11 @@ function App() {
               </p>
             </div>
 
-            <div style={styles.servicesGrid}>
+            <div style={styles.servicesGrid} className="services-grid">
               {services.map((service) => (
                 <div
                   key={service.title}
+                  className="service-card"
                   style={{
                     ...styles.serviceCard,
                     borderColor: service.borderColor,
@@ -517,16 +548,18 @@ function App() {
                   ></div>
 
                   <div
+                    className="service-icon"
                     style={{
                       ...styles.serviceIcon,
                       background: service.lightColor,
                       border: "1px solid " + service.borderColor,
                     }}
                   >
-                    <span style={styles.serviceEmoji}>{service.icon}</span>
+                    <span className="service-emoji" style={styles.serviceEmoji}>{service.icon}</span>
                   </div>
 
                   <h3
+                    className="service-title"
                     style={{
                       ...styles.serviceTitle,
                       color: "#123B6D",
@@ -535,11 +568,12 @@ function App() {
                     {service.title}
                   </h3>
 
-                  <p style={styles.serviceDescription}>
+                  <p className="service-description" style={styles.serviceDescription}>
                     {service.description}
                   </p>
 
                   <button
+                    className="service-button"
                     style={{
                       ...styles.serviceButton,
                       color: service.color,
@@ -615,11 +649,11 @@ function App() {
 
           {/* ================= ABOUT ================= */}
 
-          <section id="about" style={styles.aboutSection}>
+          <section id="about" style={styles.aboutSection} className="about-section">
             <div style={styles.aboutShapeOne}></div>
             <div style={styles.aboutShapeTwo}></div>
 
-            <div style={styles.aboutContent}>
+            <div style={styles.aboutContent} className="about-content">
               <div style={styles.aboutLabel}>
                 <span style={styles.aboutLabelLine}></span>
                 عن القسم
@@ -1085,6 +1119,14 @@ const styles = {
     zIndex: 1000,
     boxShadow: "0 3px 18px rgba(20, 42, 70, 0.08)",
     gap: "25px",
+    "@media (max-width: 768px)": {
+      padding: "0 20px",
+      height: "70px",
+    },
+    "@media (max-width: 480px)": {
+      padding: "0 15px",
+      height: "65px",
+    },
   },
 
   logoBox: {
@@ -1126,6 +1168,9 @@ const styles = {
     justifyContent: "center",
     gap: "8px",
     flex: 1,
+    "@media (max-width: 768px)": {
+      display: "none",
+    },
   },
 
   navButton: {
@@ -1161,6 +1206,59 @@ const styles = {
     gap: "8px",
     boxShadow: "0 6px 15px rgba(16, 45, 74, 0.18)",
     whiteSpace: "nowrap",
+    "@media (max-width: 480px)": {
+      padding: "10px 15px",
+      fontSize: "12px",
+    },
+  },
+
+  mobileMenuButton: {
+    display: "none",
+    border: "none",
+    background: "transparent",
+    fontSize: "24px",
+    cursor: "pointer",
+    color: "#102d4a",
+    "@media (max-width: 768px)": {
+      display: "block",
+    },
+  },
+
+  mobileMenuIcon: {
+    fontSize: "28px",
+  },
+
+  mobileMenu: {
+    position: "absolute",
+    top: "100%",
+    left: "0",
+    right: "0",
+    background: "#ffffff",
+    boxShadow: "0 10px 30px rgba(0, 0, 0, 0.1)",
+    padding: "20px",
+    zIndex: 1001,
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
+
+  mobileMenuItem: {
+    border: "none",
+    background: "transparent",
+    color: "#34465d",
+    fontFamily: "inherit",
+    fontSize: "16px",
+    fontWeight: "600",
+    padding: "15px 20px",
+    cursor: "pointer",
+    textAlign: "right",
+    borderRadius: "8px",
+    transition: "background 0.2s ease",
+  },
+
+  mobileMenuItemActive: {
+    background: "#E0E7FF",
+    color: "#2F5BEA",
   },
 
   hero: {
@@ -1357,6 +1455,10 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     boxSizing: "border-box",
+    "@media (max-width: 640px)": {
+      padding: "30px 20px 20px",
+      minHeight: "280px",
+    },
   },
 
   serviceTopLine: {
@@ -1377,6 +1479,11 @@ const styles = {
     margin: "0 auto 20px",
     flexShrink: 0,
     transition: "transform 0.3s ease",
+    "@media (max-width: 640px)": {
+      width: "60px",
+      height: "60px",
+      margin: "0 auto 15px",
+    },
   },
 
   serviceEmoji: {
@@ -1474,6 +1581,15 @@ const styles = {
     alignItems: "center",
     overflow: "hidden",
     boxSizing: "border-box",
+    "@media (max-width: 1024px)": {
+      gridTemplateColumns: "1fr",
+      gap: "40px",
+      padding: "60px 6%",
+    },
+    "@media (max-width: 640px)": {
+      padding: "40px 5%",
+      gap: "30px",
+    },
   },
 
   aboutShapeOne: {

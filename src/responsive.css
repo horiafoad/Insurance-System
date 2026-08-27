@@ -1,0 +1,119 @@
+/* Responsive Design for Mobile */
+
+@media (max-width: 1024px) {
+  .services-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .about-section {
+    grid-template-columns: 1fr !important;
+    gap: 40px !important;
+    padding: 60px 6% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .mobile-menu {
+    display: flex !important;
+  }
+
+  .nav {
+    display: none !important;
+  }
+
+  .mobile-menu-button {
+    display: block !important;
+  }
+
+  .about-section {
+    grid-template-columns: 1fr !important;
+    gap: 40px !important;
+    padding: 60px 6% !important;
+  }
+
+  .about-content {
+    max-width: 100% !important;
+  }
+
+  .about-box {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .services-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .service-card {
+    padding: 30px 20px 20px !important;
+    min-height: 280px !important;
+  }
+
+  .service-icon {
+    width: 60px !important;
+    height: 60px !important;
+    margin: 0 auto 15px !important;
+  }
+
+  .service-emoji {
+    font-size: 28px !important;
+  }
+
+  .service-title {
+    font-size: 18px !important;
+  }
+
+  .service-description {
+    font-size: 13px !important;
+  }
+
+  .service-button {
+    font-size: 14px !important;
+    padding: 10px 16px !important;
+  }
+
+  .about-section {
+    padding: 40px 5% !important;
+    gap: 30px !important;
+  }
+
+  .about-title {
+    font-size: 28px !important;
+  }
+
+  .about-paragraph {
+    font-size: 14px !important;
+  }
+
+  .about-box {
+    padding: 30px 20px !important;
+  }
+
+  .contact-section {
+    padding: 50px 5% !important;
+  }
+
+  .contact-cards {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+
+  .contact-card {
+    padding: 25px 20px !important;
+    min-height: 180px !important;
+  }
+
+  .contact-card-icon {
+    font-size: 36px !important;
+  }
+
+  .contact-card-title {
+    font-size: 18px !important;
+  }
+
+  .contact-card-phone {
+    font-size: 14px !important;
+  }
+}
