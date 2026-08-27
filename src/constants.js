@@ -9,7 +9,7 @@ export const TASK_TYPES = [
   { id: "salary_statement", title: "مفردات المرتب", icon: "🧾", color: "#F3E8FF", frequency: "حسب الطلب" },
   { id: "care", title: "خدمة الرعاية", icon: "🤲", color: "#CCFBF1", frequency: "حسب الطلب" },
   { id: "fellowship", title: "الزمالة", icon: "🤝", color: "#DCFCE7", frequency: "حسب الحالة" },
-  { id: "taxes", title: "الضرائب", icon: "💼", color: "#FDE68A", frequency: "دوري" },
+  { id: "taxes", title: "إعارات", icon: "💼", color: "#FDE68A", frequency: "دوري" },
   { id: "staff_changes", title: "الإجازات الدراسية", icon: "🎓", color: "#F1F5F9", frequency: "حسب الوارد" },
 ];
 

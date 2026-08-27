@@ -1,407 +1,673 @@
-import { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { ClaimStat, EmptyState } from "./ui";
+
+const defaultCourseForm = {
+  courseName: "",
+  instructor: "",
+  courseDate: new Date().toISOString().split("T")[0],
+  location: "قاعة التدريب / كلية الهندسة",
+  durationHours: "",
+  attendees: "",
+  notes: "",
+};
+
+function splitAttendees(value) {
+  if (!value) return [];
+  return value
+    .split(/\r?\n|,|،/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function formatCourseDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleDateString("ar-EG", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
 
 export default function TrainingCourses() {
   const [courses, setCourses] = useState([]);
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
   const [showCourseForm, setShowCourseForm] = useState(false);
-  const [showRegistrationForm, setShowRegistrationForm] = useState(false);
+  const [editingCourseId, setEditingCourseId] = useState(null);
+  const [courseForm, setCourseForm] = useState(defaultCourseForm);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [courseForm, setCourseForm] = useState({
-    courseName: "",
-    courseCode: "",
-    description: "",
-    instructor: "",
-    location: "",
-    startDate: "",
-    endDate: "",
-    durationHours: "",
-    maxParticipants: "",
-    targetAudience: "",
-  });
-  const [registrationForm, setRegistrationForm] = useState({
-    employeeName: "",
-    employeeCode: "",
-    department: "",
-    notes: "",
-  });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    loadCourses();
-    loadRegistrations();
+    loadData();
   }, []);
 
-  const loadCourses = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
       setError("");
-      const { data, error } = await supabase
-        .from("training_courses")
-        .select("*")
-        .order("start_date", { ascending: true });
 
-      if (error) {
-        console.error(error);
-        setError("حدث خطأ أثناء تحميل الدورات: " + error.message);
-        return;
+      let remoteCourses = [];
+      let remoteRegistrations = [];
+
+      try {
+        const [
+          { data: coursesData, error: coursesError },
+          { data: registrationsData, error: registrationsError },
+        ] = await Promise.all([
+          supabase
+            .from("training_courses")
+            .select("*")
+            .order("start_date", { ascending: false }),
+          supabase.from("course_registrations").select("*"),
+        ]);
+
+        if (coursesError) {
+          console.warn("training_courses fetch warning:", coursesError.message);
+        } else if (coursesData) {
+          remoteCourses = coursesData;
+        }
+
+        if (registrationsError) {
+          console.warn("course_registrations fetch warning:", registrationsError.message);
+        } else if (registrationsData) {
+          remoteRegistrations = registrationsData;
+        }
+      } catch (err) {
+        console.warn("Database connection exception:", err);
       }
 
-      setCourses(data || []);
-    } catch (error) {
-      console.error(error);
-      setError("تعذر تحميل الدورات من قاعدة البيانات.");
+      // Load local backups from localStorage
+      let localCourses = [];
+      let localRegs = [];
+      try {
+        const rawC = localStorage.getItem("local_training_courses");
+        if (rawC) localCourses = JSON.parse(rawC);
+        const rawR = localStorage.getItem("local_course_registrations");
+        if (rawR) localRegs = JSON.parse(rawR);
+      } catch (e) {
+        console.error("Failed to read local courses backup:", e);
+      }
+
+      // Merge remote and local courses
+      const seenCourseIds = new Set();
+      const combinedCourses = [];
+
+      remoteCourses.forEach((c) => {
+        if (c.id) seenCourseIds.add(String(c.id));
+        combinedCourses.push(c);
+      });
+
+      localCourses.forEach((c) => {
+        if (!c.id || !seenCourseIds.has(String(c.id))) {
+          combinedCourses.push(c);
+        }
+      });
+
+      // Merge registrations
+      const seenRegIds = new Set();
+      const combinedRegs = [];
+
+      remoteRegistrations.forEach((r) => {
+        if (r.id) seenRegIds.add(String(r.id));
+        combinedRegs.push(r);
+      });
+
+      localRegs.forEach((r) => {
+        if (!r.id || !seenRegIds.has(String(r.id))) {
+          combinedRegs.push(r);
+        }
+      });
+
+      // Sort by date desc
+      combinedCourses.sort(
+        (a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0)
+      );
+
+      setCourses(combinedCourses);
+      setRegistrations(combinedRegs);
+    } catch (loadError) {
+      console.error(loadError);
+      setError("تعذر تحميل بيانات الدورات التدريبية.");
     } finally {
       setLoading(false);
     }
   };
 
-  const loadRegistrations = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("course_registrations")
-        .select("*");
-
-      if (error) {
-        console.error(error);
-        return;
+  const registrationsByCourse = useMemo(() => {
+    const map = {};
+    registrations.forEach((reg) => {
+      if (!reg.course_id) return;
+      if (!map[reg.course_id]) {
+        map[reg.course_id] = [];
       }
+      map[reg.course_id].push(reg);
+    });
+    return map;
+  }, [registrations]);
 
-      setRegistrations(data || []);
-    } catch (error) {
-      console.error(error);
-    }
+  const handleOpenCreate = () => {
+    setEditingCourseId(null);
+    setCourseForm(defaultCourseForm);
+    setShowCourseForm(true);
+  };
+
+  const handleOpenEdit = (course) => {
+    setEditingCourseId(course.id);
+    const attendees = registrationsByCourse[course.id] || [];
+    const attendeesText = attendees.map((a) => a.employee_name).join("\n");
+
+    setCourseForm({
+      courseName: course.course_name || "",
+      instructor: course.instructor || "",
+      courseDate: course.start_date || new Date().toISOString().split("T")[0],
+      location: course.location || "قاعة التدريب",
+      durationHours: course.duration_hours || "",
+      attendees: attendeesText,
+      notes: course.description || "",
+    });
+    setShowCourseForm(true);
   };
 
   const handleCourseSubmit = async (e) => {
     e.preventDefault();
-    if (!courseForm.courseName || !courseForm.startDate || !courseForm.endDate) {
-      alert("من فضلك أدخلي اسم الدورة والتواريخ المطلوبة.");
+
+    if (!courseForm.courseName.trim()) {
+      alert("من فضلك أدخلي اسم الدورة التدريبية.");
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from("training_courses")
-        .insert({
-          course_name: courseForm.courseName,
-          course_code: courseForm.courseCode || null,
-          description: courseForm.description,
-          instructor: courseForm.instructor,
-          location: courseForm.location,
-          start_date: courseForm.startDate,
-          end_date: courseForm.endDate,
-          duration_hours: courseForm.durationHours ? parseInt(courseForm.durationHours) : null,
-          max_participants: courseForm.maxParticipants ? parseInt(courseForm.maxParticipants) : null,
-          target_audience: courseForm.targetAudience,
-        })
-        .select()
-        .single();
+    if (!courseForm.instructor.trim()) {
+      alert("من فضلك أدخلي اسم المدرب أو المحاضر.");
+      return;
+    }
 
-      if (error) {
-        console.error(error);
-        alert("حدث خطأ أثناء إنشاء الدورة: " + error.message);
-        return;
+    const attendeesList = splitAttendees(courseForm.attendees);
+    if (attendeesList.length === 0) {
+      alert("من فضلك أدخلي اسم شخص واحد على الأقل حضر الدورة.");
+      return;
+    }
+
+    setSubmitting(true);
+
+    const generatedLocalId = editingCourseId || ("course-" + Date.now());
+    const coursePayload = {
+      course_name: courseForm.courseName.trim(),
+      instructor: courseForm.instructor.trim(),
+      start_date: courseForm.courseDate || new Date().toISOString().split("T")[0],
+      end_date: courseForm.courseDate || new Date().toISOString().split("T")[0],
+      location: courseForm.location?.trim() || "قاعة التدريب",
+      duration_hours: courseForm.durationHours ? Number(courseForm.durationHours) : null,
+      description: courseForm.notes?.trim() || null,
+      current_participants: attendeesList.length,
+      max_participants: attendeesList.length,
+      status: "مكتمل",
+    };
+
+    try {
+      if (editingCourseId) {
+        // Update mode
+        if (!String(editingCourseId).startsWith("course-")) {
+          try {
+            await supabase
+              .from("training_courses")
+              .update(coursePayload)
+              .eq("id", editingCourseId);
+
+            // Re-insert registrations
+            await supabase
+              .from("course_registrations")
+              .delete()
+              .eq("course_id", editingCourseId);
+
+            const regsPayload = attendeesList.map((name) => ({
+              course_id: editingCourseId,
+              employee_name: name,
+              attendance_status: "حضر",
+              completion_status: "مكتمل",
+              notes: courseForm.notes?.trim() || null,
+            }));
+            await supabase.from("course_registrations").insert(regsPayload);
+          } catch (e) {
+            console.warn("Supabase update error:", e);
+          }
+        }
+
+        // Update locally
+        try {
+          const rawC = localStorage.getItem("local_training_courses");
+          if (rawC) {
+            const list = JSON.parse(rawC);
+            const updated = list.map((c) =>
+              c.id === editingCourseId ? { ...c, ...coursePayload } : c
+            );
+            localStorage.setItem("local_training_courses", JSON.stringify(updated));
+          }
+
+          const rawR = localStorage.getItem("local_course_registrations");
+          if (rawR) {
+            const list = JSON.parse(rawR);
+            const filtered = list.filter((r) => r.course_id !== editingCourseId);
+            const newRegs = attendeesList.map((name, idx) => ({
+              id: "reg-" + Date.now() + "-" + idx,
+              course_id: editingCourseId,
+              employee_name: name,
+              attendance_status: "حضر",
+              completion_status: "مكتمل",
+              notes: courseForm.notes?.trim() || null,
+              registration_date: new Date().toISOString(),
+            }));
+            localStorage.setItem(
+              "local_course_registrations",
+              JSON.stringify([...filtered, ...newRegs])
+            );
+          }
+        } catch (e) {
+          console.error(e);
+        }
+
+        alert("✅ تم تعديل وحفظ بيانات الدورة بنجاح!");
+      } else {
+        // Create mode
+        let savedRemoteId = null;
+        try {
+          const { data: createdCourse, error: courseError } = await supabase
+            .from("training_courses")
+            .insert(coursePayload)
+            .select()
+            .single();
+
+          if (courseError) {
+            console.warn("Supabase course insert warning:", courseError.message);
+          } else if (createdCourse && createdCourse.id) {
+            savedRemoteId = createdCourse.id;
+
+            const registrationsPayload = attendeesList.map((employeeName) => ({
+              course_id: createdCourse.id,
+              employee_name: employeeName,
+              attendance_status: "حضر",
+              completion_status: "مكتمل",
+              notes: courseForm.notes?.trim() || null,
+            }));
+
+            await supabase
+              .from("course_registrations")
+              .insert(registrationsPayload);
+          }
+        } catch (dbErr) {
+          console.warn("Supabase insert exception:", dbErr);
+        }
+
+        const finalCourseId = savedRemoteId || generatedLocalId;
+        const courseWithId = {
+          ...coursePayload,
+          id: finalCourseId,
+          created_at: new Date().toISOString(),
+        };
+
+        const localRegsToAdd = attendeesList.map((name, idx) => ({
+          id: "reg-" + Date.now() + "-" + idx,
+          course_id: finalCourseId,
+          employee_name: name,
+          attendance_status: "حضر",
+          completion_status: "مكتمل",
+          notes: courseForm.notes?.trim() || null,
+          registration_date: new Date().toISOString(),
+        }));
+
+        try {
+          const currentLocalCourses = JSON.parse(
+            localStorage.getItem("local_training_courses") || "[]"
+          );
+          currentLocalCourses.unshift(courseWithId);
+          localStorage.setItem(
+            "local_training_courses",
+            JSON.stringify(currentLocalCourses)
+          );
+
+          const currentLocalRegs = JSON.parse(
+            localStorage.getItem("local_course_registrations") || "[]"
+          );
+          localStorage.setItem(
+            "local_course_registrations",
+            JSON.stringify([...currentLocalRegs, ...localRegsToAdd])
+          );
+        } catch (storageErr) {
+          console.error("LocalStorage save error:", storageErr);
+        }
+
+        alert("✅ تم تسجيل الدورة والحضور بنجاح!");
       }
 
-      await loadCourses();
+      await loadData();
       setShowCourseForm(false);
-      setCourseForm({
-        courseName: "",
-        courseCode: "",
-        description: "",
-        instructor: "",
-        location: "",
-        startDate: "",
-        endDate: "",
-        durationHours: "",
-        maxParticipants: "",
-        targetAudience: "",
-      });
-      alert("تم إنشاء الدورة بنجاح.");
-    } catch (error) {
-      console.error(error);
-      alert("تعذر إنشاء الدورة.");
-    }
-  };
-
-  const handleRegistrationSubmit = async (e) => {
-    e.preventDefault();
-    if (!registrationForm.employeeName || !selectedCourse) {
-      alert("من فضلك أدخلي اسم الموظف واختر الدورة.");
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from("course_registrations")
-        .insert({
-          course_id: selectedCourse.id,
-          employee_name: registrationForm.employeeName,
-          employee_code: registrationForm.employeeCode,
-          department: registrationForm.department,
-          notes: registrationForm.notes,
-        });
-
-      if (error) {
-        console.error(error);
-        alert("حدث خطأ أثناء التسجيل: " + error.message);
-        return;
-      }
-
-      // تحديث عدد المشاركين
-      await supabase
-        .from("training_courses")
-        .update({ current_participants: (selectedCourse.current_participants || 0) + 1 })
-        .eq("id", selectedCourse.id);
-
-      await loadCourses();
-      await loadRegistrations();
-      setShowRegistrationForm(false);
-      setSelectedCourse(null);
-      setRegistrationForm({
-        employeeName: "",
-        employeeCode: "",
-        department: "",
-        notes: "",
-      });
-      alert("تم التسجيل في الدورة بنجاح.");
-    } catch (error) {
-      console.error(error);
-      alert("تعذر التسجيل في الدورة.");
+      setEditingCourseId(null);
+      setCourseForm(defaultCourseForm);
+    } catch (submitError) {
+      console.error(submitError);
+      alert("حدث خطأ أثناء حفظ الدورة، يرجى المحاولة مرة أخرى.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleDeleteCourse = async (id) => {
-    if (!window.confirm("هل تريدين حذف هذه الدورة؟")) return;
+    if (!window.confirm("هل تريدين حذف سجل هذه الدورة وجميع الحاضرين فيها نهائياً؟")) {
+      return;
+    }
 
     try {
-      const { error } = await supabase
-        .from("training_courses")
-        .delete()
-        .eq("id", id);
-
-      if (error) {
-        console.error(error);
-        alert("حدث خطأ أثناء حذف الدورة: " + error.message);
-        return;
+      if (!String(id).startsWith("course-")) {
+        try {
+          await supabase.from("training_courses").delete().eq("id", id);
+          await supabase.from("course_registrations").delete().eq("course_id", id);
+        } catch (e) {
+          console.warn("Supabase delete warning:", e);
+        }
       }
 
-      await loadCourses();
-      alert("تم حذف الدورة بنجاح.");
-    } catch (error) {
-      console.error(error);
-      alert("تعذر حذف الدورة.");
+      const localCourses = JSON.parse(
+        localStorage.getItem("local_training_courses") || "[]"
+      );
+      const updatedCourses = localCourses.filter((c) => c.id !== id);
+      localStorage.setItem(
+        "local_training_courses",
+        JSON.stringify(updatedCourses)
+      );
+
+      const localRegs = JSON.parse(
+        localStorage.getItem("local_course_registrations") || "[]"
+      );
+      const updatedRegs = localRegs.filter((r) => r.course_id !== id);
+      localStorage.setItem(
+        "local_course_registrations",
+        JSON.stringify(updatedRegs)
+      );
+
+      await loadData();
+      alert("تم حذف سجل الدورة بنجاح.");
+    } catch (deleteError) {
+      console.error(deleteError);
+      alert("تعذر حذف سجل الدورة.");
     }
   };
 
-  const handleDeleteRegistration = async (id) => {
-    if (!window.confirm("هل تريدين حذف هذا التسجيل؟")) return;
+  const totalAttendeesCount = useMemo(() => {
+    return courses.reduce((sum, c) => {
+      const attendees = registrationsByCourse[c.id] || [];
+      return sum + (attendees.length || c.current_participants || 0);
+    }, 0);
+  }, [courses, registrationsByCourse]);
 
-    try {
-      const { error } = await supabase
-        .from("course_registrations")
-        .delete()
-        .eq("id", id);
+  const filteredCourses = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return courses;
 
-      if (error) {
-        console.error(error);
-        alert("حدث خطأ أثناء حذف التسجيل: " + error.message);
-        return;
-      }
+    return courses.filter((course) => {
+      const attendees = registrationsByCourse[course.id] || [];
+      const attendeesText = attendees.map((a) => a.employee_name).join(" ");
 
-      await loadRegistrations();
-      alert("تم حذف التسجيل بنجاح.");
-    } catch (error) {
-      console.error(error);
-      alert("تعذر حذف التسجيل.");
+      const haystack = [
+        course.course_name,
+        course.instructor,
+        course.location,
+        course.description,
+        attendeesText,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [courses, registrationsByCourse, search]);
+
+  const exportExcel = () => {
+    if (courses.length === 0) {
+      alert("لا توجد دورات مسجلة لتصديرها.");
+      return;
     }
-  };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "مجدول": return "#DBEAFE";
-      case "جاري": return "#FEF3C7";
-      case "مكتمل": return "#D1FAE5";
-      case "ملغي": return "#FEE2E2";
-      default: return "#F1F5F9";
-    }
-  };
+    const rows = [];
+    courses.forEach((course, idx) => {
+      const attendees = registrationsByCourse[course.id] || [];
+      const attendeesNames = attendees.length > 0
+        ? attendees.map((a) => a.employee_name).join(" - ")
+        : (course.current_participants ? course.current_participants + " حاضرين" : "—");
 
-  const getStatusTextColor = (status) => {
-    switch (status) {
-      case "مجدول": return "#1D4ED8";
-      case "جاري": return "#B45309";
-      case "مكتمل": return "#047857";
-      case "ملغي": return "#B91C1C";
-      default: return "#64748B";
-    }
-  };
+      rows.push({
+        "م": idx + 1,
+        "اسم الدورة": course.course_name,
+        "اسم المدرب": course.instructor || "—",
+        "تاريخ الدورة": course.start_date || "—",
+        "المكان / القاعة": course.location || "—",
+        "عدد الحاضرين": attendees.length || course.current_participants || 0,
+        "أسماء من حضر الدورة": attendeesNames,
+        "ملاحظات": course.description || "—",
+      });
+    });
 
-  const getCourseRegistrations = (courseId) => {
-    return registrations.filter(reg => reg.course_id === courseId);
-  };
-
-  if (loading) {
-    return (
-      <div style={styles.card}>
-        <div style={styles.infoBox}>جاري تحميل الدورات...</div>
-      </div>
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "سجل الدورات التدريبية");
+    XLSX.writeFile(
+      wb,
+      "الدورات_التدريبية_" + new Date().toISOString().split("T")[0] + ".xlsx"
     );
-  }
+  };
 
   return (
     <div>
       <div style={styles.card}>
         <div style={styles.cardHeader}>
           <div>
-            <h2 style={styles.cardTitle}>الدورات التدريبية</h2>
+            <h2 style={styles.cardTitle}>📚 سجل الدورات التدريبية</h2>
             <p style={styles.cardSub}>
-              إدارة وتنظيم الدورات التدريبية في الكلية
+              توثيق وتعديل وحذف الدورات التدريبية التي حضرها موظفو القسم مع اسم المدرب وتاريخ الحضور
             </p>
           </div>
-          <button
-            style={styles.primaryButton}
-            onClick={() => setShowCourseForm(true)}
-          >
-            ＋ إضافة دورة
-          </button>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button style={styles.secondaryButton} onClick={loadData}>
+              🔄 تحديث
+            </button>
+            <button style={styles.secondaryButton} onClick={exportExcel}>
+              📊 تصدير Excel
+            </button>
+            <button
+              style={styles.primaryButton}
+              onClick={handleOpenCreate}
+            >
+              ＋ تسجيل دورة جديدة
+            </button>
+          </div>
         </div>
 
+        {loading && <div style={styles.infoBox}>جاري تحميل سجل الدورات...</div>}
         {error && <div style={styles.errorBox}>{error}</div>}
 
-        <div style={styles.resultText}>
-          عدد الدورات: <strong>{courses.length}</strong> | 
-          عدد المسجلين: <strong>{registrations.length}</strong>
+        <div style={styles.claimStats}>
+          <ClaimStat title="إجمالي الدورات" value={courses.length} icon="📚" />
+          <ClaimStat title="إجمالي الحضور" value={totalAttendeesCount} icon="👥" />
+          <ClaimStat
+            title="أحدث دورة"
+            value={courses[0]?.course_name || "لا يوجد بعد"}
+            icon="📅"
+          />
         </div>
 
-        {courses.length === 0 ? (
-          <div style={styles.infoBox}>لا يوجد دورات حالياً.</div>
-        ) : (
+        <div style={styles.filterRow}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔎 بحث باسم الدورة، اسم المدرب، أو اسم الموظف الحاضر..."
+            style={styles.claimSearch}
+          />
+        </div>
+
+        <div style={styles.resultText}>
+          عدد الدورات المسجلة: <strong>{filteredCourses.length}</strong> من{" "}
+          <strong>{courses.length}</strong>
+        </div>
+
+        {!loading && filteredCourses.length > 0 && (
           <div style={styles.claimTableWrapper}>
             <table style={styles.table}>
               <thead>
                 <tr>
                   <th style={styles.th}>اسم الدورة</th>
-                  <th style={styles.th}>الكود</th>
-                  <th style={styles.th}>المدرب</th>
+                  <th style={styles.th}>تاريخ الانعقاد</th>
+                  <th style={styles.th}>اسم المدرب</th>
                   <th style={styles.th}>المكان</th>
-                  <th style={styles.th}>تاريخ البدء</th>
-                  <th style={styles.th}>تاريخ الانتهاء</th>
-                  <th style={styles.th}>المدة</th>
-                  <th style={styles.th}>المشاركون</th>
-                  <th style={styles.th}>الحالة</th>
-                  <th style={styles.th}>إجراءات</th>
+                  <th style={styles.th}>من حضر الدورة</th>
+                  <th style={styles.th}>العدد</th>
+                  <th style={styles.th}>ملاحظات</th>
+                  <th style={styles.th}>إجراءات المدير</th>
                 </tr>
               </thead>
               <tbody>
-                {courses.map((course) => (
-                  <tr key={course.id} style={styles.tr}>
-                    <td style={styles.td}>
-                      <strong>{course.course_name}</strong>
-                      {course.description && (
-                        <div style={{ fontSize: "12px", color: "#64748B", marginTop: "4px" }}>
-                          {course.description}
-                        </div>
-                      )}
-                    </td>
-                    <td style={styles.td}>{course.course_code || "—"}</td>
-                    <td style={styles.td}>{course.instructor || "—"}</td>
-                    <td style={styles.td}>{course.location || "—"}</td>
-                    <td style={styles.td}>{course.start_date || "—"}</td>
-                    <td style={styles.td}>{course.end_date || "—"}</td>
-                    <td style={styles.td}>{course.duration_hours ? `${course.duration_hours} ساعة` : "—"}</td>
-                    <td style={styles.td}>
-                      {course.current_participants || 0} / {course.max_participants || "∞"}
-                    </td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          padding: "4px 12px",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "700",
-                          background: getStatusColor(course.status),
-                          color: getStatusTextColor(course.status),
-                        }}
-                      >
-                        {course.status}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <button
-                        style={styles.viewButton}
-                        onClick={() => {
-                          setSelectedCourse(course);
-                          setShowRegistrationForm(true);
-                        }}
-                      >
-                        تسجيل
-                      </button>
-                      <button
-                        style={styles.deleteButton}
-                        onClick={() => handleDeleteCourse(course.id)}
-                      >
-                        حذف
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                {filteredCourses.map((course) => {
+                  const attendees = registrationsByCourse[course.id] || [];
+                  const count = attendees.length || course.current_participants || 0;
 
-      {/* المسجلين في الدورات */}
-      {registrations.length > 0 && (
-        <div style={styles.card}>
-          <div style={styles.cardHeader}>
-            <div>
-              <h2 style={styles.cardTitle}>المسجلين في الدورات</h2>
-              <p style={styles.cardSub}>
-                قائمة الموظفين المسجلين في الدورات التدريبية
-              </p>
-            </div>
-          </div>
-
-          <div style={styles.claimTableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>اسم الموظف</th>
-                  <th style={styles.th}>الكود</th>
-                  <th style={styles.th}>القسم</th>
-                  <th style={styles.th}>الدورة</th>
-                  <th style={styles.th}>تاريخ التسجيل</th>
-                  <th style={styles.th}>الحضور</th>
-                  <th style={styles.th}>الإتمام</th>
-                  <th style={styles.th}>إجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {registrations.map((reg) => {
-                  const course = courses.find(c => c.id === reg.course_id);
                   return (
-                    <tr key={reg.id} style={styles.tr}>
-                      <td style={styles.td}>{reg.employee_name}</td>
-                      <td style={styles.td}>{reg.employee_code || "—"}</td>
-                      <td style={styles.td}>{reg.department || "—"}</td>
-                      <td style={styles.td}>{course?.course_name || "—"}</td>
+                    <tr key={course.id} style={styles.tr}>
                       <td style={styles.td}>
-                        {new Date(reg.created_at).toLocaleDateString("ar-EG")}
+                        <strong style={{ color: "#1E293B", fontSize: "14px" }}>
+                          {course.course_name}
+                        </strong>
                       </td>
-                      <td style={styles.td}>{reg.attendance_status}</td>
-                      <td style={styles.td}>{reg.completion_status}</td>
+                      <td style={styles.td}>{formatCourseDate(course.start_date)}</td>
                       <td style={styles.td}>
-                        <button
-                          style={styles.deleteButton}
-                          onClick={() => handleDeleteRegistration(reg.id)}
+                        <span
+                          style={{
+                            background: "#FEF3C7",
+                            color: "#92400E",
+                            padding: "4px 10px",
+                            borderRadius: "8px",
+                            fontWeight: "600",
+                            fontSize: "12px",
+                            display: "inline-block",
+                          }}
                         >
-                          حذف
-                        </button>
+                          👨‍🏫 {course.instructor || "—"}
+                        </span>
+                      </td>
+                      <td style={styles.td}>{course.location || "—"}</td>
+                      <td style={styles.td}>
+                        {attendees.length > 0 ? (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: "4px",
+                              maxWidth: "320px",
+                            }}
+                          >
+                            {attendees.slice(0, 3).map((attendee) => (
+                              <span
+                                key={attendee.id}
+                                style={{
+                                  background: "#E0F2FE",
+                                  color: "#0369A1",
+                                  padding: "2px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "11px",
+                                  fontWeight: "500",
+                                }}
+                              >
+                                👤 {attendee.employee_name}
+                              </span>
+                            ))}
+                            {attendees.length > 3 && (
+                              <button
+                                onClick={() => setSelectedCourse(course)}
+                                style={{
+                                  background: "#F1F5F9",
+                                  color: "#475569",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  padding: "2px 8px",
+                                  fontSize: "11px",
+                                  cursor: "pointer",
+                                  fontWeight: "bold",
+                                }}
+                              >
+                                +{attendees.length - 3} آخرين
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#64748B" }}>
+                            {course.current_participants ? course.current_participants + " موظفين" : "—"}
+                          </span>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        <strong style={{ color: "#047857", fontSize: "14px" }}>
+                          {count}
+                        </strong>
+                      </td>
+                      <td style={styles.td}>
+                        <div
+                          style={{
+                            maxWidth: "180px",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                          title={course.description || ""}
+                        >
+                          {course.description || "—"}
+                        </div>
+                      </td>
+                      <td style={styles.td}>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <button
+                            style={{
+                              ...styles.secondaryButton,
+                              padding: "4px 8px",
+                              fontSize: "12px",
+                            }}
+                            onClick={() => setSelectedCourse(course)}
+                            title="عرض تفاصيل الدورة والحضور"
+                          >
+                            👁️
+                          </button>
+                          <button
+                            style={{
+                              ...styles.viewButton,
+                              background: "#FEF3C7",
+                              color: "#92400E",
+                              borderColor: "#FDE68A",
+                              padding: "4px 8px",
+                              fontSize: "12px",
+                            }}
+                            onClick={() => handleOpenEdit(course)}
+                            title="تعديل الدورة والحضور"
+                          >
+                            ✏️ تعديل
+                          </button>
+                          <button
+                            style={{
+                              ...styles.deleteButton,
+                              padding: "4px 8px",
+                              fontSize: "12px",
+                            }}
+                            onClick={() => handleDeleteCourse(course.id)}
+                            title="حذف الدورة"
+                          >
+                            🗑️ حذف
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -409,112 +675,91 @@ export default function TrainingCourses() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* نموذج إضافة دورة */}
+        {!loading && courses.length === 0 && !error && (
+          <EmptyState text="لا يوجد سجل دورات حتى الآن. اضغطي على زر 'تسجيل دورة جديدة' لإضافة دورة." />
+        )}
+
+        {!loading && courses.length > 0 && filteredCourses.length === 0 && (
+          <EmptyState text="لا توجد دورات مطابقة لشروط البحث." />
+        )}
+      </div>
+
+      {/* Modal تسجيل وتعديل دورة */}
       {showCourseForm && (
         <div
           style={styles.modalOverlay}
-          onClick={() => setShowCourseForm(false)}
+          onClick={() => {
+            if (!submitting) setShowCourseForm(false);
+          }}
         >
           <div
-            style={styles.loginBox}
+            style={{ ...styles.loginBox, width: "min(560px, 95%)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               style={styles.closeButton}
-              onClick={() => setShowCourseForm(false)}
+              onClick={() => {
+                if (!submitting) setShowCourseForm(false);
+              }}
             >
               ×
             </button>
 
-            <div style={{ fontSize: "40px", marginBottom: "10px" }}>
-              📚
-            </div>
+            <div style={{ fontSize: "42px", marginBottom: "8px" }}>📚</div>
 
-            <h2 style={styles.loginTitle}>إضافة دورة تدريبية جديدة</h2>
+            <h2 style={styles.loginTitle}>
+              {editingCourseId ? "تعديل بيانات الدورة التدريبية" : "تسجيل دورة تدريبية جديدة"}
+            </h2>
 
             <p style={styles.loginDescription}>
-              أدخل بيانات الدورة التدريبية
+              سجلي بيانات الدورة واسم المدرب وأسماء الحاضرين لتوثيق حضور القسم
             </p>
 
             <form onSubmit={handleCourseSubmit}>
-              <input
-                type="text"
-                placeholder="اسم الدورة"
-                value={courseForm.courseName}
-                onChange={(e) =>
-                  setCourseForm({ ...courseForm, courseName: e.target.value })
-                }
-                style={styles.input}
-                required
-              />
+              <div style={{ marginBottom: "12px", textAlign: "right" }}>
+                <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  اسم الدورة التدريبية <span style={{ color: "#DC2626" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: نظام إدارة المرتبات والاستحقاقات"
+                  value={courseForm.courseName}
+                  onChange={(e) =>
+                    setCourseForm({ ...courseForm, courseName: e.target.value })
+                  }
+                  style={styles.input}
+                  required
+                />
+              </div>
 
-              <input
-                type="text"
-                placeholder="كود الدورة (اختياري)"
-                value={courseForm.courseCode}
-                onChange={(e) =>
-                  setCourseForm({ ...courseForm, courseCode: e.target.value })
-                }
-                style={styles.input}
-              />
-
-              <textarea
-                placeholder="وصف الدورة (اختياري)"
-                value={courseForm.description}
-                onChange={(e) =>
-                  setCourseForm({ ...courseForm, description: e.target.value })
-                }
-                style={{ ...styles.input, minHeight: "60px", resize: "vertical" }}
-              />
-
-              <input
-                type="text"
-                placeholder="اسم المدرب"
-                value={courseForm.instructor}
-                onChange={(e) =>
-                  setCourseForm({ ...courseForm, instructor: e.target.value })
-                }
-                style={styles.input}
-              />
-
-              <input
-                type="text"
-                placeholder="مكان الدورة"
-                value={courseForm.location}
-                onChange={(e) =>
-                  setCourseForm({ ...courseForm, location: e.target.value })
-                }
-                style={styles.input}
-              />
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div>
-                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "5px", display: "block" }}>
-                    تاريخ البدء
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
+                <div style={{ textAlign: "right" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                    اسم المدرب / المحاضر <span style={{ color: "#DC2626" }}>*</span>
                   </label>
                   <input
-                    type="date"
-                    value={courseForm.startDate}
+                    type="text"
+                    placeholder="مثال: د. أحمد محمد"
+                    value={courseForm.instructor}
                     onChange={(e) =>
-                      setCourseForm({ ...courseForm, startDate: e.target.value })
+                      setCourseForm({ ...courseForm, instructor: e.target.value })
                     }
                     style={styles.input}
                     required
                   />
                 </div>
 
-                <div>
-                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "5px", display: "block" }}>
-                    تاريخ الانتهاء
+                <div style={{ textAlign: "right" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                    تاريخ انعقاد الدورة <span style={{ color: "#DC2626" }}>*</span>
                   </label>
                   <input
                     type="date"
-                    value={courseForm.endDate}
+                    value={courseForm.courseDate}
                     onChange={(e) =>
-                      setCourseForm({ ...courseForm, endDate: e.target.value })
+                      setCourseForm({ ...courseForm, courseDate: e.target.value })
                     }
                     style={styles.input}
                     required
@@ -522,130 +767,200 @@ export default function TrainingCourses() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div>
-                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "5px", display: "block" }}>
-                    المدة (ساعات)
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
+                <div style={{ textAlign: "right" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                    المكان / القاعة
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: قاعة التدريب الرئيسية"
+                    value={courseForm.location}
+                    onChange={(e) =>
+                      setCourseForm({ ...courseForm, location: e.target.value })
+                    }
+                    style={styles.input}
+                  />
+                </div>
+
+                <div style={{ textAlign: "right" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                    عدد الساعات (اختياري)
                   </label>
                   <input
                     type="number"
-                    placeholder="عدد الساعات"
+                    placeholder="مثال: 15"
                     value={courseForm.durationHours}
                     onChange={(e) =>
                       setCourseForm({ ...courseForm, durationHours: e.target.value })
                     }
                     style={styles.input}
-                    min="1"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "5px", display: "block" }}>
-                    الحد الأقصى للمشاركين
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="عدد المشاركين"
-                    value={courseForm.maxParticipants}
-                    onChange={(e) =>
-                      setCourseForm({ ...courseForm, maxParticipants: e.target.value })
-                    }
-                    style={styles.input}
-                    min="1"
                   />
                 </div>
               </div>
 
-              <input
-                type="text"
-                placeholder="الفئة المستهدفة"
-                value={courseForm.targetAudience}
-                onChange={(e) =>
-                  setCourseForm({ ...courseForm, targetAudience: e.target.value })
-                }
-                style={styles.input}
-              />
+              <div style={{ marginBottom: "12px", textAlign: "right" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "600" }}>
+                    أسماء الحاضرين من القسم <span style={{ color: "#DC2626" }}>*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sample = "حورية فؤاد\nمسؤول المرتبات\nأعضاء قسم الاستحقاقات";
+                      setCourseForm((prev) => ({
+                        ...prev,
+                        attendees: prev.attendees ? prev.attendees + "\n" + sample : sample,
+                      }));
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#2563EB",
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    + إضافة نموذج أسماء
+                  </button>
+                </div>
+                <textarea
+                  placeholder="اكتبي أسماء الحاضرين (كل اسم في سطر مستقل أو مفصولين بفواصل)"
+                  value={courseForm.attendees}
+                  onChange={(e) =>
+                    setCourseForm({ ...courseForm, attendees: e.target.value })
+                  }
+                  style={{ ...styles.input, minHeight: "100px", resize: "vertical" }}
+                  required
+                />
+              </div>
 
-              <button type="submit" style={styles.loginButton}>
-                إنشاء الدورة
-              </button>
+              <div style={{ marginBottom: "16px", textAlign: "right" }}>
+                <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  ملاحظات أو مخرجات الدورة (اختياري)
+                </label>
+                <textarea
+                  placeholder="أي ملاحظات إضافية حول الدورة..."
+                  value={courseForm.notes}
+                  onChange={(e) =>
+                    setCourseForm({ ...courseForm, notes: e.target.value })
+                  }
+                  style={{ ...styles.input, minHeight: "60px", resize: "vertical" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={() => setShowCourseForm(false)}
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  style={{
+                    ...styles.primaryButton,
+                    opacity: submitting ? 0.7 : 1,
+                  }}
+                >
+                  {submitting ? "جاري الحفظ..." : "💾 حفظ الدورة"}
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* نموذج تسجيل في دورة */}
-      {showRegistrationForm && selectedCourse && (
-        <div
-          style={styles.modalOverlay}
-          onClick={() => setShowRegistrationForm(false)}
-        >
+      {/* Modal تفاصيل الدورة والحضور */}
+      {selectedCourse && (
+        <div style={styles.modalOverlay} onClick={() => setSelectedCourse(null)}>
           <div
-            style={styles.loginBox}
+            style={{ ...styles.loginBox, width: "min(580px, 95%)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              style={styles.closeButton}
-              onClick={() => setShowRegistrationForm(false)}
-            >
+            <button style={styles.closeButton} onClick={() => setSelectedCourse(null)}>
               ×
             </button>
 
-            <div style={{ fontSize: "40px", marginBottom: "10px" }}>
-              ✍️
+            <div style={{ fontSize: "38px", marginBottom: "8px" }}>🎓</div>
+
+            <h3 style={styles.loginTitle}>{selectedCourse.course_name}</h3>
+
+            <div style={{ textAlign: "right", marginTop: "16px", lineHeight: "1.8" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
+                <div>
+                  <strong>المدرب:</strong> {selectedCourse.instructor || "—"}
+                </div>
+                <div>
+                  <strong>التاريخ:</strong> {formatCourseDate(selectedCourse.start_date)}
+                </div>
+                <div>
+                  <strong>المكان:</strong> {selectedCourse.location || "—"}
+                </div>
+                <div>
+                  <strong>عدد الساعات:</strong>{" "}
+                  {selectedCourse.duration_hours ? selectedCourse.duration_hours + " ساعة" : "—"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "#F8FAFC",
+                  padding: "12px 16px",
+                  borderRadius: "10px",
+                  border: "1px solid #E2E8F0",
+                  marginTop: "12px",
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: "8px", color: "#1E293B" }}>
+                  👥 قائمة من حضر الدورة:
+                </strong>
+                {(() => {
+                  const attendees = registrationsByCourse[selectedCourse.id] || [];
+                  if (attendees.length === 0) {
+                    return (
+                      <div style={{ color: "#64748B" }}>
+                        تم تسجيل حضور {selectedCourse.current_participants || 0} مشارك.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {attendees.map((a, i) => (
+                        <span
+                          key={a.id || i}
+                          style={{
+                            background: "#DBEAFE",
+                            color: "#1E40AF",
+                            padding: "4px 12px",
+                            borderRadius: "20px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                          }}
+                        >
+                          ✓ {a.employee_name}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {selectedCourse.description && (
+                <div style={{ marginTop: "12px" }}>
+                  <strong>الملاحظات:</strong> {selectedCourse.description}
+                </div>
+              )}
             </div>
 
-            <h2 style={styles.loginTitle}>تسجيل في دورة</h2>
-
-            <p style={styles.loginDescription}>
-              تسجيل موظف في دورة: <strong>{selectedCourse.course_name}</strong>
-            </p>
-
-            <form onSubmit={handleRegistrationSubmit}>
-              <input
-                type="text"
-                placeholder="اسم الموظف"
-                value={registrationForm.employeeName}
-                onChange={(e) =>
-                  setRegistrationForm({ ...registrationForm, employeeName: e.target.value })
-                }
-                style={styles.input}
-                required
-              />
-
-              <input
-                type="text"
-                placeholder="كود الموظف (اختياري)"
-                value={registrationForm.employeeCode}
-                onChange={(e) =>
-                  setRegistrationForm({ ...registrationForm, employeeCode: e.target.value })
-                }
-                style={styles.input}
-              />
-
-              <input
-                type="text"
-                placeholder="القسم (اختياري)"
-                value={registrationForm.department}
-                onChange={(e) =>
-                  setRegistrationForm({ ...registrationForm, department: e.target.value })
-                }
-                style={styles.input}
-              />
-
-              <textarea
-                placeholder="ملاحظات (اختياري)"
-                value={registrationForm.notes}
-                onChange={(e) =>
-                  setRegistrationForm({ ...registrationForm, notes: e.target.value })
-                }
-                style={{ ...styles.input, minHeight: "60px", resize: "vertical" }}
-              />
-
-              <button type="submit" style={styles.loginButton}>
-                تأكيد التسجيل
+            <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
+              <button style={styles.primaryButton} onClick={() => setSelectedCourse(null)}>
+                إغلاق
               </button>
-            </form>
+            </div>
           </div>
         </div>
       )}

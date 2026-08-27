@@ -10,7 +10,9 @@ export default function DailyView({
   setFilterStatus,
   onAdd,
   onSelect,
+  onEdit,
   onDelete,
+  canManage = false,
 }) {
   return (
     <div style={styles.card}>
@@ -82,18 +84,39 @@ export default function DailyView({
                     <StatusBadge status={task.status} />
                   </td>
                   <td style={styles.td}>
-                    <button
-                      style={styles.viewButton}
-                      onClick={() => onSelect(task)}
-                    >
-                      عرض
-                    </button>
-                    <button
-                      style={styles.deleteButton}
-                      onClick={() => onDelete(task.id)}
-                    >
-                      حذف
-                    </button>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      {canManage && <button
+                        style={{
+                          ...styles.viewButton,
+                          background: "#EFF6FF",
+                          color: "#1D4ED8",
+                          borderColor: "#BFDBFE",
+                        }}
+                        onClick={() => onSelect(task)}
+                        title="عرض التفاصيل"
+                      >
+                        👁️ عرض
+                      </button>}
+                      {canManage && <button
+                        style={{
+                          ...styles.viewButton,
+                          background: "#FEF3C7",
+                          color: "#92400E",
+                          borderColor: "#FDE68A",
+                        }}
+                        onClick={() => (onEdit ? onEdit(task) : onSelect(task))}
+                        title="تعديل المهمة"
+                      >
+                        ✏️ تعديل
+                      </button>}
+                      {canManage && <button
+                        style={styles.deleteButton}
+                        onClick={() => onDelete(task.id)}
+                        title="حذف المهمة"
+                      >
+                        🗑️ حذف
+                      </button>}
+                    </div>
                   </td>
                 </tr>
               ))}

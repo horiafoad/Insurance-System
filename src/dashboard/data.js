@@ -71,7 +71,7 @@ export const TASK_TYPES = [
   },
   {
     id: "taxes",
-    title: "الضرائب",
+    title: "إعارات",
     icon: "💼",
     color: "#FDE68A",
     frequency: "دوري",
@@ -137,9 +137,9 @@ export const MENU_ITEMS = [
     icon: "📥",
   },
   {
-    id: "performance_evaluation",
-    title: "تقييم الأداء والجودة",
-    icon: "📊",
+    id: "feedback",
+    title: "الشكاوى والتقييمات",
+    icon: "💬",
   },
   {
     id: "training_courses",

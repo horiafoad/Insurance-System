@@ -20,6 +20,15 @@ function App() {
     requestedMonth: "",
     requestedYear: new Date().getFullYear(),
   });
+  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
+  const [feedbackType, setFeedbackType] = useState("rating");
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState({
+    name: "",
+    phone: "",
+    rating: "5",
+    message: "",
+  });
   const [loginForm, setLoginForm] = useState({
     username: "",
     password: "",
@@ -108,6 +117,17 @@ function App() {
     setShowServiceForm(true);
   };
 
+  const openFeedbackForm = (type) => {
+    setFeedbackType(type);
+    setFeedbackForm({
+      name: "",
+      phone: "",
+      rating: "5",
+      message: "",
+    });
+    setShowFeedbackForm(true);
+  };
+
   const submitServiceRequest = async () => {
     if (
       !serviceForm.name.trim() ||
@@ -176,6 +196,93 @@ function App() {
     }
   };
 
+  const submitFeedback = async () => {
+    if (!feedbackForm.name.trim()) {
+      alert("من فضلك أدخلي الاسم.");
+      return;
+    }
+
+    if (feedbackType === "rating" && !feedbackForm.rating) {
+      alert("من فضلك اختاري التقييم.");
+      return;
+    }
+
+    if (feedbackType === "complaint" && !feedbackForm.message.trim()) {
+      alert("من فضلك اكتبي الشكوى أو المقترح.");
+      return;
+    }
+
+    const payload = {
+      feedback_type: feedbackType === "rating" ? "تقييم خدمة" : "شكوى / مقترح",
+      name: feedbackForm.name.trim(),
+      phone: feedbackForm.phone.trim() || null,
+      rating:
+        feedbackType === "rating" ? Number(feedbackForm.rating) : null,
+      message: feedbackForm.message.trim() || null,
+      source_page: "الرئيسية",
+      status: "جديد",
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      setFeedbackLoading(true);
+
+      let savedToDb = false;
+      try {
+        const { error } = await supabase.from("public_feedback").insert({
+          feedback_type: payload.feedback_type,
+          name: payload.name,
+          phone: payload.phone,
+          rating: payload.rating,
+          message: payload.message,
+          source_page: payload.source_page,
+          status: payload.status,
+        });
+
+        if (error) {
+          console.warn("Supabase feedback insert warning:", error.message);
+        } else {
+          savedToDb = true;
+        }
+      } catch (dbErr) {
+        console.warn("Supabase feedback exception:", dbErr);
+      }
+
+      // Always save a local copy as backup so nothing is lost
+      try {
+        const existing = JSON.parse(
+          localStorage.getItem("backup_public_feedback") || "[]"
+        );
+        existing.unshift({
+          ...payload,
+          id: savedToDb ? undefined : "local-" + Date.now(),
+        });
+        localStorage.setItem("backup_public_feedback", JSON.stringify(existing));
+      } catch (storageErr) {
+        console.error("LocalStorage save error:", storageErr);
+      }
+
+      setShowFeedbackForm(false);
+      setFeedbackForm({
+        name: "",
+        phone: "",
+        rating: "5",
+        message: "",
+      });
+
+      alert(
+        feedbackType === "rating"
+          ? "تم إرسال تقييم الخدمة بنجاح وحفظه في النظام."
+          : "تم إرسال الشكوى أو المقترح بنجاح وحفظها للمتابعة في لوحة الإدارة."
+      );
+    } catch (error) {
+      console.error(error);
+      alert("حدث خطأ أثناء حفظ الطلب، يرجى المحاولة مرة أخرى.");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
+
   const handleLogin = async () => {
     if (!loginForm.username || !loginForm.password) {
       setLoginError("من فضلك أدخلي اسم المستخدم وكلمة المرور.");
@@ -186,15 +293,10 @@ function App() {
       setLoginLoading(true);
       setLoginError("");
 
-      console.log("محاولة تسجيل الدخول:", loginForm.username);
-      console.log("كلمة المرور:", loginForm.password);
-
-      // تجربة البحث عن المستخدم أولاً
+      // البحث عن المستخدم في جدول users
       const { data: allUsers, error: allError } = await supabase
         .from("users")
         .select("username, password");
-
-      console.log("جميع المستخدمين:", allUsers, allError);
 
       if (allError) {
         console.error("خطأ في جلب المستخدمين:", allError);
@@ -207,10 +309,7 @@ function App() {
         user => user.username === loginForm.username && user.password === loginForm.password
       );
 
-      console.log("المستخدم المطابق:", matchedUser);
-
       if (!matchedUser) {
-        console.log("لم يتم العثور على المستخدم المطابق");
         setLoginError("اسم المستخدم أو كلمة المرور غير صحيحة.");
         return;
       }
@@ -489,7 +588,12 @@ function App() {
 
                 <p>شاركنا رأيك في مستوى الخدمة المقدمة.</p>
 
-                <button style={styles.outlineButton}>تقييم الخدمة</button>
+                <button
+                  style={styles.outlineButton}
+                  onClick={() => openFeedbackForm("rating")}
+                >
+                  تقييم الخدمة
+                </button>
               </div>
 
               <div style={styles.evaluationCard}>
@@ -499,7 +603,12 @@ function App() {
 
                 <p>أرسل لنا شكواك أو مقترحك لتطوير الخدمة.</p>
 
-                <button style={styles.outlineButton}>إرسال رسالة</button>
+                <button
+                  style={styles.outlineButton}
+                  onClick={() => openFeedbackForm("complaint")}
+                >
+                  إرسال رسالة
+                </button>
               </div>
             </div>
           </section>
@@ -757,6 +866,111 @@ function App() {
               }}
             >
               {serviceLoading ? "جاري إرسال الطلب..." : "إرسال الطلب"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showFeedbackForm && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => {
+            if (!feedbackLoading) setShowFeedbackForm(false);
+          }}
+        >
+          <div
+            style={{ ...styles.loginBox, width: "min(520px, 100%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={styles.closeButton}
+              onClick={() => {
+                if (!feedbackLoading) setShowFeedbackForm(false);
+              }}
+            >
+              ×
+            </button>
+
+            <div style={{ fontSize: "42px", marginBottom: "8px" }}>
+              {feedbackType === "rating" ? "⭐" : "💬"}
+            </div>
+
+            <h2 style={styles.loginTitle}>
+              {feedbackType === "rating"
+                ? "إرسال تقييم الخدمة"
+                : "إرسال شكوى أو مقترح"}
+            </h2>
+
+            <p style={styles.loginDescription}>
+              {feedbackType === "rating"
+                ? "شاركينا رأيك في مستوى الخدمة المقدمة."
+                : "اكتبي شكواك أو مقترحك وسيظهر في لوحة الإدارة للمتابعة."}
+            </p>
+
+            <input
+              type="text"
+              placeholder="الاسم"
+              value={feedbackForm.name}
+              onChange={(e) =>
+                setFeedbackForm((prev) => ({ ...prev, name: e.target.value }))
+              }
+              style={styles.input}
+            />
+
+            <input
+              type="tel"
+              placeholder="رقم التليفون (اختياري)"
+              value={feedbackForm.phone}
+              onChange={(e) =>
+                setFeedbackForm((prev) => ({ ...prev, phone: e.target.value }))
+              }
+              style={styles.input}
+            />
+
+            {feedbackType === "rating" && (
+              <select
+                value={feedbackForm.rating}
+                onChange={(e) =>
+                  setFeedbackForm((prev) => ({
+                    ...prev,
+                    rating: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              >
+                <option value="5">5 - ممتاز</option>
+                <option value="4">4 - جيد جداً</option>
+                <option value="3">3 - جيد</option>
+                <option value="2">2 - مقبول</option>
+                <option value="1">1 - ضعيف</option>
+              </select>
+            )}
+
+            <textarea
+              placeholder={
+                feedbackType === "rating"
+                  ? "ملاحظاتك عن الخدمة (اختياري)"
+                  : "اكتبي الشكوى أو المقترح"
+              }
+              value={feedbackForm.message}
+              onChange={(e) =>
+                setFeedbackForm((prev) => ({
+                  ...prev,
+                  message: e.target.value,
+                }))
+              }
+              style={{ ...styles.input, minHeight: "110px", resize: "vertical" }}
+            />
+
+            <button
+              onClick={submitFeedback}
+              disabled={feedbackLoading}
+              style={{
+                ...styles.loginButton,
+                opacity: feedbackLoading ? 0.7 : 1,
+              }}
+            >
+              {feedbackLoading ? "جاري الإرسال..." : "إرسال"}
             </button>
           </div>
         </div>

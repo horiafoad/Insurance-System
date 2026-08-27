@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
 import { styles } from "./dashboard/styles";
@@ -18,6 +18,7 @@ import CriteriaView, { ServiceRequestsView } from "./dashboard/CriteriaView";
 import StudyLeavesPage from "./dashboard/StudyLeavesPage";
 import UserManagement from "./dashboard/UserManagement";
 import PerformanceEvaluation from "./dashboard/PerformanceEvaluation";
+import FeedbackView from "./dashboard/FeedbackView";
 import TrainingCourses from "./dashboard/TrainingCourses";
 import {
   ClaimFormModal,
@@ -54,6 +55,8 @@ export default function AdminDashboard({ currentUser }) {
   const [studyLeaves, setStudyLeaves] = useState([]);
   const [studyLeaveLoading, setStudyLeaveLoading] = useState(false);
   const [studyLeaveError, setStudyLeaveError] = useState("");
+
+  const [serviceRequestFilter, setServiceRequestFilter] = useState("all");
 
   const [appLoading, setAppLoading] = useState(true);
   const [appError, setAppError] = useState("");
@@ -581,6 +584,10 @@ export default function AdminDashboard({ currentUser }) {
             setActiveMenu={setActiveMenu}
             setFilterType={setFilterType}
             setSelectedTask={setSelectedTask}
+            onServiceCardClick={(serviceType) => {
+              setServiceRequestFilter(serviceType);
+              setActiveMenu("service_requests");
+            }}
           />
         )}
 
@@ -598,7 +605,14 @@ export default function AdminDashboard({ currentUser }) {
           />
         )}
 
-        {activeMenu === "service_requests" && <ServiceRequestsView />}
+        {activeMenu === "service_requests" && (
+          <ServiceRequestsView
+            selectedService={serviceRequestFilter}
+            onServiceFilterChange={setServiceRequestFilter}
+          />
+        )}
+
+        {activeMenu === "feedback" && <FeedbackView />}
 
         {activeMenu === "claims" && (
           <ClaimsPage

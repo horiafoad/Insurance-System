@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 
@@ -7,6 +7,7 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [editingUserId, setEditingUserId] = useState(null);
   const [formData, setFormData] = useState({
     username: "",
     password: "",
@@ -42,48 +43,99 @@ export default function UserManagement() {
     }
   };
 
+  const handleOpenCreate = () => {
+    setEditingUserId(null);
+    setFormData({
+      username: "",
+      password: "",
+      fullName: "",
+      role: "admin",
+    });
+    setShowForm(true);
+  };
+
+  const handleOpenEdit = (user) => {
+    setEditingUserId(user.id);
+    setFormData({
+      username: user.username || "",
+      password: user.password || "",
+      fullName: user.full_name || "",
+      role: user.role || "admin",
+    });
+    setShowForm(true);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.username || !formData.password || !formData.fullName) {
-      alert("من فضلك أدخلي جميع البيانات المطلوبة.");
+    if (!formData.username.trim() || !formData.fullName.trim()) {
+      alert("من فضلك أدخلي اسم المستخدم والاسم الكامل.");
       return;
     }
 
     try {
-      const { data, error } = await supabase
-        .from("users")
-        .insert({
-          username: formData.username,
-          password: formData.password,
-          full_name: formData.fullName,
+      if (editingUserId) {
+        // Update user
+        const updatePayload = {
+          username: formData.username.trim(),
+          full_name: formData.fullName.trim(),
           role: formData.role,
-        })
-        .select()
-        .single();
+        };
+        if (formData.password) {
+          updatePayload.password = formData.password;
+        }
 
-      if (error) {
-        console.error(error);
-        alert("حدث خطأ أثناء إنشاء المستخدم: " + error.message);
-        return;
+        const { error: updateError } = await supabase
+          .from("users")
+          .update(updatePayload)
+          .eq("id", editingUserId);
+
+        if (updateError) {
+          console.error(updateError);
+          alert("حدث خطأ أثناء تعديل المستخدم: " + updateError.message);
+          return;
+        }
+
+        alert("تم تعديل بيانات المستخدم بنجاح.");
+      } else {
+        // Create user
+        if (!formData.password) {
+          alert("من فضلك أدخلي كلمة المرور.");
+          return;
+        }
+
+        const { error: insertError } = await supabase
+          .from("users")
+          .insert({
+            username: formData.username.trim(),
+            password: formData.password,
+            full_name: formData.fullName.trim(),
+            role: formData.role,
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error(insertError);
+          alert("حدث خطأ أثناء إنشاء المستخدم: " + insertError.message);
+          return;
+        }
+
+        alert("تم إنشاء المستخدم بنجاح.");
       }
 
       await loadUsers();
       setShowForm(false);
-      setFormData({
-        username: "",
-        password: "",
-        fullName: "",
-        role: "admin",
-      });
-      alert("تم إنشاء المستخدم بنجاح.");
+      setEditingUserId(null);
     } catch (error) {
       console.error(error);
-      alert("تعذر إنشاء المستخدم.");
+      alert("تعذر حفظ بيانات المستخدم.");
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("هل تريدين حذف هذا المستخدم؟")) return;
+  const handleDelete = async (id, username) => {
+    if (!window.confirm(`هل أنت متأكد من حذف المستخدم "${username}" نهائياً؟`)) {
+      return;
+    }
 
     try {
       const { error } = await supabase.from("users").delete().eq("id", id);
@@ -115,23 +167,23 @@ export default function UserManagement() {
       <div style={styles.card}>
         <div style={styles.cardHeader}>
           <div>
-            <h2 style={styles.cardTitle}>إدارة المستخدمين</h2>
+            <h2 style={styles.cardTitle}>👥 إدارة المستخدمين</h2>
             <p style={styles.cardSub}>
-              إنشاء وإدارة حسابات المستخدمين المصرح لهم بالدخول
+              إنشاء وتعديل وحذف حسابات المستخدمين المصرح لهم بالدخول للوحة الإدارة
             </p>
           </div>
           <button
             style={styles.primaryButton}
-            onClick={() => setShowForm(true)}
+            onClick={handleOpenCreate}
           >
-            ＋ إضافة مستخدم
+            ＋ إضافة مستخدم جديد
           </button>
         </div>
 
         {error && <div style={styles.errorBox}>{error}</div>}
 
         <div style={styles.resultText}>
-          عدد المستخدمين: <strong>{users.length}</strong>
+          عدد المستخدمين المسجلين: <strong>{users.length}</strong>
         </div>
 
         {users.length === 0 ? (
@@ -143,15 +195,17 @@ export default function UserManagement() {
                 <tr>
                   <th style={styles.th}>اسم المستخدم</th>
                   <th style={styles.th}>الاسم الكامل</th>
-                  <th style={styles.th}>الدور</th>
+                  <th style={styles.th}>الدور / الصلاحية</th>
                   <th style={styles.th}>تاريخ الإنشاء</th>
-                  <th style={styles.th}>إجراءات</th>
+                  <th style={styles.th}>إجراءات المدير الرئيسي</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((user) => (
                   <tr key={user.id} style={styles.tr}>
-                    <td style={styles.td}>{user.username}</td>
+                    <td style={styles.td}>
+                      <strong>{user.username}</strong>
+                    </td>
                     <td style={styles.td}>{user.full_name}</td>
                     <td style={styles.td}>
                       <span
@@ -163,32 +217,59 @@ export default function UserManagement() {
                           background:
                             user.role === "super_admin"
                               ? "#FEE2E2"
+                              : user.role === "admin"
+                              ? "#DBEAFE"
                               : "#E0F2FE",
                           color:
                             user.role === "super_admin"
                               ? "#B91C1C"
+                              : user.role === "admin"
+                              ? "#1E40AF"
                               : "#0369A1",
                         }}
                       >
                         {user.role === "super_admin"
-                          ? "مدير رئيسي"
+                          ? "👑 مدير رئيسي (horia)"
                           : user.role === "admin"
-                          ? "مدير"
-                          : "مستخدم"}
+                          ? "🛡️ مدير"
+                          : "👤 مستخدم"}
                       </span>
                     </td>
                     <td style={styles.td}>
-                      {new Date(user.created_at).toLocaleDateString("ar-EG")}
+                      {user.created_at
+                        ? new Date(user.created_at).toLocaleDateString("ar-EG")
+                        : "—"}
                     </td>
                     <td style={styles.td}>
-                      {user.role !== "super_admin" && (
+                      <div style={{ display: "flex", gap: "6px" }}>
                         <button
-                          style={styles.deleteButton}
-                          onClick={() => handleDelete(user.id)}
+                          style={{
+                            ...styles.viewButton,
+                            background: "#FEF3C7",
+                            color: "#92400E",
+                            borderColor: "#FDE68A",
+                            padding: "4px 10px",
+                            fontSize: "12px",
+                          }}
+                          onClick={() => handleOpenEdit(user)}
+                          title="تعديل المستخدم"
                         >
-                          حذف
+                          ✏️ تعديل
                         </button>
-                      )}
+                        {user.role !== "super_admin" && user.username !== "horia" && (
+                          <button
+                            style={{
+                              ...styles.deleteButton,
+                              padding: "4px 10px",
+                              fontSize: "12px",
+                            }}
+                            onClick={() => handleDelete(user.id, user.username)}
+                            title="حذف المستخدم"
+                          >
+                            🗑️ حذف
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -204,7 +285,7 @@ export default function UserManagement() {
           onClick={() => setShowForm(false)}
         >
           <div
-            style={styles.loginBox}
+            style={{ ...styles.loginBox, width: "min(480px, 95%)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -218,60 +299,94 @@ export default function UserManagement() {
               👤
             </div>
 
-            <h2 style={styles.loginTitle}>إضافة مستخدم جديد</h2>
+            <h2 style={styles.loginTitle}>
+              {editingUserId ? "تعديل بيانات المستخدم" : "إضافة مستخدم جديد"}
+            </h2>
 
             <p style={styles.loginDescription}>
-              أدخل بيانات المستخدم الجديد
+              {editingUserId
+                ? "تعديل الاسم أو كلمة المرور أو الصلاحيات"
+                : "أدخل بيانات الحساب الجديد لمنحه صلاحية الدخول"}
             </p>
 
             <form onSubmit={handleSubmit}>
-              <input
-                type="text"
-                placeholder="اسم المستخدم"
-                value={formData.username}
-                onChange={(e) =>
-                  setFormData({ ...formData, username: e.target.value })
-                }
-                style={styles.input}
-                required
-              />
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  اسم المستخدم (Username)
+                </label>
+                <input
+                  type="text"
+                  placeholder="اسم المستخدم للدخول"
+                  value={formData.username}
+                  onChange={(e) =>
+                    setFormData({ ...formData, username: e.target.value })
+                  }
+                  style={styles.input}
+                  required
+                />
+              </div>
 
-              <input
-                type="text"
-                placeholder="الاسم الكامل"
-                value={formData.fullName}
-                onChange={(e) =>
-                  setFormData({ ...formData, fullName: e.target.value })
-                }
-                style={styles.input}
-                required
-              />
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  الاسم الكامل
+                </label>
+                <input
+                  type="text"
+                  placeholder="الاسم ثلاثي أو رباعي"
+                  value={formData.fullName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, fullName: e.target.value })
+                  }
+                  style={styles.input}
+                  required
+                />
+              </div>
 
-              <input
-                type="password"
-                placeholder="كلمة المرور"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                style={styles.input}
-                required
-              />
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  كلمة المرور {editingUserId && "(اتركيها فارغة إن لم ترغبي بتغييرها)"}
+                </label>
+                <input
+                  type="password"
+                  placeholder="كلمة المرور"
+                  value={formData.password}
+                  onChange={(e) =>
+                    setFormData({ ...formData, password: e.target.value })
+                  }
+                  style={styles.input}
+                  required={!editingUserId}
+                />
+              </div>
 
-              <select
-                value={formData.role}
-                onChange={(e) =>
-                  setFormData({ ...formData, role: e.target.value })
-                }
-                style={styles.input}
-              >
-                <option value="admin">مدير</option>
-                <option value="user">مستخدم</option>
-              </select>
+              <div style={{ marginBottom: "16px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  الدور / الصلاحية
+                </label>
+                <select
+                  value={formData.role}
+                  onChange={(e) =>
+                    setFormData({ ...formData, role: e.target.value })
+                  }
+                  style={styles.input}
+                >
+                  <option value="admin">مدير (صلاحيات كاملة)</option>
+                  <option value="user">مستخدم (عرض وتعديل محدود)</option>
+                  <option value="super_admin">مدير رئيسي (Super Admin)</option>
+                </select>
+              </div>
 
-              <button type="submit" style={styles.loginButton}>
-                إنشاء المستخدم
-              </button>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={() => setShowForm(false)}
+                >
+                  إلغاء
+                </button>
+                <button type="submit" style={styles.primaryButton}>
+                  {editingUserId ? "💾 حفظ التعديل" : "＋ إنشاء المستخدم"}
+                </button>
+              </div>
             </form>
           </div>
         </div>
