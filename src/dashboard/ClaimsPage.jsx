@@ -95,7 +95,11 @@ export default function ClaimsPage({
         {error && <div style={styles.errorBox}>{error}</div>}
 
         <div style={styles.claimStats}>
-          <ClaimStat title="إجمالي السجلات" value={allClaims.length} icon="📋" />
+          <ClaimStat title="إجمالي السجلات" value={stats.total} icon="📋" />
+          <ClaimStat title="قيد المراجعة" value={stats.pending} icon="⏳" />
+          <ClaimStat title="جاري التنفيذ" value={stats.inProgress} icon="🔄" />
+          <ClaimStat title="مكتمل" value={stats.completed} icon="✅" />
+          <ClaimStat title="نسبة الإنجاز" value={`${stats.completedRate}%`} icon="�" />
 
           {sheets.map((sheet) => (
             <ClaimStat

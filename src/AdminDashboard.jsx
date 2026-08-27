@@ -20,6 +20,10 @@ import UserManagement from "./dashboard/UserManagement";
 import PerformanceEvaluation from "./dashboard/PerformanceEvaluation";
 import FeedbackView from "./dashboard/FeedbackView";
 import TrainingCourses from "./dashboard/TrainingCourses";
+import SalaryRequestsPage from "./dashboard/SalaryRequestsPage";
+import FellowshipRequestsPage from "./dashboard/FellowshipRequestsPage";
+import WelfareRequestsPage from "./dashboard/WelfareRequestsPage";
+import CertificateRequestsPage from "./dashboard/CertificateRequestsPage";
 import {
   ClaimFormModal,
   TaskDetailsModal,

@@ -127,19 +127,34 @@ export const STATUS = {
 
 export const MENU_ITEMS = [
   {
-    id: "criteria",
-    title: "معايير تقييم الأداء",
+    id: "salary_requests",
+    title: "طلبات مفرد مرتب",
+    icon: "📄",
+  },
+  {
+    id: "fellowship_requests",
+    title: "طلبات الزمالة",
+    icon: "🎓",
+  },
+  {
+    id: "welfare_requests",
+    title: "طلبات الرعاية",
+    icon: "🤲",
+  },
+  {
+    id: "certificate_requests",
+    title: "طلبات الإفادات",
+    icon: "�",
+  },
+  {
+    id: "study_leaves",
+    title: "الإجازات الدراسية",
+    icon: "🎓",
+  },
+  {
+    id: "performance_evaluation",
+    title: "تقييم الأداء والجودة",
     icon: "⭐",
-  },
-  {
-    id: "service_requests",
-    title: "الطلبات الواردة",
-    icon: "📥",
-  },
-  {
-    id: "feedback",
-    title: "الشكاوى والتقييمات",
-    icon: "💬",
   },
   {
     id: "training_courses",
