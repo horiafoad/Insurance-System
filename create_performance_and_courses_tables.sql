@@ -1,6 +1,7 @@
 -- إنشاء جدول تقييم الأداء والجودة
 CREATE TABLE IF NOT EXISTS performance_evaluations (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  employee_id INTEGER,
   evaluation_month VARCHAR(20) NOT NULL,
   evaluation_year INTEGER NOT NULL,
   completion_rate DECIMAL(5,2) DEFAULT 0,
@@ -17,6 +18,11 @@ CREATE TABLE IF NOT EXISTS performance_evaluations (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE performance_evaluations
+  ADD COLUMN IF NOT EXISTS employee_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_performance_evaluations_employee_id
+  ON performance_evaluations(employee_id);
 
 -- إنشاء جدول الدورات التدريبية
 CREATE TABLE IF NOT EXISTS training_courses (

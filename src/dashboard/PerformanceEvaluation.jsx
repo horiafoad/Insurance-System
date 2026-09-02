@@ -2,7 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 
+const EMPLOYEES = [
+  { id: 1, name: "صفاء عبد الوهاب" },
+  { id: 2, name: "ياسمين عبد الوهاب" },
+  { id: 3, name: "حورية فؤاد" },
+  { id: 4, name: "أماني صلاح" },
+  { id: 5, name: "عبد الله السعيد" },
+  { id: 6, name: "جهاد عاطف" },
+];
+
 const defaultFormData = {
+  employeeId: "",
   evaluationMonth: new Date().getMonth() + 1,
   evaluationYear: new Date().getFullYear(),
   completionRate: 0,
@@ -238,6 +248,7 @@ export default function PerformanceEvaluation() {
     setEditingEvalId(evalItem.id);
     const monthIndex = months.indexOf(evalItem.evaluation_month);
     setFormData({
+      employeeId: evalItem.employee_id ? String(evalItem.employee_id) : "",
       evaluationMonth: monthIndex !== -1 ? monthIndex + 1 : new Date().getMonth() + 1,
       evaluationYear: evalItem.evaluation_year || new Date().getFullYear(),
       completionRate: evalItem.completion_rate || 0,
@@ -254,9 +265,14 @@ export default function PerformanceEvaluation() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.employeeId) {
+      alert("من فضلك اختاري الموظف صاحب التقييم.");
+      return;
+    }
     const { totalScore, grade } = calculateScore();
 
     const evalPayload = {
+      employee_id: Number(formData.employeeId),
       evaluation_month: months[formData.evaluationMonth - 1],
       evaluation_year: Number(formData.evaluationYear),
       completion_rate: formData.completionRate,
@@ -497,6 +513,7 @@ export default function PerformanceEvaluation() {
             <table style={styles.table}>
               <thead>
                 <tr>
+                  <th style={styles.th}>الموظف</th>
                   <th style={styles.th}>الشهر</th>
                   <th style={styles.th}>السنة</th>
                   <th style={styles.th}>نسبة الإنجاز</th>
@@ -514,6 +531,9 @@ export default function PerformanceEvaluation() {
               <tbody>
                 {evaluations.map((evaluation) => (
                   <tr key={evaluation.id} style={styles.tr}>
+                    <td style={styles.td}>
+                      {EMPLOYEES.find((employee) => employee.id === Number(evaluation.employee_id))?.name || "غير محدد"}
+                    </td>
                     <td style={styles.td}>{evaluation.evaluation_month}</td>
                     <td style={styles.td}>{evaluation.evaluation_year}</td>
                     <td style={styles.td}>{evaluation.completion_rate}%</td>
@@ -642,6 +662,34 @@ export default function PerformanceEvaluation() {
             </p>
 
             <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: "12px" }}>
+                <label
+                  style={{
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    marginBottom: "5px",
+                    display: "block",
+                  }}
+                >
+                  الموظف
+                </label>
+                <select
+                  value={formData.employeeId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, employeeId: e.target.value })
+                  }
+                  style={styles.input}
+                  required
+                >
+                  <option value="">اختاري الموظف</option>
+                  {EMPLOYEES.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div
                 style={{
                   display: "grid",

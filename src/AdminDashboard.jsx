@@ -21,6 +21,7 @@ import PerformanceEvaluation from "./dashboard/PerformanceEvaluation";
 import FeedbackView from "./dashboard/FeedbackView";
 import TrainingCourses from "./dashboard/TrainingCourses";
 import EmployeePerformance from "./dashboard/EmployeePerformance";
+import EmployeeProfilePage from "./dashboard/EmployeeProfilePage";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -572,7 +573,7 @@ export default function AdminDashboard({ currentUser }) {
               🔄 تحديث
             </button>
 
-            {activeMenu !== "claims" && activeMenu !== "study_leaves" && (
+            {activeMenu !== "claims" && activeMenu !== "study_leaves" && activeMenu !== "employee_profiles" && (
               <button
                 style={styles.primaryButton}
                 onClick={() => {
@@ -698,6 +699,10 @@ export default function AdminDashboard({ currentUser }) {
         {activeMenu === "performance_evaluation" && <PerformanceEvaluation />}
 
         {activeMenu === "employee_performance" && <EmployeePerformance />}
+
+        {activeMenu === "employee_profiles" && (
+          <EmployeeProfilePage onManageTasks={() => setActiveMenu("employee_performance")} />
+        )}
 
         {activeMenu === "training_courses" && <TrainingCourses />}
 

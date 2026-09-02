@@ -45,6 +45,7 @@ GRANT ALL ON TABLE public.service_requests TO anon, authenticated, postgres, ser
 -- 3. جدول تقييم الأداء والجودة الداخلي
 CREATE TABLE IF NOT EXISTS public.performance_evaluations (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  employee_id INTEGER,
   evaluation_month VARCHAR(30) NOT NULL,
   evaluation_year INTEGER NOT NULL,
   completion_rate DECIMAL(5,2) DEFAULT 0,
@@ -61,6 +62,11 @@ CREATE TABLE IF NOT EXISTS public.performance_evaluations (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE public.performance_evaluations
+  ADD COLUMN IF NOT EXISTS employee_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_performance_evaluations_employee_id
+  ON public.performance_evaluations(employee_id);
 
 ALTER TABLE public.performance_evaluations DISABLE ROW LEVEL SECURITY;
 GRANT ALL ON TABLE public.performance_evaluations TO anon, authenticated, postgres, service_role;

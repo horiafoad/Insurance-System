@@ -152,6 +152,11 @@ export const MENU_ITEMS = [
     icon: "👥",
   },
   {
+    id: "employee_profiles",
+    title: "تقييم كل موظف",
+    icon: "📁",
+  },
+  {
     id: "training_courses",
     title: "الدورات التدريبية",
     icon: "📚",
