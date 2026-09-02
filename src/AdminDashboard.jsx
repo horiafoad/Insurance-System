@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
 import { styles } from "./dashboard/styles";
@@ -17,11 +17,11 @@ import PerformanceView from "./dashboard/PerformanceView";
 import CriteriaView, { ServiceRequestsView } from "./dashboard/CriteriaView";
 import StudyLeavesPage from "./dashboard/StudyLeavesPage";
 import UserManagement from "./dashboard/UserManagement";
-import PerformanceEvaluation from "./dashboard/PerformanceEvaluation";
 import FeedbackView from "./dashboard/FeedbackView";
 import TrainingCourses from "./dashboard/TrainingCourses";
 import EmployeePerformance from "./dashboard/EmployeePerformance";
 import EmployeeProfilePage from "./dashboard/EmployeeProfilePage";
+import EmployeePerformanceDashboard from "./dashboard/EmployeePerformanceDashboard";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -62,12 +62,17 @@ export default function AdminDashboard({ currentUser }) {
 
   const [appLoading, setAppLoading] = useState(true);
   const [appError, setAppError] = useState("");
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [urgentNotification, setUrgentNotification] = useState(null);
+  const knownNotificationIds = useRef(new Set());
 
   useEffect(() => {
     loadTasks();
     loadClaims();
     setStudyLeaves(loadStudyLeaves());
   }, []);
+
 
   const loadTasks = async () => {
     try {
@@ -140,6 +145,137 @@ export default function AdminDashboard({ currentUser }) {
       console.error(error);
       setClaimError("تعذر تحميل المطالبات من قاعدة البيانات.");
     }
+  };
+
+  useEffect(() => {
+    const notificationSources = [
+      { table: "service_requests", label: "طلب إلكتروني جديد", icon: "📥" },
+      { table: "public_feedback", label: "شكوى أو تقييم جديد", icon: "💬" },
+      { table: "claims", label: "مطالبة جديدة", icon: "📋" },
+      { table: "employee_tasks", label: "مهمة موظف جديدة", icon: "📝" },
+    ];
+    let channel = null;
+    let pollingTimer = null;
+    let storageListener = null;
+    const notificationCheckpointKey = "admin_notifications_checkpoint";
+    const previousCheckpoint = localStorage.getItem(notificationCheckpointKey);
+    const checkpointDate = previousCheckpoint ? new Date(previousCheckpoint) : null;
+
+    const setupNotifications = async () => {
+      const notify = (source, itemId) => {
+        const notificationId = `${source.table}-${itemId}`;
+        if (knownNotificationIds.current.has(notificationId)) return;
+        knownNotificationIds.current.add(notificationId);
+        const notification = {
+          id: notificationId,
+          title: source.label,
+          icon: source.icon,
+          time: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+        };
+        setNotifications((current) => [notification, ...current].slice(0, 20));
+        if (source.table === "public_feedback") {
+          setUrgentNotification(notification);
+        }
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification(source.label, { body: "تم استلام بيانات جديدة في لوحة الإدارة." });
+        }
+      };
+
+      const results = await Promise.all(
+        notificationSources.map((source) =>
+          supabase
+            .from(source.table)
+            .select("id, created_at")
+            .order("created_at", { ascending: false })
+            .limit(100)
+        )
+      );
+      results.forEach(({ data }, index) =>
+        (data || []).forEach((item) => {
+          const notificationId = `${notificationSources[index].table}-${item.id}`;
+          if (checkpointDate && item.created_at && new Date(item.created_at) > checkpointDate) {
+            notify(notificationSources[index], item.id);
+          } else {
+            knownNotificationIds.current.add(notificationId);
+          }
+        })
+      );
+      try {
+        const localFeedback = JSON.parse(localStorage.getItem("backup_public_feedback") || "[]");
+        const seenLocalFeedback = new Set(
+          JSON.parse(localStorage.getItem("admin_seen_local_feedback") || "[]")
+        );
+        localFeedback.forEach((item) => {
+          const notificationId = `public_feedback-${item.id}`;
+          if (!seenLocalFeedback.has(String(item.id))) {
+            notify(notificationSources[1], item.id);
+            seenLocalFeedback.add(String(item.id));
+          } else {
+            knownNotificationIds.current.add(notificationId);
+          }
+        });
+        localStorage.setItem(
+          "admin_seen_local_feedback",
+          JSON.stringify([...seenLocalFeedback])
+        );
+      } catch (storageError) {
+        console.error("تعذر تحميل نسخ الشكاوى المحلية:", storageError);
+      }
+      localStorage.setItem(notificationCheckpointKey, new Date().toISOString());
+
+      channel = supabase
+        .channel("admin-notifications")
+        .on("postgres_changes", { event: "INSERT", schema: "public" }, (payload) => {
+          const source = notificationSources.find((item) => item.table === payload.table);
+          if (source) notify(source, payload.new.id);
+        })
+        .subscribe();
+
+      // Polling fallback keeps notifications working when Realtime is not enabled
+      // for a table in the Supabase publication.
+      pollingTimer = window.setInterval(async () => {
+        const results = await Promise.all(
+          notificationSources.map((source) =>
+            supabase.from(source.table).select("id").order("created_at", { ascending: false }).limit(20)
+          )
+        );
+        results.forEach(({ data }, index) => {
+          const source = notificationSources[index];
+          (data || []).forEach((item) => notify(source, item.id));
+        });
+      }, 5000);
+      storageListener = (event) => {
+        try {
+          const item = event.type === "storage"
+            ? (event.key === "new_public_feedback_event" && event.newValue ? JSON.parse(event.newValue) : null)
+            : event.detail;
+          if (!item) return;
+          notify(notificationSources[1], item.id);
+        } catch (storageError) {
+          console.error("تعذر قراءة إشعار الشكوى المحلي:", storageError);
+        }
+      };
+      window.addEventListener("storage", storageListener);
+      window.addEventListener("new-public-feedback", storageListener);
+    };
+
+    setupNotifications().catch((notificationError) => {
+      console.error("تعذر تشغيل إشعارات لوحة الإدارة:", notificationError);
+    });
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+      if (pollingTimer) window.clearInterval(pollingTimer);
+      if (storageListener) window.removeEventListener("storage", storageListener);
+      if (storageListener) window.removeEventListener("new-public-feedback", storageListener);
+    };
+  }, []);
+
+  const enableNotifications = async () => {
+    if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+    setNotificationsOpen((current) => !current);
   };
 
   const importClaimsExcel = async (event) => {
@@ -545,6 +681,7 @@ export default function AdminDashboard({ currentUser }) {
         filterType={filterType}
         setActiveMenu={setActiveMenu}
         setFilterType={setFilterType}
+        setServiceRequestFilter={setServiceRequestFilter}
       />
 
       <main style={styles.main}>
@@ -561,7 +698,33 @@ export default function AdminDashboard({ currentUser }) {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "12px" }}>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center", position: "relative" }}>
+            <button
+              style={{ ...styles.secondaryButton, position: "relative", padding: "10px 14px" }}
+              onClick={enableNotifications}
+              title="الإشعارات"
+            >
+              🔔
+              {notifications.length > 0 && (
+                <span style={{ position: "absolute", top: -6, right: -6, minWidth: 20, height: 20, borderRadius: "50%", background: "#DC2626", color: "#fff", fontSize: 11, display: "grid", placeItems: "center" }}>
+                  {notifications.length > 9 ? "9+" : notifications.length}
+                </span>
+              )}
+            </button>
+            {notificationsOpen && (
+              <div style={{ position: "absolute", top: 48, right: 0, width: 310, maxWidth: "80vw", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 12px 30px rgba(15,41,66,.18)", zIndex: 20, padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <strong>الإشعارات الجديدة</strong>
+                  <button style={{ border: 0, background: "transparent", color: "#64748B", cursor: "pointer" }} onClick={() => setNotifications([])}>مسح</button>
+                </div>
+                {notifications.length === 0 ? <div style={{ padding: 18, color: "#64748B", textAlign: "center" }}>لا توجد إشعارات جديدة</div> : notifications.map((item) => (
+                  <div key={item.id} style={{ padding: 10, borderTop: "1px solid #F1F5F9", display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 20 }}>{item.icon}</span>
+                    <div><strong style={{ display: "block", fontSize: 13 }}>{item.title}</strong><small style={{ color: "#64748B" }}>{item.time}</small></div>
+                  </div>
+                ))}
+              </div>
+            )}
             <button
               style={styles.secondaryButton}
               onClick={() => {
@@ -588,6 +751,40 @@ export default function AdminDashboard({ currentUser }) {
         </header>
 
         {appError && <div style={styles.errorBox}>{appError}</div>}
+
+        {urgentNotification && (
+          <div
+            style={styles.modalOverlay}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              style={{
+                ...styles.loginBox,
+                maxWidth: 440,
+                textAlign: "center",
+                borderTop: "5px solid #DC2626",
+              }}
+            >
+              <div style={{ fontSize: 48, marginBottom: 8 }}>💬</div>
+              <h2 style={styles.loginTitle}>شكوى أو تقييم جديد</h2>
+              <p style={{ color: "#475569", lineHeight: 1.8 }}>
+                تم استلام شكوى أو تقييم جديد من بوابة الخدمات.
+                <br />
+                يرجى الضغط على موافق لمتابعة العمل.
+              </p>
+              <button
+                style={{ ...styles.primaryButton, background: "#DC2626", minWidth: 140 }}
+                onClick={() => {
+                  setUrgentNotification(null);
+                  setNotificationsOpen(true);
+                  setActiveMenu("feedback");
+                }}
+              >
+                موافق
+              </button>
+            </div>
+          </div>
+        )}
 
         {activeMenu === "home" && (
           <HomeView
@@ -696,9 +893,9 @@ export default function AdminDashboard({ currentUser }) {
 
         {activeMenu === "criteria" && <CriteriaView />}
 
-        {activeMenu === "performance_evaluation" && <PerformanceEvaluation />}
-
         {activeMenu === "employee_performance" && <EmployeePerformance />}
+
+        {activeMenu === "performance_dashboard" && <EmployeePerformanceDashboard />}
 
         {activeMenu === "employee_profiles" && (
           <EmployeeProfilePage onManageTasks={() => setActiveMenu("employee_performance")} />
@@ -707,7 +904,7 @@ export default function AdminDashboard({ currentUser }) {
         {activeMenu === "training_courses" && <TrainingCourses />}
 
         {activeMenu === "user_management" &&
-          (currentUser?.role === "super_admin" ? (
+          (["creator", "super_admin", "admin"].includes(currentUser?.role) ? (
             <UserManagement />
           ) : (
             <div style={styles.card}>

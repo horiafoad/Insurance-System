@@ -122,56 +122,6 @@ export default function HomeView({
         </div>
       </div>
 
-      <div style={styles.card}>
-        <div style={styles.cardHeader}>
-          <div>
-            <h2 style={styles.cardTitle}>تواصل معنا</h2>
-            <p style={styles.cardSub}>للدعم والاستفسارات</p>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-          <a
-            href="tel:01055662546"
-            style={{
-              ...styles.workCard,
-              textDecoration: "none",
-              color: "inherit",
-              flex: "1",
-              minWidth: "200px",
-            }}
-          >
-            <span style={{ ...styles.workIcon, background: "#D1FAE5" }}>
-              📞
-            </span>
-            <span style={styles.workInfo}>
-              <b>اتصل بنا</b>
-              <small>01055662546</small>
-            </span>
-          </a>
-
-          <a
-            href="https://wa.me/201055662546"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              ...styles.workCard,
-              textDecoration: "none",
-              color: "inherit",
-              flex: "1",
-              minWidth: "200px",
-            }}
-          >
-            <span style={{ ...styles.workIcon, background: "#DCFCE7" }}>
-              💬
-            </span>
-            <span style={styles.workInfo}>
-              <b>واتساب</b>
-              <small>مراسلة مباشرة</small>
-            </span>
-          </a>
-        </div>
-      </div>
     </>
   );
 }

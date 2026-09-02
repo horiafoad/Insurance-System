@@ -26,6 +26,18 @@ const REQUEST_STATUSES = [
   { value: "مرفوضة", color: "#DC2626", bg: "#FEE2E2" },
 ];
 
+const SERVICE_FILTER_ALIASES = {
+  "مفردات مرتب": [
+    "مفردات مرتب",
+    "مفردات المرتب",
+    "مفرد مرتب",
+    "مفرد المرتب",
+    "طلب استخراج مفرد",
+  ],
+  "الرعاية الصحية": ["الرعاية الصحية", "خدمة الرعاية", "الرعاية الاجتماعية"],
+  "صندوق الزمالة": ["صندوق الزمالة", "الزمالة"],
+};
+
 function formatMonth(value) {
   if (value === null || value === undefined || value === "") return "—";
   const numeric = Number(value);
@@ -63,56 +75,180 @@ function getStatusStyle(status) {
   };
 }
 
+function KpiDonut({ items }) {
+  const total = items.reduce((sum, item) => sum + Number(item[1] || 0), 0);
+  let start = 0;
+  const segments = items.map((item) => {
+    const value = Number(item[1] || 0);
+    const end = total ? start + (value / total) * 100 : start;
+    const segment = `${item[3]} ${start}% ${end}%`;
+    start = end;
+    return segment;
+  });
+
+  return (
+    <div
+      style={{
+        width: 190,
+        height: 190,
+        borderRadius: "50%",
+        background: total ? `conic-gradient(${segments.join(", ")})` : "#E2E8F0",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0,
+      }}
+      aria-label="توزيع مؤشرات الأداء"
+      role="img"
+    >
+      <div
+        style={{
+          width: 126,
+          height: 126,
+          borderRadius: "50%",
+          background: "#fff",
+          display: "grid",
+          placeItems: "center",
+          textAlign: "center",
+          color: "#1E293B",
+          boxShadow: "0 2px 8px rgba(15,41,66,.08)",
+        }}
+      >
+        <div>
+          <strong style={{ display: "block", fontSize: 24 }}>
+            {items.length ? Math.round(items.reduce((sum, item) => sum + Number(item[1] || 0), 0) / items.length) : 0}%
+          </strong>
+          <small style={{ color: "#64748B" }}>متوسط الـ KPI</small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CriteriaView() {
-  const criteria = [
-    {
-      name: "نسبة إنجاز المهام",
-      weight: 30,
-      desc: "نسبة الأعمال التي تم تنفيذها.",
-    },
-    {
-      name: "الالتزام بالمواعيد",
-      weight: 25,
-      desc: "الالتزام بمواعيد التنفيذ.",
-    },
-    {
-      name: "دقة العمل والمراجعة",
-      weight: 20,
-      desc: "المراجعة وتقليل الأخطاء.",
-    },
-    {
-      name: "سرعة الإنجاز",
-      weight: 10,
-      desc: "سرعة تنفيذ المعاملات.",
-    },
-    {
-      name: "المراجعة والرفع",
-      weight: 10,
-      desc: "إتمام المراجعة والرفع.",
-    },
-    {
-      name: "تنظيم وتسجيل العمل",
-      weight: 5,
-      desc: "اكتمال البيانات والملاحظات.",
-    },
+  const [requests, setRequests] = useState([]);
+  const [feedback, setFeedback] = useState([]);
+  const [evaluations, setEvaluations] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadIndicators = async () => {
+      const [
+        { data: requestData, error: requestError },
+        { data: feedbackData, error: feedbackError },
+        { data: evaluationData, error: evaluationError },
+        { data: taskData, error: taskError },
+      ] =
+        await Promise.all([
+          supabase.from("service_requests").select("*"),
+          supabase.from("public_feedback").select("*"),
+          supabase.from("performance_evaluations").select("*"),
+          supabase.from("employee_tasks").select("*"),
+        ]);
+
+      if (requestError || feedbackError || evaluationError || taskError) {
+        console.error("خطأ في تحميل المؤشرات:", requestError || feedbackError || evaluationError || taskError);
+      }
+      setRequests(requestData || []);
+      setFeedback(feedbackData || []);
+      setEvaluations(evaluationData || []);
+      setTasks(taskData || []);
+      setLoading(false);
+    };
+
+    loadIndicators();
+  }, []);
+
+  const serviceRatings = feedback.filter(
+    (item) => item.feedback_type === "تقييم خدمة" && item.rating !== null
+  );
+  const averageRating = serviceRatings.length
+    ? (serviceRatings.reduce((sum, item) => sum + Number(item.rating || 0), 0) / serviceRatings.length).toFixed(1)
+    : "0.0";
+  const qualityCriteria = [
+    { name: "رضا المستفيدين (CSAT)", standard: "≥ 90%", value: serviceRatings.length ? `${Math.round((Number(averageRating) / 5) * 100)}%` : "—", color: "#2563EB", icon: "⭐", desc: "قياس رضا المستفيد بعد الحصول على الخدمة." },
+    { name: "الالتزام بمستوى الخدمة (SLA)", standard: "≥ 95%", value: "—", color: "#047857", icon: "⏱️", desc: "إنجاز الطلبات داخل المدة الزمنية المعتمدة." },
+    { name: "دقة المعاملة", standard: "≥ 98%", value: "—", color: "#7C3AED", icon: "🎯", desc: "نسبة المعاملات الصحيحة من أول مرة دون إعادة أو أخطاء." },
+    { name: "زمن إنجاز الخدمة", standard: "تحسين مستمر", value: "—", color: "#B45309", icon: "⚡", desc: "متوسط الوقت من استلام الطلب حتى إتمامه." },
+    { name: "نسبة الحل من أول تواصل (FCR)", standard: "≥ 85%", value: "—", color: "#0891B2", icon: "✅", desc: "حل طلب المستفيد دون تحويله أو طلب متابعة إضافية." },
+    { name: "معدل الشكاوى", standard: "≤ 2%", value: "—", color: "#DC2626", icon: "💬", desc: "متابعة الشكاوى وتحليل أسبابها واتخاذ إجراء تصحيحي." },
+  ];
+  const average = (values) => values.length
+    ? Math.round(values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length)
+    : 0;
+  const employeeKpis = [
+    ["التقييم العام للموظفين", average(evaluations.map((item) => item.total_score)), "👥", "#2563EB"],
+    ["الكفاءة الرقمية", average(evaluations.map((item) => item.completion_rate)), "💻", "#4338CA"],
+    ["جودة ودقة العمل", average(evaluations.map((item) => item.accuracy_rate)), "🎯", "#7C3AED"],
+    ["خدمات المكتب", average(evaluations.map((item) => item.speed_rate)), "🏢", "#047857"],
+    ["الالتزام والانضباط", average(evaluations.map((item) => item.on_time_rate)), "⏱️", "#B45309"],
+    ["إنجاز المهام", tasks.length ? Math.round((tasks.filter((task) => task.status === "مكتمل").length / tasks.length) * 100) : 0, "✅", "#0891B2"],
+  ];
+  const serviceKpis = [
+    ["إجمالي الطلبات", requests.length, "🧾", "#2563EB"],
+    ["نسبة الطلبات المقبولة", requests.length ? Math.round((requests.filter((request) => ["مقبولة", "مكتمل", "مكتملة"].includes(request.status)).length / requests.length) * 100) : 0, "📌", "#047857"],
+    ["متوسط رضا المستفيدين", `${averageRating}/5`, "⭐", "#B45309"],
+    ["الشكاوى والمقترحات", feedback.filter((item) => item.feedback_type === "شكوى / مقترح").length, "💬", "#DC2626"],
   ];
 
   return (
-    <div style={styles.card}>
-      <h2 style={styles.cardTitle}>معايير تقييم أداء قسم الاستحقاقات</h2>
-      <p style={styles.cardSub}>الأوزان قابلة للتعديل لاحقًا.</p>
-
-      {criteria.map((item) => (
-        <div key={item.name} style={styles.criteriaCard}>
-          <div style={styles.criteriaTop}>
-            <div>
-              <b>{item.name}</b>
-              <p style={styles.criteriaDescription}>{item.desc}</p>
+    <div>
+      <div style={{ ...styles.card, marginBottom: 18 }}>
+        <div style={styles.cardHeader}>
+          <div>
+            <h2 style={styles.cardTitle}>📈 مؤشرات ومعايير الجودة</h2>
+            <p style={styles.cardSub}>لوحة KPI موحدة لأداء الموظفين وجودة الخدمات الإلكترونية وخدمات المكتب</p>
+          </div>
+          <div style={{ ...styles.statusBadge, background: "#D1FAE5", color: "#047857" }}>{loading ? "جاري التحديث..." : "بيانات مباشرة"}</div>
+        </div>
+        <h3 style={styles.cardTitle}>🎯 مؤشرات الأداء الرئيسية للموظفين</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14 }}>
+          {employeeKpis.map(([label, value, icon, color]) => (
+            <div key={label} style={{ padding: 18, borderRadius: 14, background: "#F8FAFC", border: `1px solid ${color}33` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: 25 }}>{icon}</span><strong style={{ color, fontSize: 27 }}>{value}%</strong></div>
+              <div style={{ color: "#334155", fontWeight: 800, fontSize: 13, margin: "8px 0" }}>{label}</div>
+              <div style={{ height: 8, background: "#E2E8F0", borderRadius: 10 }}><div style={{ width: `${Math.min(100, Number(value) || 0)}%`, height: "100%", background: color, borderRadius: 10 }} /></div>
             </div>
-            <strong>{item.weight}%</strong>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ ...styles.card, marginBottom: 18 }}>
+        <h3 style={styles.cardTitle}>🏛️ مؤشرات جودة الخدمات</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14 }}>
+          {serviceKpis.map(([label, value, icon, color]) => (
+            <div key={label} style={{ padding: 18, borderRadius: 14, background: "#fff", border: `1px solid ${color}33`, boxShadow: "0 5px 14px rgba(15,41,66,.05)" }}>
+              <div style={{ fontSize: 25 }}>{icon}</div><strong style={{ display: "block", color, fontSize: 27, marginTop: 7 }}>{value}</strong><div style={{ color: "#475569", fontWeight: 800, fontSize: 13 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ ...styles.card, marginBottom: 18, display: "flex", gap: 28, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <h3 style={styles.cardTitle}>🥧 توزيع مؤشرات أداء الموظفين</h3>
+          <p style={styles.cardSub}>رسم دائري يتغير تلقائيًا حسب بيانات التقييمات.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 8 }}>
+            {employeeKpis.map(([label, value, icon, color]) => <div key={label} style={{ color: "#475569", fontSize: 13 }}><span style={{ color, fontSize: 16 }}>●</span> {icon} {label}: <strong style={{ color }}>{value}%</strong></div>)}
           </div>
         </div>
-      ))}
+        <KpiDonut items={employeeKpis} />
+      </div>
+
+      <div style={{ ...styles.card, marginBottom: 18 }}>
+        <h3 style={styles.cardTitle}>📋 معايير الجودة العالمية</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}>
+          {qualityCriteria.map((criterion) => (
+            <div key={criterion.name} style={{ padding: 20, border: "1px solid #E2E8F0", borderRadius: 16, background: "#fff", boxShadow: "0 5px 16px rgba(15,41,66,.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}><div style={{ display: "flex", gap: 10, alignItems: "center" }}><span style={{ fontSize: 26 }}>{criterion.icon}</span><strong style={{ color: "#1E293B" }}>{criterion.name}</strong></div><span style={{ color: criterion.color, background: `${criterion.color}18`, borderRadius: 20, padding: "5px 9px", fontSize: 12, fontWeight: 800 }}>{criterion.standard}</span></div>
+              <p style={{ color: "#64748B", fontSize: 13, lineHeight: 1.7, minHeight: 42 }}>{criterion.desc}</p>
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#64748B", fontSize: 12, marginBottom: 7 }}><span>القراءة الحالية</span><strong style={{ color: criterion.color, fontSize: 18 }}>{criterion.value}</strong></div>
+              <div style={{ height: 9, background: "#E2E8F0", borderRadius: 10 }}><div style={{ height: "100%", width: criterion.value === "—" ? "8%" : criterion.value, background: criterion.color, borderRadius: 10 }} /></div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 18, padding: 18, borderRadius: 14, background: "#F8FAFC", border: "1px solid #E2E8F0", color: "#475569", lineHeight: 1.9 }}><strong style={{ color: "#1E293B" }}>منهجية القياس:</strong> يتم تطبيق المعايير على الخدمات الإلكترونية وخدمات المكتب، وتسجيل القيمة الفعلية شهريًا ومقارنتها بالهدف.</div>
+      </div>
     </div>
   );
 }
@@ -181,8 +317,10 @@ export function ServiceRequestsView({
     return requests.filter((request) => {
       const statusMatch =
         statusFilter === "all" || request.status === statusFilter;
+      const aliases = SERVICE_FILTER_ALIASES[activeServiceFilter] || [activeServiceFilter];
       const serviceMatch =
-        activeServiceFilter === "all" || request.service_type === activeServiceFilter;
+        activeServiceFilter === "all" ||
+        aliases.some((alias) => request.service_type?.includes(alias));
 
       if (!statusMatch || !serviceMatch) return false;
       if (!query) return true;

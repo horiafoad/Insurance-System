@@ -1,11 +1,18 @@
 import { styles } from "./styles";
 import { MENU_ITEMS, TASK_TYPES } from "./data";
 
+const SERVICE_REQUEST_TYPES = {
+  salary_statement: "مفردات مرتب",
+  care: "الرعاية الصحية",
+  fellowship: "صندوق الزمالة",
+};
+
 export default function Sidebar({
   activeMenu,
   filterType,
   setActiveMenu,
   setFilterType,
+  setServiceRequestFilter,
 }) {
   return (
     <aside style={styles.sidebar}>
@@ -38,36 +45,45 @@ export default function Sidebar({
       <div style={styles.sidebarLabel}>الأعمال</div>
 
       {TASK_TYPES.map((type) => (
-        <button
-          key={type.id}
-          onClick={() => {
-            if (type.id === "staff_changes") {
-              setActiveMenu("study_leaves");
-              return;
-            }
-            if (type.id === "claims") {
-              setActiveMenu("claims");
-              return;
-            }
-            setFilterType(type.id);
-            setActiveMenu("daily");
-          }}
-          style={{
-            ...styles.smallMenuButton,
-            ...(type.id === "staff_changes" && activeMenu === "study_leaves"
-              ? styles.smallMenuButtonActive
-              : {}),
-            ...(type.id === "claims" && activeMenu === "claims"
-              ? styles.smallMenuButtonActive
-              : {}),
-            ...(activeMenu === "daily" && filterType === type.id
-              ? styles.smallMenuButtonActive
-              : {}),
-          }}
-        >
-          <span>{type.icon}</span>
-          <span>{type.title}</span>
-        </button>
+        <div key={type.id}>
+          <button
+            onClick={() => {
+              if (type.id === "staff_changes") {
+                setActiveMenu("study_leaves");
+                return;
+              }
+              if (type.id === "claims") {
+                setActiveMenu("claims");
+                return;
+              }
+              if (SERVICE_REQUEST_TYPES[type.id]) {
+                setServiceRequestFilter(SERVICE_REQUEST_TYPES[type.id]);
+                setActiveMenu("service_requests");
+                return;
+              }
+              setFilterType(type.id);
+              setActiveMenu("daily");
+            }}
+            style={{
+              ...styles.smallMenuButton,
+              ...(type.id === "staff_changes" && activeMenu === "study_leaves"
+                ? styles.smallMenuButtonActive
+                : {}),
+              ...(type.id === "claims" && activeMenu === "claims"
+                ? styles.smallMenuButtonActive
+                : {}),
+              ...(SERVICE_REQUEST_TYPES[type.id] && activeMenu === "service_requests"
+                ? styles.smallMenuButtonActive
+                : {}),
+              ...(activeMenu === "daily" && filterType === type.id
+                ? styles.smallMenuButtonActive
+                : {}),
+            }}
+          >
+            <span>{type.icon}</span>
+            <span>{type.title}</span>
+          </button>
+        </div>
       ))}
     </aside>
   );

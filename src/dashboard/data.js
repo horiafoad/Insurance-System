@@ -128,8 +128,8 @@ export const STATUS = {
 export const MENU_ITEMS = [
   {
     id: "criteria",
-    title: "معايير تقييم الأداء",
-    icon: "⭐",
+    title: "المؤشرات",
+    icon: "📈",
   },
   {
     id: "service_requests",
@@ -142,14 +142,14 @@ export const MENU_ITEMS = [
     icon: "💬",
   },
   {
-    id: "performance_evaluation",
-    title: "تقييم الأداء والجودة",
-    icon: "📊",
-  },
-  {
     id: "employee_performance",
     title: "تقييم أداء الموظفين",
     icon: "👥",
+  },
+  {
+    id: "performance_dashboard",
+    title: "تقييم الأداء الإلكتروني وخدمات المكتب",
+    icon: "📊",
   },
   {
     id: "employee_profiles",

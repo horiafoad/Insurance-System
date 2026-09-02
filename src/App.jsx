@@ -1,9 +1,11 @@
 import logo from "./assets/logo.png";
 import background from "./assets/engineering.jpg";
 import AdminDashboard from "./AdminDashboard";
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
+
+const SAVED_LOGIN_KEY = "saved_admin_login";
 
 function App() {
   const [activePage, setActivePage] = useState("home");
@@ -13,6 +15,11 @@ function App() {
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
   const [serviceLoading, setServiceLoading] = useState(false);
+  const [showTrackingForm, setShowTrackingForm] = useState(false);
+  const [trackingId, setTrackingId] = useState("");
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [trackedRequest, setTrackedRequest] = useState(null);
+  const [trackingError, setTrackingError] = useState("");
   const [serviceForm, setServiceForm] = useState({
     name: "",
     job: "",
@@ -39,6 +46,56 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
+  const navRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      const savedLogin = JSON.parse(localStorage.getItem(SAVED_LOGIN_KEY) || "null");
+      if (savedLogin?.username && savedLogin?.password) {
+        setLoginForm({
+          username: savedLogin.username,
+          password: savedLogin.password,
+        });
+      }
+    } catch (error) {
+      console.error("تعذر تحميل بيانات الدخول المحفوظة:", error);
+    }
+  }, []);
+
+  const moveTopMenu = (direction) => {
+    navRef.current?.scrollBy({ left: direction * 180, behavior: "smooth" });
+  };
+
+  const trackServiceRequest = async (event) => {
+    event.preventDefault();
+    if (!trackingId.trim()) {
+      setTrackingError("أدخلي رقم الطلب أولاً.");
+      return;
+    }
+
+    setTrackingLoading(true);
+    setTrackingError("");
+    setTrackedRequest(null);
+    try {
+      const { data, error } = await supabase
+        .from("service_requests")
+        .select("id, service_type, name, status, created_at")
+        .eq("id", trackingId.trim())
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
+        setTrackingError("لم يتم العثور على طلب بهذا الرقم.");
+        return;
+      }
+      setTrackedRequest(data);
+    } catch (error) {
+      console.error("خطأ في متابعة الطلب:", error);
+      setTrackingError("تعذر تحميل حالة الطلب حاليًا.");
+    } finally {
+      setTrackingLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -64,16 +121,16 @@ function App() {
   const services = [
     {
       icon: "📄",
-      title: "مفرد مرتب",
-      description: "طلب استخراج مفرد مرتب إلكترونيًا.",
+      title: "مفردات مرتب",
+      description: "طلب استخراج مفردات مرتب إلكترونيًا.",
       color: "#2563EB",
       lightColor: "#EFF6FF",
       borderColor: "#BFDBFE",
     },
     {
       icon: "❤️",
-      title: "الرعاية الاجتماعية",
-      description: "تقديم طلبات الرعاية الصحية والاجتماعية.",
+      title: "الرعاية الصحية",
+      description: "تقديم طلبات الرعاية الصحية.",
       color: "#DB5B7A",
       lightColor: "#FFF1F4",
       borderColor: "#FBCFE0",
@@ -210,6 +267,7 @@ function App() {
     }
   };
 
+
   const submitFeedback = async () => {
     if (!feedbackForm.name.trim()) {
       alert("من فضلك أدخلي الاسم.");
@@ -242,8 +300,9 @@ function App() {
       setFeedbackLoading(true);
 
       let savedToDb = false;
+      let savedFeedbackId = null;
       try {
-        const { error } = await supabase.from("public_feedback").insert({
+        const { data: savedFeedback, error } = await supabase.from("public_feedback").insert({
           feedback_type: payload.feedback_type,
           name: payload.name,
           phone: payload.phone,
@@ -251,27 +310,34 @@ function App() {
           message: payload.message,
           source_page: payload.source_page,
           status: payload.status,
-        });
+        }).select("id").single();
 
         if (error) {
-          console.warn("Supabase feedback insert warning:", error.message);
+          console.error("Supabase feedback insert error:", error);
         } else {
           savedToDb = true;
+          savedFeedbackId = savedFeedback?.id || null;
         }
       } catch (dbErr) {
-        console.warn("Supabase feedback exception:", dbErr);
+        console.error("Supabase feedback exception:", dbErr);
       }
 
       // Always save a local copy as backup so nothing is lost
       try {
+        const localId = savedFeedbackId || "local-" + Date.now();
         const existing = JSON.parse(
           localStorage.getItem("backup_public_feedback") || "[]"
         );
         existing.unshift({
           ...payload,
-          id: savedToDb ? undefined : "local-" + Date.now(),
+          id: localId,
         });
         localStorage.setItem("backup_public_feedback", JSON.stringify(existing));
+        localStorage.setItem(
+          "new_public_feedback_event",
+          JSON.stringify({ ...payload, id: localId })
+        );
+        window.dispatchEvent(new CustomEvent("new-public-feedback", { detail: { ...payload, id: localId } }));
       } catch (storageErr) {
         console.error("LocalStorage save error:", storageErr);
       }
@@ -285,9 +351,11 @@ function App() {
       });
 
       alert(
-        feedbackType === "rating"
-          ? "تم إرسال تقييم الخدمة بنجاح وحفظه في النظام."
-          : "تم إرسال الشكوى أو المقترح بنجاح وحفظها للمتابعة في لوحة الإدارة."
+        savedToDb
+          ? feedbackType === "rating"
+            ? "تم إرسال تقييم الخدمة بنجاح وحفظه في النظام."
+            : "تم إرسال الشكوى أو المقترح بنجاح وحفظه للمتابعة في لوحة الإدارة."
+          : "تم حفظ البيانات محليًا مؤقتًا، لكن لم يتم الاتصال بقاعدة البيانات. يرجى تشغيل Migration جدول public_feedback."
       );
     } catch (error) {
       console.error(error);
@@ -345,7 +413,14 @@ function App() {
       setCurrentUser(fullUser);
       setIsLoggedIn(true);
       setShowLogin(false);
-      setLoginForm({ username: "", password: "" });
+
+      const shouldSaveLogin = window.confirm("هل تريدين حفظ اسم المستخدم وكلمة المرور؟");
+      if (shouldSaveLogin) {
+        localStorage.setItem(SAVED_LOGIN_KEY, JSON.stringify(loginForm));
+      } else {
+        localStorage.removeItem(SAVED_LOGIN_KEY);
+        setLoginForm({ username: "", password: "" });
+      }
     } catch (error) {
       console.error("خطأ عام:", error);
       setLoginError("حدث خطأ أثناء تسجيل الدخول: " + error.message);
@@ -364,27 +439,73 @@ function App() {
     <div dir="rtl" style={styles.page}>
       {/* ================= HEADER ================= */}
 
-      <header style={styles.header}>
-        <div style={styles.logoBox}>
+      <header
+        style={{
+          ...styles.header,
+          ...(isMobile
+            ? {
+                padding: "0 10px",
+                gap: "8px",
+                height: "70px",
+              }
+            : {}),
+        }}
+      >
+        <div
+          style={{
+            ...styles.logoBox,
+            ...(isMobile ? { minWidth: 0, gap: "6px" } : {}),
+          }}
+        >
           <img
             src={logo}
             alt="كلية الهندسة"
-            style={styles.logo}
+            style={{
+              ...styles.logo,
+              ...(isMobile ? { width: "58px", height: "42px" } : {}),
+            }}
           />
 
           <div style={styles.logoText}>
             <div style={styles.collegeName}>كلية الهندسة</div>
 
-            <div style={styles.departmentName}>قسم الاستحقاقات</div>
+            <div style={styles.departmentName}>إدارة الاستحقاقات</div>
           </div>
         </div>
 
         {/* NAVIGATION */}
 
-        <nav style={{
-          ...styles.nav,
-          display: isMobile ? "none" : "flex",
-        }}>
+        {!isMobile && (
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", minWidth: 0, flex: 1 }}>
+            <button
+              type="button"
+              aria-label="تحريك القائمة لليمين"
+              onClick={() => moveTopMenu(1)}
+              style={{
+                border: "1px solid #D7E0EA",
+                background: "#fff",
+                color: "#123B5D",
+                borderRadius: "50%",
+                width: "30px",
+                height: "30px",
+                cursor: "pointer",
+                flexShrink: 0,
+                fontSize: "18px",
+              }}
+            >
+              ›
+            </button>
+            <nav
+              ref={navRef}
+              style={{
+                ...styles.nav,
+                display: "flex",
+                overflowX: "auto",
+                scrollbarWidth: "none",
+                minWidth: 0,
+                flex: 1,
+              }}
+            >
           {menuItems.map((item) => (
             <button
               key={item.id}
@@ -397,7 +518,27 @@ function App() {
               {item.title}
             </button>
           ))}
-        </nav>
+            </nav>
+            <button
+              type="button"
+              aria-label="تحريك القائمة لليسار"
+              onClick={() => moveTopMenu(-1)}
+              style={{
+                border: "1px solid #D7E0EA",
+                background: "#fff",
+                color: "#123B5D",
+                borderRadius: "50%",
+                width: "30px",
+                height: "30px",
+                cursor: "pointer",
+                flexShrink: 0,
+                fontSize: "18px",
+              }}
+            >
+              ‹
+            </button>
+          </div>
+        )}
 
         {/* MOBILE MENU BUTTON */}
         <button
@@ -428,6 +569,40 @@ function App() {
                 {item.title}
               </button>
             ))}
+            {isLoggedIn ? (
+              <button
+                type="button"
+                onClick={() => {
+                  handleLogout();
+                  setMobileMenuOpen(false);
+                }}
+                style={{
+                  ...styles.mobileMenuItem,
+                  color: "#DC2626",
+                  borderTop: "1px solid #E2E8F0",
+                  marginTop: "4px",
+                }}
+              >
+                🚪 خروج الإدارة
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogin(true);
+                  setMobileMenuOpen(false);
+                }}
+                style={{
+                  ...styles.mobileMenuItem,
+                  color: "#2563EB",
+                  borderTop: "1px solid #E2E8F0",
+                  marginTop: "4px",
+                  fontWeight: "800",
+                }}
+              >
+                🔐 دخول الإدارة
+              </button>
+            )}
           </div>
         )}
 
@@ -453,11 +628,20 @@ function App() {
           </div>
         ) : (
           <button
-            style={styles.adminButton}
+            style={{
+              ...styles.adminButton,
+              ...(isMobile
+                ? {
+                    padding: "9px 11px",
+                    fontSize: "12px",
+                    gap: "4px",
+                  }
+                : {}),
+            }}
             onClick={() => setShowLogin(true)}
           >
             <span>🔐</span>
-            <span>دخول الإدارة</span>
+            <span style={{ display: isMobile ? "none" : "inline" }}>دخول الإدارة</span>
           </button>
         )}
       </header>
@@ -498,8 +682,23 @@ function App() {
                 ...styles.heroDepartment,
                 fontSize: isMobile ? "28px" : "38px",
               }}>
-                <span style={styles.heroAccent}>قسم الاستحقاقات</span>
+                <span style={styles.heroAccent}>إدارة الاستحقاقات</span>
               </h2>
+
+              <div style={{
+                display: "inline-block",
+                marginTop: "8px",
+                padding: "7px 16px",
+                borderRadius: "999px",
+                background: "rgba(255,255,255,.14)",
+                border: "1px solid rgba(255,255,255,.45)",
+                color: "#FFFFFF",
+                fontSize: isMobile ? "13px" : "16px",
+                fontWeight: "700",
+                letterSpacing: ".2px",
+              }}>
+                مدير الإدارة - أ. رأفت طنطاوي
+              </div>
 
               <div style={styles.blueLine}></div>
 
@@ -518,10 +717,37 @@ function App() {
                 flexDirection: isMobile ? "column" : "row",
               }}>
                 <button
-                  style={styles.primaryButton}
+                  style={{
+                    ...styles.primaryButton,
+                    minWidth: isMobile ? "220px" : "200px",
+                    justifyContent: "center",
+                    padding: "13px 24px",
+                    fontSize: isMobile ? "15px" : "16px",
+                  }}
                   onClick={() => handleMenuClick("services")}
                 >
                   ابدأ تقديم طلب
+                  <span style={styles.arrow}>←</span>
+                </button>
+                <button
+                  style={{
+                    ...styles.primaryButton,
+                    minWidth: isMobile ? "220px" : "200px",
+                    justifyContent: "center",
+                    padding: "13px 24px",
+                    fontSize: isMobile ? "15px" : "16px",
+                    border: "2px solid #2F5BEA",
+                    color: "#FFFFFF",
+                    background: "rgba(255,255,255,.08)",
+                    boxShadow: "0 8px 22px rgba(0,0,0,.12)",
+                  }}
+                  onClick={() => {
+                    setShowTrackingForm(true);
+                    setTrackingError("");
+                    setTrackedRequest(null);
+                  }}
+                >
+                  متابعة الطلب
                   <span style={styles.arrow}>←</span>
                 </button>
               </div>
@@ -1115,6 +1341,69 @@ function App() {
       </footer>
 
       {/* ================= ADMIN LOGIN ================= */}
+
+      {showTrackingForm && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => setShowTrackingForm(false)}
+        >
+          <div
+            style={{ ...styles.loginBox, width: "min(520px, 92%)" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              style={styles.closeButton}
+              onClick={() => setShowTrackingForm(false)}
+              aria-label="إغلاق متابعة الطلب"
+            >
+              ×
+            </button>
+            <div style={{ fontSize: "42px", marginBottom: "8px" }}>🔎</div>
+            <h2 style={styles.loginTitle}>متابعة الطلب</h2>
+            <p style={styles.loginDescription}>
+              أدخلي رقم الطلب لمعرفة حالته الحالية.
+            </p>
+            <form onSubmit={trackServiceRequest}>
+              <input
+                type="text"
+                value={trackingId}
+                onChange={(event) => setTrackingId(event.target.value)}
+                placeholder="رقم الطلب"
+                aria-label="رقم الطلب"
+                style={styles.input}
+              />
+              <button
+                type="submit"
+                disabled={trackingLoading}
+                style={styles.loginButton}
+              >
+                {trackingLoading ? "جاري البحث..." : "بحث عن الطلب"}
+              </button>
+            </form>
+            {trackingError && (
+              <div style={{ ...styles.errorBox, marginTop: "14px" }}>
+                {trackingError}
+              </div>
+            )}
+            {trackedRequest && (
+              <div style={{ marginTop: "18px", overflowX: "auto", borderRadius: "14px", border: "1px solid #DCE6F0", background: "#FFFFFF", textAlign: "right" }}>
+                <div style={{ minWidth: isMobile ? "440px" : "100%", display: "grid", gridTemplateColumns: "1fr 1.5fr 1fr", background: "#F1F5F9", borderBottom: "1px solid #DCE6F0", padding: "12px 16px", color: "#64748B", fontSize: "12px", fontWeight: "800" }}>
+                  <span>رقم الطلب</span>
+                  <span>الخدمة</span>
+                  <span>الحالة</span>
+                </div>
+                <div style={{ minWidth: isMobile ? "440px" : "100%", display: "grid", gridTemplateColumns: "1fr 1.5fr 1fr", alignItems: "center", padding: "16px", color: "#123B5D", fontSize: "14px" }}>
+                  <strong style={{ color: "#2563EB" }}>#{trackedRequest.id}</strong>
+                  <strong>{trackedRequest.service_type}</strong>
+                  <span style={{ justifySelf: "start", background: "#DCFCE7", color: "#047857", padding: "6px 12px", borderRadius: "999px", fontWeight: "800", fontSize: "12px" }}>
+                    {trackedRequest.status || "جديد"}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showLogin && (
         <div

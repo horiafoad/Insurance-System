@@ -39,6 +39,26 @@ export default function ClaimsPage({
   }, [allClaims]);
 
   const total = allClaims.length;
+  const stats = useMemo(() => {
+    const pending = allClaims.filter((claim) =>
+      ["قيد المراجعة", "جديد", "معلق"].includes(String(claim.data?.الحالة || claim.status || ""))
+    ).length;
+    const inProgress = allClaims.filter((claim) =>
+      ["جاري التنفيذ", "قيد التنفيذ", "قيد المعالجة"].includes(
+        String(claim.data?.الحالة || claim.status || "")
+      )
+    ).length;
+    const completed = allClaims.filter((claim) =>
+      ["مكتمل", "تم الصرف", "منتهي"].includes(String(claim.data?.الحالة || claim.status || ""))
+    ).length;
+
+    return {
+      pending,
+      inProgress,
+      completed,
+      completedRate: total ? Math.round((completed / total) * 100) : 0,
+    };
+  }, [allClaims, total]);
 
   const currentSheetCount =
     sheetFilter === "all"

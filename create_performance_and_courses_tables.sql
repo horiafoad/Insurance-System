@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS performance_evaluations (
   total_score DECIMAL(5,2) DEFAULT 0,
   grade VARCHAR(20) DEFAULT 'يحتاج تحسين',
   notes TEXT,
+  detail_scores JSONB,
   evaluator_id UUID REFERENCES users(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -21,6 +22,8 @@ CREATE TABLE IF NOT EXISTS performance_evaluations (
 
 ALTER TABLE performance_evaluations
   ADD COLUMN IF NOT EXISTS employee_id INTEGER;
+ALTER TABLE performance_evaluations
+  ADD COLUMN IF NOT EXISTS detail_scores JSONB;
 CREATE INDEX IF NOT EXISTS idx_performance_evaluations_employee_id
   ON performance_evaluations(employee_id);
 

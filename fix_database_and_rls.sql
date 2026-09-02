@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.service_requests (
   request_year INTEGER,
   certificate_type VARCHAR(100),
   notes TEXT,
+  detail_scores JSONB,
   status VARCHAR(30) DEFAULT 'جديد',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -65,6 +66,8 @@ CREATE TABLE IF NOT EXISTS public.performance_evaluations (
 
 ALTER TABLE public.performance_evaluations
   ADD COLUMN IF NOT EXISTS employee_id INTEGER;
+ALTER TABLE public.performance_evaluations
+  ADD COLUMN IF NOT EXISTS detail_scores JSONB;
 CREATE INDEX IF NOT EXISTS idx_performance_evaluations_employee_id
   ON public.performance_evaluations(employee_id);
 

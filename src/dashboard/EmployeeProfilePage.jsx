@@ -35,6 +35,22 @@ export default function EmployeeProfilePage({ onManageTasks }) {
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showEvaluationForm, setShowEvaluationForm] = useState(false);
+  const [savingEvaluation, setSavingEvaluation] = useState(false);
+  const [evaluationForm, setEvaluationForm] = useState({
+    evaluationMonth: new Date().getMonth() + 1,
+    evaluationYear: new Date().getFullYear(),
+    completionRate: 0,
+    onTimeRate: 0,
+    accuracyRate: 0,
+    speedRate: 0,
+    reviewRate: 0,
+    uploadRate: 0,
+    organizationRate: 0,
+    notes: "",
+  });
+
+  const months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
 
   useEffect(() => {
     const loadProfileData = async () => {
@@ -56,7 +72,19 @@ export default function EmployeeProfilePage({ onManageTasks }) {
           setError("تعذر تحميل بيانات ملف الموظف. تأكدي من تشغيل ملفات إنشاء الجداول.");
         }
         setTasks(taskData || []);
-        setEvaluations(evaluationData || []);
+        let localEvaluations = [];
+        try {
+          localEvaluations = JSON.parse(
+            localStorage.getItem("local_performance_evaluations") || "[]"
+          );
+        } catch (storageError) {
+          console.error("تعذر قراءة التقييمات المحلية:", storageError);
+        }
+        const remoteIds = new Set((evaluationData || []).map((item) => String(item.id)));
+        setEvaluations([
+          ...(evaluationData || []),
+          ...localEvaluations.filter((item) => !remoteIds.has(String(item.id))),
+        ]);
       } catch (loadError) {
         console.error("خطأ عام في تحميل ملف الموظف:", loadError);
         setError("تعذر تحميل بيانات ملف الموظف.");
@@ -91,6 +119,95 @@ export default function EmployeeProfilePage({ onManageTasks }) {
       ]
     : [];
 
+  const saveManualEvaluation = async (event) => {
+    event.preventDefault();
+    setSavingEvaluation(true);
+    const values = [
+      Number(evaluationForm.completionRate) || 0,
+      Number(evaluationForm.onTimeRate) || 0,
+      Number(evaluationForm.accuracyRate) || 0,
+      Number(evaluationForm.speedRate) || 0,
+      Number(evaluationForm.reviewRate) || 0,
+      Number(evaluationForm.uploadRate) || 0,
+      Number(evaluationForm.organizationRate) || 0,
+    ].map((value) => Math.min(100, Math.max(0, value)));
+    const totalScore = Math.round(
+      values[0] * 0.3 + values[1] * 0.25 + values[2] * 0.2 + values[3] * 0.1 +
+      ((values[4] + values[5]) / 2) * 0.1 + values[6] * 0.05
+    );
+    const grade = totalScore >= 90 ? "ممتاز" : totalScore >= 80 ? "جيد جداً" : totalScore >= 70 ? "جيد" : totalScore >= 60 ? "مقبول" : "يحتاج تحسين";
+
+    let data = null;
+    let saveError = null;
+    try {
+      const result = await supabase
+        .from("performance_evaluations")
+        .insert({
+          employee_id: employee.id,
+          evaluation_month: months[evaluationForm.evaluationMonth - 1],
+          evaluation_year: Number(evaluationForm.evaluationYear),
+          completion_rate: values[0],
+          on_time_rate: values[1],
+          accuracy_rate: values[2],
+          speed_rate: values[3],
+          review_rate: values[4],
+          upload_rate: values[5],
+          organization_rate: values[6],
+          total_score: totalScore,
+          grade,
+          notes: evaluationForm.notes.trim() || null,
+        })
+        .select()
+        .single();
+      data = result.data;
+      saveError = result.error;
+    } catch (error) {
+      saveError = error;
+    }
+
+    if (saveError) {
+      console.error("خطأ في حفظ التقييم اليدوي:", saveError);
+      const localEvaluation = {
+        employee_id: employee.id,
+        evaluation_month: months[evaluationForm.evaluationMonth - 1],
+        evaluation_year: Number(evaluationForm.evaluationYear),
+        completion_rate: values[0],
+        on_time_rate: values[1],
+        accuracy_rate: values[2],
+        speed_rate: values[3],
+        review_rate: values[4],
+        upload_rate: values[5],
+        organization_rate: values[6],
+        total_score: totalScore,
+        grade,
+        notes: evaluationForm.notes.trim() || null,
+        id: `local-eval-${Date.now()}`,
+        created_at: new Date().toISOString(),
+      };
+      let localEvaluations = [];
+      try {
+        localEvaluations = JSON.parse(
+          localStorage.getItem("local_performance_evaluations") || "[]"
+        );
+      } catch (storageError) {
+        console.error("تعذر قراءة التقييمات المحلية:", storageError);
+      }
+      localEvaluations.unshift(localEvaluation);
+      localStorage.setItem(
+        "local_performance_evaluations",
+        JSON.stringify(localEvaluations)
+      );
+      setEvaluations((current) => [localEvaluation, ...current]);
+      setShowEvaluationForm(false);
+      setError("تم حفظ التقييم محليًا مؤقتًا، لكن تعذر حفظه في قاعدة البيانات. تأكدي من تشغيل Migration جدول performance_evaluations.");
+    } else {
+      setEvaluations((current) => [data, ...current]);
+      setShowEvaluationForm(false);
+      setEvaluationForm((current) => ({ ...current, notes: "" }));
+    }
+    setSavingEvaluation(false);
+  };
+
   if (loading) {
     return <div style={styles.card}><div style={styles.infoBox}>جاري تحميل ملف الموظف...</div></div>;
   }
@@ -103,7 +220,10 @@ export default function EmployeeProfilePage({ onManageTasks }) {
             <h2 style={styles.cardTitle}>📁 صفحة تقييم الموظف</h2>
             <p style={styles.cardSub}>تقييم تفصيلي لكل موظف مع مهامه ومؤشرات أدائه</p>
           </div>
-          <button style={styles.secondaryButton} onClick={onManageTasks}>📝 إدارة المهام وإضافة مهمة</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button style={styles.primaryButton} onClick={() => setShowEvaluationForm(true)}>＋ إضافة تقييم يدوي</button>
+            <button style={styles.secondaryButton} onClick={onManageTasks}>📝 إدارة المهام</button>
+          </div>
         </div>
         {error && <div style={styles.errorBox}>{error}</div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}>
@@ -123,7 +243,7 @@ export default function EmployeeProfilePage({ onManageTasks }) {
           ))}
         </div>
 
-        <div style={{ ...styles.card, margin: 0, background: "linear-gradient(135deg,#0F2942,#2563EB)", color: "#fff" }}>
+        <div style={{ ...styles.card, margin: 0, background: "linear-gradient(135deg,#0F2942,#2563EB)", color: "#fff", boxShadow: "0 14px 30px rgba(15,41,66,.2)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 28, fontWeight: 900 }}>{employee.name}</div>
@@ -151,7 +271,7 @@ export default function EmployeeProfilePage({ onManageTasks }) {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.1fr) minmax(0,0.9fr)", gap: 18 }}>
-          <div style={styles.card}>
+          <div style={{ ...styles.card, borderTop: "4px solid #2563EB" }}>
             <h3 style={styles.cardTitle}>📋 مهام الموظف</h3>
             {employeeTasks.length === 0 ? <div style={styles.infoBox}>لا توجد مهام مضافة لهذا الموظف بعد.</div> : (
               <div style={{ display: "grid", gap: 10 }}>
@@ -171,7 +291,7 @@ export default function EmployeeProfilePage({ onManageTasks }) {
               </div>
             )}
           </div>
-          <div style={styles.card}>
+          <div style={{ ...styles.card, borderTop: "4px solid #10B981" }}>
             <h3 style={styles.cardTitle}>📊 سجل التقييمات</h3>
             {employeeEvaluations.length === 0 ? <div style={styles.infoBox}>لا توجد تقييمات مسجلة لهذا الموظف بعد.</div> : (
               <div style={{ display: "grid", gap: 12 }}>
@@ -213,6 +333,41 @@ export default function EmployeeProfilePage({ onManageTasks }) {
           </div>
         </div>
       </div>
+      {showEvaluationForm && (
+        <div style={styles.modalOverlay} onClick={() => setShowEvaluationForm(false)}>
+          <div style={{ ...styles.loginBox, maxWidth: 650, maxHeight: "90vh", overflowY: "auto" }} onClick={(event) => event.stopPropagation()}>
+            <button style={styles.closeButton} onClick={() => setShowEvaluationForm(false)}>×</button>
+            <h2 style={styles.loginTitle}>إضافة تقييم يدوي</h2>
+            <p style={styles.loginDescription}>تقييم الموظف: {employee.name}</p>
+            <form onSubmit={saveManualEvaluation}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <select style={styles.input} value={evaluationForm.evaluationMonth} onChange={(event) => setEvaluationForm({ ...evaluationForm, evaluationMonth: Number(event.target.value) })}>
+                  {months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
+                </select>
+                <input style={styles.input} type="number" min="2020" max="2100" value={evaluationForm.evaluationYear} onChange={(event) => setEvaluationForm({ ...evaluationForm, evaluationYear: Number(event.target.value) })} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+                {[
+                  ["completionRate", "نسبة الإنجاز"],
+                  ["onTimeRate", "الالتزام بالموعد"],
+                  ["accuracyRate", "الدقة"],
+                  ["speedRate", "السرعة"],
+                  ["reviewRate", "المراجعة"],
+                  ["uploadRate", "الرفع"],
+                  ["organizationRate", "التنظيم"],
+                ].map(([key, label]) => (
+                  <label key={key} style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>
+                    {label}
+                    <input style={{ ...styles.input, marginTop: 5 }} type="number" min="0" max="100" value={evaluationForm[key]} onChange={(event) => setEvaluationForm({ ...evaluationForm, [key]: event.target.value })} required />
+                  </label>
+                ))}
+              </div>
+              <textarea style={{ ...styles.input, marginTop: 12, minHeight: 80, resize: "vertical" }} placeholder="ملاحظات التقييم (اختياري)" value={evaluationForm.notes} onChange={(event) => setEvaluationForm({ ...evaluationForm, notes: event.target.value })} />
+              <button style={{ ...styles.primaryButton, width: "100%", marginTop: 14 }} type="submit" disabled={savingEvaluation}>{savingEvaluation ? "جاري الحفظ..." : "حفظ التقييم"}</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

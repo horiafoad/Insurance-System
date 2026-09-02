@@ -215,23 +215,23 @@ export default function UserManagement() {
                           fontSize: "12px",
                           fontWeight: "700",
                           background:
-                            user.role === "super_admin"
+                            ["creator", "super_admin"].includes(user.role)
                               ? "#FEE2E2"
                               : user.role === "admin"
                               ? "#DBEAFE"
                               : "#E0F2FE",
                           color:
-                            user.role === "super_admin"
+                            ["creator", "super_admin"].includes(user.role)
                               ? "#B91C1C"
                               : user.role === "admin"
                               ? "#1E40AF"
                               : "#0369A1",
                         }}
                       >
-                        {user.role === "super_admin"
-                          ? "👑 مدير رئيسي (horia)"
+                        {["creator", "super_admin"].includes(user.role)
+                          ? "منشئ البرنامج"
                           : user.role === "admin"
-                          ? "🛡️ مدير"
+                          ? "👑 مدير"
                           : "👤 مستخدم"}
                       </span>
                     </td>
@@ -256,7 +256,7 @@ export default function UserManagement() {
                         >
                           ✏️ تعديل
                         </button>
-                        {user.role !== "super_admin" && user.username !== "horia" && (
+                        {!["creator", "super_admin"].includes(user.role) && user.username !== "horia" && (
                           <button
                             style={{
                               ...styles.deleteButton,
@@ -371,7 +371,7 @@ export default function UserManagement() {
                 >
                   <option value="admin">مدير (صلاحيات كاملة)</option>
                   <option value="user">مستخدم (عرض وتعديل محدود)</option>
-                  <option value="super_admin">مدير رئيسي (Super Admin)</option>
+                  <option value="super_admin">منشئ البرنامج (صلاحيات كاملة)</option>
                 </select>
               </div>
 
