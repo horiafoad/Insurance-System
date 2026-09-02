@@ -20,10 +20,7 @@ import UserManagement from "./dashboard/UserManagement";
 import PerformanceEvaluation from "./dashboard/PerformanceEvaluation";
 import FeedbackView from "./dashboard/FeedbackView";
 import TrainingCourses from "./dashboard/TrainingCourses";
-import SalaryRequestsPage from "./dashboard/SalaryRequestsPage";
-import FellowshipRequestsPage from "./dashboard/FellowshipRequestsPage";
-import WelfareRequestsPage from "./dashboard/WelfareRequestsPage";
-import CertificateRequestsPage from "./dashboard/CertificateRequestsPage";
+import EmployeePerformance from "./dashboard/EmployeePerformance";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -563,17 +560,30 @@ export default function AdminDashboard({ currentUser }) {
             </p>
           </div>
 
-          {activeMenu !== "claims" && activeMenu !== "study_leaves" && (
+          <div style={{ display: "flex", gap: "12px" }}>
             <button
-              style={styles.primaryButton}
+              style={styles.secondaryButton}
               onClick={() => {
-                setTaskForm(createEmptyTask());
-                setShowTaskForm(true);
+                loadTasks();
+                loadClaims();
+                setStudyLeaves(loadStudyLeaves());
               }}
             >
-              ＋ إضافة مهمة جديدة
+              🔄 تحديث
             </button>
-          )}
+
+            {activeMenu !== "claims" && activeMenu !== "study_leaves" && (
+              <button
+                style={styles.primaryButton}
+                onClick={() => {
+                  setTaskForm(createEmptyTask());
+                  setShowTaskForm(true);
+                }}
+              >
+                ＋ إضافة مهمة جديدة
+              </button>
+            )}
+          </div>
         </header>
 
         {appError && <div style={styles.errorBox}>{appError}</div>}
@@ -686,6 +696,8 @@ export default function AdminDashboard({ currentUser }) {
         {activeMenu === "criteria" && <CriteriaView />}
 
         {activeMenu === "performance_evaluation" && <PerformanceEvaluation />}
+
+        {activeMenu === "employee_performance" && <EmployeePerformance />}
 
         {activeMenu === "training_courses" && <TrainingCourses />}
 

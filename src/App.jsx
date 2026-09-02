@@ -524,16 +524,6 @@ function App() {
                   ابدأ تقديم طلب
                   <span style={styles.arrow}>←</span>
                 </button>
-
-                <button
-                  style={styles.secondaryButton}
-                  onClick={() => {
-                    alert("سيتم إضافة متابعة الطلب قريبًا");
-                  }}
-                >
-                  <span>🔎</span>
-                  متابعة طلب
-                </button>
               </div>
             </div>
           </section>
