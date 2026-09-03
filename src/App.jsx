@@ -414,13 +414,6 @@ function App() {
       setIsLoggedIn(true);
       setShowLogin(false);
 
-      const shouldSaveLogin = window.confirm("هل تريدين حفظ اسم المستخدم وكلمة المرور؟");
-      if (shouldSaveLogin) {
-        localStorage.setItem(SAVED_LOGIN_KEY, JSON.stringify(loginForm));
-      } else {
-        localStorage.removeItem(SAVED_LOGIN_KEY);
-        setLoginForm({ username: "", password: "" });
-      }
     } catch (error) {
       console.error("خطأ عام:", error);
       setLoginError("حدث خطأ أثناء تسجيل الدخول: " + error.message);

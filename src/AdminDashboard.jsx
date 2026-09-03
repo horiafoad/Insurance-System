@@ -22,6 +22,7 @@ import TrainingCourses from "./dashboard/TrainingCourses";
 import EmployeePerformance from "./dashboard/EmployeePerformance";
 import EmployeeProfilePage from "./dashboard/EmployeeProfilePage";
 import EmployeePerformanceDashboard from "./dashboard/EmployeePerformanceDashboard";
+import FacultySalariesPage from "./dashboard/FacultySalariesPage";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -823,6 +824,8 @@ export default function AdminDashboard({ currentUser }) {
             onServiceFilterChange={setServiceRequestFilter}
           />
         )}
+
+        {activeMenu === "faculty_salaries" && <FacultySalariesPage />}
 
         {activeMenu === "feedback" && <FeedbackView />}
 

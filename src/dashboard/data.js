@@ -56,6 +56,13 @@ export const TASK_TYPES = [
     frequency: "حسب الطلب",
   },
   {
+    id: "faculty_salaries",
+    title: "مرتبات هيئة التدريس",
+    icon: "👨‍🏫",
+    color: "#EDE9FE",
+    frequency: "حسب الشهر",
+  },
+  {
     id: "care",
     title: "خدمة الرعاية",
     icon: "🤲",

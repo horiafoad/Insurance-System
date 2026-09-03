@@ -61,6 +61,10 @@ export default function Sidebar({
                 setActiveMenu("service_requests");
                 return;
               }
+              if (type.id === "faculty_salaries") {
+                setActiveMenu("faculty_salaries");
+                return;
+              }
               setFilterType(type.id);
               setActiveMenu("daily");
             }}
