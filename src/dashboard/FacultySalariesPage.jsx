@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import * as XLSX from "xlsx";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
 import { supabase } from "../supabaseClient";
@@ -45,6 +46,7 @@ function SalaryPagePreview({ record }) {
 export default function FacultySalariesPage() {
   const [search, setSearch] = useState("");
   const [records, setRecords] = useState([]);
+  const [salaryRows, setSalaryRows] = useState([]);
   const [fileName, setFileName] = useState("مفردات مرتب تدريس.pdf");
   const [processing, setProcessing] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -64,6 +66,18 @@ export default function FacultySalariesPage() {
       return yearMatch && monthMatch && searchMatch;
     });
   }, [records, search, filterFromYear, filterToYear, filterMonth]);
+
+  const filteredSalaryRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return salaryRows.filter((row) => {
+      const yearMatch =
+        (!filterFromYear || Number(row.period_year) >= Number(filterFromYear)) &&
+        (!filterToYear || Number(row.period_year) <= Number(filterToYear));
+      const monthMatch = filterMonth === "all" || String(row.period_month) === String(filterMonth);
+      const searchMatch = !query || row.search_text.toLowerCase().includes(query);
+      return yearMatch && monthMatch && searchMatch;
+    });
+  }, [salaryRows, search, filterFromYear, filterToYear, filterMonth]);
 
   const handleSelectFiles = (event) => {
     const files = [...(event.target.files || [])];
@@ -99,8 +113,20 @@ export default function FacultySalariesPage() {
         const { error: uploadError } = await supabase.storage.from("faculty-salaries").upload(filePath, item.file);
         if (uploadError) throw uploadError;
         const { data: publicUrl } = supabase.storage.from("faculty-salaries").getPublicUrl(filePath);
-        await indexPdf(await item.file.arrayBuffer(), item.file.name, publicUrl.publicUrl, item.year, item.month);
+        if (item.file.name.toLowerCase().match(/\.(xlsx|xls)$/)) {
+          await indexWorkbook(
+            await item.file.arrayBuffer(),
+            item.file.name,
+            publicUrl.publicUrl,
+            item.year,
+            item.month,
+            false
+          );
+        } else {
+          await indexPdf(await item.file.arrayBuffer(), item.file.name, publicUrl.publicUrl, item.year, item.month, false);
+        }
       }
+      await loadRecords();
       setPendingFiles([]);
     } catch (uploadError) {
       console.error("تعذر رفع ملفات المرتبات:", uploadError);
@@ -111,24 +137,37 @@ export default function FacultySalariesPage() {
   };
 
   const loadRecords = async () => {
-    const { data, error: loadError } = await supabase
+    const [{ data, error: loadError }, { data: rowData, error: rowError }] = await Promise.all([
+      supabase
       .from("faculty_salary_pages")
       .select("*")
       .order("period_year", { ascending: false })
       .order("period_month", { ascending: false })
-      .order("page_number", { ascending: true });
+      .order("page_number", { ascending: true }),
+      supabase
+        .from("faculty_salary_rows")
+        .select("*")
+        .order("period_year", { ascending: false })
+        .order("period_month", { ascending: false })
+        .order("created_at", { ascending: false }),
+    ]);
     if (loadError) {
       setError("تعذر تحميل أرشيف المرتبات: " + loadError.message);
       return;
     }
+    if (rowError) {
+      setError("تعذر تحميل سجلات Excel: " + rowError.message);
+      return;
+    }
     setRecords(data || []);
+    setSalaryRows(rowData || []);
   };
 
   useEffect(() => {
     loadRecords();
   }, []);
 
-  const indexPdf = async (source, sourceName, fileUrl, periodYear, periodMonth) => {
+  const indexPdf = async (source, sourceName, fileUrl, periodYear, periodMonth, shouldReload = true) => {
     setProcessing(true);
     setError("");
     try {
@@ -174,13 +213,45 @@ export default function FacultySalariesPage() {
         const { error: saveError } = await supabase.from("faculty_salary_pages").insert(indexed);
         if (saveError) throw saveError;
       }
-      await loadRecords();
+      if (shouldReload) await loadRecords();
     } catch (error) {
       console.error("تعذر فهرسة ملف المرتبات:", error);
       setError("تعذر قراءة أو حفظ ملف المرتبات: " + error.message);
     } finally {
       setProcessing(false);
     }
+  };
+
+  const indexWorkbook = async (source, sourceName, fileUrl, periodYear, periodMonth, shouldReload = true) => {
+    const workbook = XLSX.read(source, { type: "array", cellDates: true });
+    const rows = [];
+
+    workbook.SheetNames.forEach((sheetName) => {
+      const worksheet = workbook.Sheets[sheetName];
+      const sheetRows = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
+      sheetRows.forEach((row, index) => {
+        const values = Object.values(row).map((value) => String(value ?? "").trim());
+        if (!values.some(Boolean)) return;
+        rows.push({
+          file_name: sourceName,
+          file_url: fileUrl,
+          period_year: Number(periodYear),
+          period_month: Number(periodMonth),
+          sheet_name: sheetName,
+          row_number: index + 2,
+          row_data: row,
+          search_text: values.join(" ").toLowerCase(),
+        });
+      });
+    });
+
+    for (let index = 0; index < rows.length; index += 500) {
+      const { error: saveError } = await supabase
+        .from("faculty_salary_rows")
+        .insert(rows.slice(index, index + 500));
+      if (saveError) throw saveError;
+    }
+    if (shouldReload) await loadRecords();
   };
 
   return (
@@ -191,12 +262,12 @@ export default function FacultySalariesPage() {
           <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية</p>
         </div>
         <label style={styles.excelButton}>
-          📥 اختيار ملفات PDF
-          <input type="file" accept=".pdf" multiple onChange={handleSelectFiles} style={{ display: "none" }} />
+          📥 اختيار ملفات PDF أو Excel
+          <input type="file" accept=".pdf,.xlsx,.xls" multiple onChange={handleSelectFiles} style={{ display: "none" }} />
         </label>
         {pendingFiles.length > 0 && (
           <button style={styles.primaryButton} onClick={uploadAllFiles} disabled={processing}>
-            {processing ? "جاري رفع الملفات..." : `رفع كل الملفات (${pendingFiles.length})`}
+            {processing ? "جاري رفع واستيراد الملفات..." : `رفع كل الملفات (${pendingFiles.length})`}
           </button>
         )}
       </div>
@@ -242,6 +313,7 @@ export default function FacultySalariesPage() {
       <div style={styles.claimStats}>
         <ClaimStat title="النتائج" value={results.length} icon="🔎" />
         <ClaimStat title="الصفحات المفهرسة" value={records.length} icon="📄" />
+        <ClaimStat title="صفوف Excel" value={filteredSalaryRows.length} icon="📊" />
       </div>
 
       <div style={styles.filterRow}>
@@ -254,7 +326,31 @@ export default function FacultySalariesPage() {
       </div>
 
       {error && <div style={styles.errorBox}>{error}</div>}
-      {fileName && <div style={styles.infoBox}>{processing ? "جاري قراءة نص صفحات الملف وحفظها..." : `آخر ملف: ${fileName}`}</div>}
+      {fileName && <div style={styles.infoBox}>{processing ? "جاري قراءة الملفات وحفظها في قاعدة البيانات..." : `آخر ملف: ${fileName}`}</div>}
+      {filteredSalaryRows.length > 0 && (
+        <div style={{ overflowX: "auto", marginBottom: 22 }}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>الملف</th>
+                <th style={styles.th}>الشيت</th>
+                <th style={styles.th}>السنة / الشهر</th>
+                <th style={styles.th}>البيانات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSalaryRows.map((row) => (
+                <tr key={row.id}>
+                  <td style={styles.td}>{row.file_name}</td>
+                  <td style={styles.td}>{row.sheet_name}</td>
+                  <td style={styles.td}>{row.period_year} / {MONTH_NAMES[Number(row.period_month) - 1]}</td>
+                  <td style={styles.td}>{Object.entries(row.row_data).map(([key, value]) => `${key}: ${value}`).join(" | ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {results.length && search.trim() ? (
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 22 }}>
           {results.map((record) => (

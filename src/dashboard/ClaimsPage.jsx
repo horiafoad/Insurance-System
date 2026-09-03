@@ -16,9 +16,16 @@ export default function ClaimsPage({
   onAddManual,
   onDeleteClaim,
   onUpdateClaim,
+  onUploadPdf,
   canManage = false,
+  title = "قسم المطالبات",
+  description = "إضافة وتعديل وحذف واستيراد ملفات المطالبات",
+  importLabel = "📥 استيراد ملف Excel",
+  message = "",
+  deleteLabel = "🗑️ حذف",
 }) {
   const [editingClaim, setEditingClaim] = useState(null);
+  const [selectedPdfNames, setSelectedPdfNames] = useState({});
   const [editFormData, setEditFormData] = useState({
     sheet_name: "",
     data: {},
@@ -87,8 +94,8 @@ export default function ClaimsPage({
       <div style={styles.card}>
         <div style={styles.claimsHeader}>
           <div>
-            <h2 style={styles.cardTitle}>📋 قسم المطالبات</h2>
-            <p style={styles.cardSub}>إضافة وتعديل وحذف واستيراد ملفات المطالبات</p>
+            <h2 style={styles.cardTitle}>⚖️ {title}</h2>
+            <p style={styles.cardSub}>{description}</p>
           </div>
 
           <div style={styles.claimHeaderButtons}>
@@ -97,7 +104,7 @@ export default function ClaimsPage({
             </button>
 
             <label style={styles.excelButton}>
-              📥 استيراد ملف Excel
+              {importLabel}
               <input
                 type="file"
                 accept=".xlsx,.xls"
@@ -113,6 +120,7 @@ export default function ClaimsPage({
         )}
 
         {error && <div style={styles.errorBox}>{error}</div>}
+        {message && <div style={styles.infoBox}>{message}</div>}
 
         <div style={styles.claimStats}>
           <ClaimStat title="إجمالي السجلات" value={stats.total} icon="📋" />
@@ -203,6 +211,54 @@ export default function ClaimsPage({
                         ))}
                         <td style={styles.td}>
                           <div style={{ display: "flex", gap: "6px" }}>
+                            {claim.pdf_url ? (
+                              <a
+                                href={claim.pdf_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  ...styles.viewButton,
+                                  padding: "4px 8px",
+                                  fontSize: "12px",
+                                  textDecoration: "none",
+                                }}
+                              >
+                                📄 فتح PDF
+                              </a>
+                            ) : null}
+                            {onUploadPdf && (
+                              <label
+                                style={{
+                                  ...styles.excelButton,
+                                  padding: "4px 8px",
+                                  fontSize: "12px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                📎 رفع PDF
+                                <input
+                                  type="file"
+                                  accept=".pdf,application/pdf"
+                                  onChange={(event) => {
+                                    const file = event.target.files?.[0];
+                                    if (file) {
+                                      setSelectedPdfNames((current) => ({
+                                        ...current,
+                                        [claim.id]: file.name,
+                                      }));
+                                      onUploadPdf(claim.id, file);
+                                    }
+                                    event.target.value = "";
+                                  }}
+                                  style={{ display: "none" }}
+                                />
+                              </label>
+                            )}
+                            {selectedPdfNames[claim.id] && !claim.pdf_url && (
+                              <span style={{ color: "#475569", fontSize: "11px" }}>
+                                {selectedPdfNames[claim.id]}
+                              </span>
+                            )}
                             <button
                               style={{
                                 ...styles.viewButton,
@@ -227,7 +283,7 @@ export default function ClaimsPage({
                                 onClick={() => onDeleteClaim(claim.id)}
                                 title="حذف المطالبة"
                               >
-                                🗑️ حذف
+                                {deleteLabel}
                               </button>
                             )}
                           </div>
@@ -255,7 +311,7 @@ export default function ClaimsPage({
           <div style={styles.emptyClaims}>
             <div style={styles.emptyIcon}>📋</div>
             <h3>لا توجد مطالبات حتى الآن</h3>
-            <p>يمكنك إضافة مطالبة يدويًا أو استيراد ملف Excel.</p>
+            <p>يمكنك إضافة قضية يدويًا أو استيراد شيت Excel.</p>
             <div style={styles.emptyClaimButtons}>
               <button
                 style={styles.manualClaimButtonLarge}
@@ -264,7 +320,7 @@ export default function ClaimsPage({
                 ＋ إضافة مطالبة يدويًا
               </button>
               <label style={styles.excelButtonLarge}>
-                📥 اختيار ملف Excel
+                📥 اختيار شيت القضايا Excel
                 <input
                   type="file"
                   accept=".xlsx,.xls"

@@ -51,6 +51,13 @@ export default function AdminDashboard({ currentUser }) {
   const [claimSheetFilter, setClaimSheetFilter] = useState("all");
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimError, setClaimError] = useState("");
+  const [cases, setCases] = useState([]);
+  const [caseSheets, setCaseSheets] = useState([]);
+  const [caseSearch, setCaseSearch] = useState("");
+  const [caseSheetFilter, setCaseSheetFilter] = useState("all");
+  const [caseLoading, setCaseLoading] = useState(false);
+  const [caseError, setCaseError] = useState("");
+  const [caseMessage, setCaseMessage] = useState("");
 
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [claimForm, setClaimForm] = useState(createEmptyClaim());
@@ -71,6 +78,7 @@ export default function AdminDashboard({ currentUser }) {
   useEffect(() => {
     loadTasks();
     loadClaims();
+    loadCases();
     setStudyLeaves(loadStudyLeaves());
   }, []);
 
@@ -146,6 +154,15 @@ export default function AdminDashboard({ currentUser }) {
       console.error(error);
       setClaimError("تعذر تحميل المطالبات من قاعدة البيانات.");
     }
+  };
+
+  const loadCases = async () => {
+    const { data, error } = await supabase.from("cases").select("*").order("created_at", { ascending: false });
+    if (error) { setCaseError("تعذر تحميل بنك القضايا: " + error.message); return; }
+    setCases(data || []);
+    const grouped = {};
+    (data || []).forEach((item) => { const name = item.sheet_name || "بدون شيت"; grouped[name] = (grouped[name] || 0) + 1; });
+    setCaseSheets(Object.entries(grouped).map(([name, count]) => ({ name, count })));
   };
 
   useEffect(() => {
@@ -342,6 +359,107 @@ export default function AdminDashboard({ currentUser }) {
     }
   };
 
+  const uploadClaimPdf = async (claimId, file) => {
+    if (!file) return;
+    setClaimLoading(true);
+    setClaimError("");
+    try {
+      const safeFileName = file.name.replace(/[^\w.-]+/g, "_");
+      const filePath = `claims/${claimId}-${Date.now()}-${safeFileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("claim-pdfs")
+        .upload(filePath, file, { contentType: "application/pdf", upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrl } = supabase.storage.from("claim-pdfs").getPublicUrl(filePath);
+      const { error: updateError } = await supabase
+        .from("claims")
+        .update({ pdf_url: publicUrl.publicUrl })
+        .eq("id", claimId);
+      if (updateError) throw updateError;
+
+      await loadClaims();
+    } catch (uploadError) {
+      console.error("تعذر رفع ملف القضية:", uploadError);
+      setClaimError("تعذر رفع ملف PDF للقضية: " + uploadError.message);
+    } finally {
+      setClaimLoading(false);
+    }
+  };
+
+  const importCasesExcel = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCaseLoading(true); setCaseError("");
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      const imported = [];
+      workbook.SheetNames.forEach((sheetName) => {
+        XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "", raw: false })
+          .forEach((data, index) => imported.push({ sheet_name: sheetName, row_number: index + 2, data }));
+      });
+      if (!imported.length) throw new Error("لا توجد بيانات داخل الملف.");
+      const { error } = await supabase.from("cases").insert(imported);
+      if (error) throw error;
+      await loadCases();
+      alert(`تم استيراد ${imported.length} قضية بنجاح.`);
+    } catch (error) { setCaseError("تعذر استيراد شيت القضايا: " + error.message); }
+    finally { setCaseLoading(false); event.target.value = ""; }
+  };
+
+  const uploadCasePdf = async (caseId, file) => {
+    if (!file) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setCaseError("اختاري ملف PDF فقط للقضية.");
+      return;
+    }
+    setCaseLoading(true);
+    setCaseError("");
+    setCaseMessage(`جاري رفع الملف ${file.name}...`);
+    try {
+      const path = `cases/${caseId}-${Date.now()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
+      const { error: uploadError } = await supabase.storage
+        .from("case-pdfs")
+        .upload(path, file, { contentType: "application/pdf", upsert: false });
+      if (uploadError) throw uploadError;
+      const { data: url } = supabase.storage.from("case-pdfs").getPublicUrl(path);
+      const { data: updatedCase, error } = await supabase
+        .from("cases")
+        .update({ pdf_url: url.publicUrl })
+        .eq("id", caseId)
+        .select("id, pdf_url")
+        .single();
+      if (error) throw error;
+      if (!updatedCase?.pdf_url) throw new Error("لم يتم حفظ رابط PDF مع القضية.");
+      await loadCases();
+      setCaseMessage("تم حفظ PDF القضية بنجاح. اضغطي «فتح PDF» لعرضه.");
+    } catch (error) {
+      console.error("تعذر رفع PDF القضية:", error);
+      setCaseError("تعذر حفظ PDF القضية: " + error.message);
+    } finally { setCaseLoading(false); }
+  };
+
+  const deleteCase = async (caseId) => {
+    if (!window.confirm("هل تريدين إزالة هذه القضية من العرض؟")) return;
+    setCaseLoading(true);
+    setCaseError("");
+    try {
+      setCases((current) => current.filter((item) => item.id !== caseId));
+      setCaseSheets((current) => current
+        .map((sheet) => ({
+          ...sheet,
+          count: cases.filter((item) => item.sheet_name === sheet.name && item.id !== caseId).length,
+        }))
+        .filter((sheet) => sheet.count > 0));
+      setCaseMessage("تمت إزالة القضية من العرض فقط، ولم تُحذف من قاعدة البيانات.");
+    } catch (error) {
+      console.error("تعذر إزالة القضية من العرض:", error);
+      setCaseError("تعذر إزالة القضية من العرض: " + error.message);
+    } finally {
+      setCaseLoading(false);
+    }
+  };
+
   const addManualClaim = async () => {
     if (!claimForm.claimantName.trim() && !claimForm.claimNumber.trim()) {
       alert("من فضلك أدخلي اسم صاحب المطالبة أو رقم المطالبة على الأقل.");
@@ -402,6 +520,14 @@ export default function AdminDashboard({ currentUser }) {
       );
     });
   }, [claims, claimSearch, claimSheetFilter]);
+
+  const filteredCases = useMemo(() => {
+    const query = caseSearch.trim().toLowerCase();
+    return cases.filter((item) => {
+      if (caseSheetFilter !== "all" && item.sheet_name !== caseSheetFilter) return false;
+      return !query || Object.values(item.data || {}).some((value) => String(value).toLowerCase().includes(query));
+    });
+  }, [cases, caseSearch, caseSheetFilter]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -650,8 +776,10 @@ export default function AdminDashboard({ currentUser }) {
   };
 
   const currentTitle =
-    activeMenu === "claims"
-      ? "المطالبات"
+    activeMenu === "cases"
+      ? "القضايا"
+      : activeMenu === "claims"
+        ? "المطالبات"
       : activeMenu === "study_leaves"
         ? "الإجازات الدراسية"
         : MENU_ITEMS.find((item) => item.id === activeMenu)?.title || "الرئيسية";
@@ -841,10 +969,33 @@ export default function AdminDashboard({ currentUser }) {
             loading={claimLoading}
             error={claimError}
             onImport={importClaimsExcel}
+            onUploadPdf={uploadClaimPdf}
             onAddManual={() => {
               setClaimForm(createEmptyClaim());
               setShowClaimForm(true);
             }}
+          />
+        )}
+
+        {activeMenu === "cases" && (
+          <ClaimsPage
+            claims={filteredCases}
+            allClaims={cases}
+            sheets={caseSheets}
+            search={caseSearch}
+            setSearch={setCaseSearch}
+            sheetFilter={caseSheetFilter}
+            setSheetFilter={setCaseSheetFilter}
+            loading={caseLoading}
+            error={caseError}
+            message={caseMessage}
+            onImport={importCasesExcel}
+            onUploadPdf={uploadCasePdf}
+            onDeleteClaim={deleteCase}
+            deleteLabel="إزالة من العرض"
+            title="بنك القضايا"
+            description="استيراد شيت القضايا وإرفاق ملف PDF كامل لكل قضية"
+            importLabel="📥 استيراد شيت القضايا Excel"
           />
         )}
 

@@ -80,7 +80,7 @@ export default function HomeView({
             let count;
             if (type.id === "staff_changes") {
               count = studyLeavesCount;
-            } else if (type.id === "claims") {
+            } else if (type.id === "claims" || type.id === "legal") {
               count = claimsCount;
             } else {
               count = tasks.filter((task) => task.type === type.id).length;
@@ -97,6 +97,10 @@ export default function HomeView({
                   }
                   if (type.id === "claims") {
                     setActiveMenu("claims");
+                    return;
+                  }
+                  if (type.id === "legal") {
+                    setActiveMenu("cases");
                     return;
                   }
                   setFilterType(type.id);

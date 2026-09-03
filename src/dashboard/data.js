@@ -21,8 +21,15 @@ export const TASK_TYPES = [
     frequency: "حسب الورود",
   },
   {
+    id: "claims",
+    title: "المطالبات",
+    icon: "📋",
+    color: "#E0F2FE",
+    frequency: "حسب الورود",
+  },
+  {
     id: "legal",
-    title: "القضايا والمطالبات",
+    title: "القضايا",
     icon: "⚖️",
     color: "#ECE9FE",
     frequency: "حسب الحالة",
@@ -89,13 +96,6 @@ export const TASK_TYPES = [
     icon: "🎓",
     color: "#F1F5F9",
     frequency: "حسب الوارد",
-  },
-  {
-    id: "claims",
-    title: "المطالبات",
-    icon: "📋",
-    color: "#E0F2FE",
-    frequency: "حسب الورود",
   },
 ];
 

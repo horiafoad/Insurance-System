@@ -56,6 +56,10 @@ export default function Sidebar({
                 setActiveMenu("claims");
                 return;
               }
+              if (type.id === "legal") {
+                setActiveMenu("cases");
+                return;
+              }
               if (SERVICE_REQUEST_TYPES[type.id]) {
                 setServiceRequestFilter(SERVICE_REQUEST_TYPES[type.id]);
                 setActiveMenu("service_requests");
@@ -74,6 +78,9 @@ export default function Sidebar({
                 ? styles.smallMenuButtonActive
                 : {}),
               ...(type.id === "claims" && activeMenu === "claims"
+                ? styles.smallMenuButtonActive
+                : {}),
+              ...(type.id === "legal" && activeMenu === "cases"
                 ? styles.smallMenuButtonActive
                 : {}),
               ...(SERVICE_REQUEST_TYPES[type.id] && activeMenu === "service_requests"
