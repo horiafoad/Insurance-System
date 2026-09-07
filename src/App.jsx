@@ -662,48 +662,54 @@ function App() {
 
             <div style={{
               ...styles.heroContent,
-              padding: isMobile ? "40px 20px" : "70px 20px",
+              padding: isMobile ? "45px 20px" : "70px 20px",
             }}>
-              <div style={styles.smallTitle}>جامعة عين شمس</div>
+              <div style={{
+                ...styles.smallTitle,
+                marginBottom: "12px",
+              }}>جامعة عين شمس</div>
 
               <h1 style={{
                 ...styles.heroTitle,
                 fontSize: isMobile ? "36px" : "58px",
+                marginBottom: "16px",
               }}>كلية الهندسة</h1>
 
-              <h2 style={{
-                ...styles.heroDepartment,
-                fontSize: isMobile ? "28px" : "38px",
+              <div style={{
+                marginTop: "12px",
+                marginBottom: "20px",
+                color: "#FFFFFF",
+                fontSize: isMobile ? "20px" : "28px",
+                fontWeight: "700",
+                letterSpacing: ".1px",
               }}>
-                <span style={styles.heroAccent}>إدارة الاستحقاقات</span>
-              </h2>
+                قطاع أمين عام الكلية
+              </div>
 
               <div style={{
                 display: "inline-block",
-                marginTop: "8px",
-                padding: "7px 16px",
+                marginBottom: "20px",
+                padding: "10px 24px",
                 borderRadius: "999px",
                 background: "rgba(255,255,255,.14)",
                 border: "1px solid rgba(255,255,255,.45)",
                 color: "#FFFFFF",
-                fontSize: isMobile ? "13px" : "16px",
+                fontSize: isMobile ? "20px" : "26px",
                 fontWeight: "700",
                 letterSpacing: ".2px",
               }}>
-                مدير الإدارة - أ. رأفت طنطاوي
+                إدارة الاستحقاقات
               </div>
 
-              <div style={styles.blueLine}></div>
+              <div style={{
+                ...styles.blueLine,
+                marginBottom: "24px",
+              }}></div>
 
-              <h3 style={styles.heroSubtitle}>البوابة الإلكترونية الذكية</h3>
-
-              <p style={{
-                ...styles.heroText,
-                fontSize: isMobile ? "15px" : "17px",
-              }}>
-                منظومة إلكترونية متطورة لإنجاز جميع معاملات قسم الاستحقاقات
-                بسهولة وسرعة، وتقديم الطلبات والخدمات إلكترونيًا.
-              </p>
+              <h3 style={{
+                ...styles.heroSubtitle,
+                marginBottom: "32px",
+              }}>البوابة الإلكترونية الذكية</h3>
 
               <div style={{
                 ...styles.heroButtons,
@@ -1321,15 +1327,45 @@ function App() {
 
       {/* ================= FOOTER ================= */}
 
-      <footer style={styles.footer}>
-        <div>
-          <div style={styles.footerTitle}>كلية الهندسة</div>
+      <footer style={{
+        ...styles.footer,
+        background: "linear-gradient(135deg, #1e293b 0%, #334155 100%)",
+        padding: isMobile ? "40px 20px" : "60px 40px",
+        borderTop: "4px solid #3b82f6",
+      }}>
+        <div style={{
+          display: "flex",
+          flexDirection: isMobile ? "column" : "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: isMobile ? "24px" : "0",
+        }}>
+          <div style={{ textAlign: isMobile ? "center" : "right" }}>
+            <div style={{
+              ...styles.footerTitle,
+              fontSize: isMobile ? "20px" : "28px",
+              fontWeight: "800",
+              color: "#ffffff",
+              marginBottom: "8px",
+            }}>كلية الهندسة</div>
 
-          <div style={styles.footerDepartment}>قسم الاستحقاقات</div>
-        </div>
+            <div style={{
+              ...styles.footerDepartment,
+              fontSize: isMobile ? "16px" : "18px",
+              color: "#94a3b8",
+              fontWeight: "500",
+            }}>قسم الاستحقاقات</div>
+          </div>
 
-        <div style={styles.footerCopy}>
-          جميع الحقوق محفوظة © {new Date().getFullYear()}
+          <div style={{
+            ...styles.footerCopy,
+            fontSize: isMobile ? "14px" : "16px",
+            color: "#64748b",
+            fontWeight: "500",
+            textAlign: isMobile ? "center" : "left",
+          }}>
+            جميع الحقوق محفوظة © {new Date().getFullYear()}
+          </div>
         </div>
       </footer>
 

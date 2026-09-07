@@ -52,49 +52,14 @@ export default function FacultySalariesPage() {
   const [filterToYear, setFilterToYear] = useState("");
   const [filterMonth, setFilterMonth] = useState("all");
   const [error, setError] = useState("");
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [processingQueue, setProcessingQueue] = useState([]);
   const [currentProcessing, setCurrentProcessing] = useState(null);
   const [isProcessingPaused, setIsProcessingPaused] = useState(false);
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [totalRecords, setTotalRecords] = useState(0);
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
+  const [selectedRecord, setSelectedRecord] = useState(null);
 
   const results = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -105,97 +70,11 @@ export default function FacultySalariesPage() {
       const monthMatch = filterMonth === "all" || String(record.period_month) === String(filterMonth);
       const searchMatch = !query || String(record.text_content || "").toLowerCase().includes(query);
       return yearMatch && monthMatch && searchMatch;
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
     }).sort((a, b) => {
       // ترتيب حسب السنة ثم الشهر ثم رقم الصفحة للعرض المتتابع
       if (a.period_year !== b.period_year) return a.period_year - b.period_year;
       if (a.period_month !== b.period_month) return a.period_month - b.period_month;
       return a.page_number - b.page_number;
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-    });
-  }, [records, search, filterFromYear, filterToYear, filterMonth]);
-
-  const handleSelectFiles = (event) => {
-    const files = [...(event.target.files || [])];
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-    setPendingFiles(files.map((file) => ({
-      file,
-      year: new Date().getFullYear(),
-      month: "",
-    })));
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
     });
   }, [records, search, filterFromYear, filterToYear, filterMonth]);
 
@@ -210,7 +89,6 @@ export default function FacultySalariesPage() {
 
   const handleSelectFiles = (event) => {
     const files = [...(event.target.files || [])];
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
     setPendingFiles(files.map((file) => {
       // محاولة استخراج السنة والشهر من اسم الملف إذا كان بالتنسيق المتوقع
       const nameWithoutExt = file.name.replace('.pdf', '').toLowerCase();
@@ -242,28 +120,6 @@ export default function FacultySalariesPage() {
         month: defaultMonth,
       };
     }));
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
     setError("");
     event.target.value = "";
   };
@@ -284,30 +140,7 @@ export default function FacultySalariesPage() {
     setProcessing(true);
     setError("");
     try {
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-=======
       const uploaded = [];
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-      const uploaded = [];
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-      const uploaded = [];
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-      const uploaded = [];
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-      const uploaded = [];
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-      const uploaded = [];
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
       for (const item of pendingFiles) {
         setFileName(item.file.name);
         const safeFileName = item.file.name.replace(/[^\w.-]+/g, "_");
@@ -315,30 +148,6 @@ export default function FacultySalariesPage() {
         const { error: uploadError } = await supabase.storage.from("faculty-salaries").upload(filePath, item.file);
         if (uploadError) throw uploadError;
         const { data: publicUrl } = supabase.storage.from("faculty-salaries").getPublicUrl(filePath);
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-        await indexPdf(await item.file.arrayBuffer(), item.file.name, publicUrl.publicUrl, item.year, item.month);
-      }
-      setPendingFiles([]);
-    } catch (uploadError) {
-      console.error("تعذر رفع ملفات المرتبات:", uploadError);
-      setError("تعذر رفع أحد الملفات: " + uploadError.message);
-    } finally {
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
         
         uploaded.push({
           ...item,
@@ -358,67 +167,10 @@ export default function FacultySalariesPage() {
     } catch (uploadError) {
       console.error("تعذر رفع ملفات المرتبات:", uploadError);
       setError("تعذر رفع أحد الملفات: " + uploadError.message);
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
       setProcessing(false);
     }
   };
 
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-  const loadRecords = async () => {
-    const { data, error: loadError } = await supabase
-      .from("faculty_salary_pages")
-      .select("*")
-      .order("period_year", { ascending: false })
-      .order("period_month", { ascending: false })
-      .order("page_number", { ascending: true });
-    if (loadError) {
-      setError("تعذر تحميل أرشيف المرتبات: " + loadError.message);
-      return;
-    }
-    setRecords(data || []);
-  };
-
-  useEffect(() => {
-    loadRecords();
-  }, []);
-
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-  const indexPdf = async (source, sourceName, fileUrl, periodYear, periodMonth) => {
-    setProcessing(true);
-    setError("");
-    try {
-      const pdf = await pdfjsLib.getDocument({ data: source }).promise;
-      const indexed = [];
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
   const loadRecords = async (page = 1, limit = itemsPerPage) => {
     try {
       // حساب الإزاحة للصفحة
@@ -453,10 +205,6 @@ export default function FacultySalariesPage() {
     loadRecords(currentPage, itemsPerPage);
   }, [currentPage, itemsPerPage]);
 
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
   const indexPdf = async (source, sourceName, fileUrl, periodYear, periodMonth, onProgress) => {
     try {
       const pdf = await pdfjsLib.getDocument({ data: source }).promise;
@@ -469,717 +217,537 @@ export default function FacultySalariesPage() {
           onProgress((pageNumber / totalPages) * 100);
         }
         
-        // إعطاء المتصفح فرصة للتنفس بين الصفحات
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
         const page = await pdf.getPage(pageNumber);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map((item) => ("str" in item ? item.str : ""))
-          .join(" ")
-          .trim();
-        if (pageText) {
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-          const viewport = page.getViewport({ scale: 1.5 });
-=======
-          // استخدام دقة أقل لتقليل استهلاك الذاكرة
-          const viewport = page.getViewport({ scale: 1.0 });
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          // استخدام دقة أقل لتقليل استهلاك الذاكرة
-          const viewport = page.getViewport({ scale: 1.0 });
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          // استخدام دقة أقل لتقليل استهلاك الذاكرة
-          const viewport = page.getViewport({ scale: 1.0 });
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          // استخدام دقة أقل لتقليل استهلاك الذاكرة
-          const viewport = page.getViewport({ scale: 1.0 });
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          // استخدام دقة أقل لتقليل استهلاك الذاكرة
-          const viewport = page.getViewport({ scale: 1.0 });
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-          const canvas = document.createElement("canvas");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          await page.render({
-            canvasContext: canvas.getContext("2d"),
-            viewport,
-          }).promise;
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-          const imageBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-          if (!imageBlob) throw new Error("تعذر تحويل صفحة المرتب إلى صورة.");
-          const imagePath = `faculty-salaries/pages/${periodYear}-${periodMonth}-${Date.now()}-${pageNumber}.png`;
-          const { error: imageUploadError } = await supabase.storage
-            .from("faculty-salaries")
-            .upload(imagePath, imageBlob, { contentType: "image/png", upsert: false });
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-          // استخدام JPEG بدلاً من PNG لتقليل حجم الملف
-          const imageBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-          if (!imageBlob) throw new Error("تعذر تحويل صفحة المرتب إلى صورة.");
-          const imagePath = `faculty-salaries/pages/${periodYear}-${periodMonth}-${Date.now()}-${pageNumber}.jpg`;
-          const { error: imageUploadError } = await supabase.storage
-            .from("faculty-salaries")
-            .upload(imagePath, imageBlob, { contentType: "image/jpeg", upsert: false });
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-          if (imageUploadError) throw imageUploadError;
-          const { data: imageUrl } = supabase.storage.from("faculty-salaries").getPublicUrl(imagePath);
-
-          indexed.push({
-            file_name: sourceName,
-            file_url: fileUrl,
-            period_year: Number(periodYear),
-            period_month: Number(periodMonth),
-            page_number: pageNumber,
-            text_content: pageText,
-            page_image_url: imageUrl.publicUrl,
-          });
+        const textItems = textContent.items.map((item) => item.str).join(" ");
+        
+        // تحويل الصفحة إلى صورة
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({ canvasContext: context, viewport }).promise;
+        const imageData = canvas.toDataURL("image/jpeg", 0.8);
+        
+        // رفع صورة الصفحة
+        const imageFileName = `${periodYear}-${periodMonth}-${pageNumber}-${Date.now()}.jpg`;
+        const imagePath = `faculty-salaries-pages/${imageFileName}`;
+        const imageBlob = await (await fetch(imageData)).blob();
+        const { error: imageUploadError } = await supabase.storage
+          .from("faculty-salaries")
+          .upload(imagePath, imageBlob);
+        
+        if (imageUploadError) {
+          console.error("خطأ في رفع صورة الصفحة:", imageUploadError);
         }
+        
+        const { data: imageUrl } = supabase.storage
+          .from("faculty-salaries")
+          .getPublicUrl(imagePath);
+        
+        indexed.push({
+          period_year: periodYear,
+          period_month: periodMonth,
+          page_number: pageNumber,
+          text_content: textItems,
+          page_image_url: imageUrl.publicUrl,
+          source_file_name: sourceName,
+          source_file_url: fileUrl,
+        });
       }
-      if (indexed.length) {
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-        const { error: saveError } = await supabase.from("faculty_salary_pages").insert(indexed);
-        if (saveError) throw saveError;
-      }
-      await loadRecords();
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
+      
+      // حفظ البيانات في قاعدة البيانات
+      const { error: insertError } = await supabase
+        .from("faculty_salary_pages")
+        .insert(indexed);
+      
+      if (insertError) throw insertError;
+      
+      return indexed.length;
     } catch (error) {
-      console.error("تعذر فهرسة ملف المرتبات:", error);
-      setError("تعذر قراءة أو حفظ ملف المرتبات: " + error.message);
-    } finally {
-      setProcessing(false);
-    }
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-        // تقسيم البيانات إلى مجموعات صغيرة لتجنب مشاكل الحجم
-        const batchSize = 50;
-        for (let i = 0; i < indexed.length; i += batchSize) {
-          const batch = indexed.slice(i, i + batchSize);
-          const { error: saveError } = await supabase.from("faculty_salary_pages").insert(batch);
-          if (saveError) throw saveError;
-          // إعطاء المتصفح فرصة للتنفس بين مجموعات الإدخال
-          if (i + batchSize < indexed.length) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-          }
-        }
-      }
-      await loadRecords();
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-      return { success: true, indexedCount: indexed.length };
-    } catch (error) {
-      console.error("تعذر فهرسة ملف المرتبات:", error);
-      return { success: false, error: error.message };
+      console.error("خطأ في فهرسة PDF:", error);
+      throw error;
     }
   };
 
   const processQueueGradually = async () => {
-    if (processingQueue.length === 0 || isProcessingPaused) {
-      setProcessing(false);
-      setCurrentProcessing(null);
-      return;
-    }
-
-    const nextFile = processingQueue[0];
-    setCurrentProcessing(nextFile);
-    
-    try {
-      const fileData = await nextFile.file.arrayBuffer();
-      const result = await indexPdf(
-        fileData,
-        nextFile.file.name,
-        nextFile.fileUrl,
-        nextFile.year,
-        nextFile.month,
-        (progress) => {
-          setUploadedFiles(prev => prev.map(f => 
-            f.filePath === nextFile.filePath 
-              ? { ...f, progress, status: "processing" }
-              : f
-          ));
-        }
-      );
-
-      if (result.success) {
-        setUploadedFiles(prev => prev.map(f => 
-          f.filePath === nextFile.filePath 
-            ? { ...f, progress: 100, status: "completed" }
-            : f
-        ));
-      } else {
-        setUploadedFiles(prev => prev.map(f => 
-          f.filePath === nextFile.filePath 
-            ? { ...f, status: "failed", error: result.error }
-            : f
-        ));
+    while (processingQueue.length > 0 && !isProcessingPaused) {
+      const currentItem = processingQueue[0];
+      setCurrentProcessing(currentItem);
+      
+      try {
+        const arrayBuffer = await currentItem.file.arrayBuffer();
+        const indexedCount = await indexPdf(
+          arrayBuffer,
+          currentItem.file.name,
+          currentItem.fileUrl,
+          currentItem.year,
+          currentItem.month,
+          (progress) => {
+            setProcessingQueue(prev => 
+              prev.map((item, index) => 
+                index === 0 ? { ...item, progress } : item
+              )
+            );
+          }
+        );
+        
+        // تحديث حالة الملف
+        setProcessingQueue(prev => {
+          const newQueue = [...prev];
+          newQueue[0] = { ...newQueue[0], status: "completed", progress: 100 };
+          return newQueue;
+        });
+        
+        // إزالة الملف من قائمة المعالجة بعد تأخير قصير
+        setTimeout(() => {
+          setProcessingQueue(prev => prev.slice(1));
+        }, 500);
+        
+      } catch (error) {
+        console.error("خطأ في معالجة الملف:", error);
+        setProcessingQueue(prev => {
+          const newQueue = [...prev];
+          newQueue[0] = { ...newQueue[0], status: "failed", error: error.message };
+          return newQueue;
+        });
+        
+        setTimeout(() => {
+          setProcessingQueue(prev => prev.slice(1));
+        }, 500);
       }
-    } catch (error) {
-      console.error("خطأ في معالجة الملف:", error);
-      setUploadedFiles(prev => prev.map(f => 
-        f.filePath === nextFile.filePath 
-          ? { ...f, status: "failed", error: error.message }
-          : f
-      ));
     }
+    
+    if (processingQueue.length === 0) {
+      setCurrentProcessing(null);
+      setProcessing(false);
+      // إعادة تحميل البيانات
+      loadRecords(currentPage, itemsPerPage);
+    }
+  };
 
-    // إزالة الملف من قائمة الانتظار والانتقال للتالي
-    setProcessingQueue(prev => prev.slice(1));
-    
-    // إعطاء المتصفح فرصة للتنفس بين الملفات
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // معالجة الملف التالي
-    setTimeout(() => processQueueGradually(), 100);
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // معالجة الملف التالي
-    setTimeout(() => processQueueGradually(), 200);
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // العودة للصفحة الأولى عند تغيير عدد العناصر
   };
 
   return (
-    <div style={styles.card}>
-      <div style={styles.claimsHeader}>
-        <div>
-          <h2 style={styles.cardTitle}>👨‍🏫 مرتبات هيئة التدريس</h2>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية</p>
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة. النظام الجديد يرفع الملفات أولاً ثم يعالجها تدريجياً دون تعليق المتصفح.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة. النظام الجديد يرفع الملفات أولاً ثم يعالجها تدريجياً دون تعليق المتصفح.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة. النظام الجديد يرفع الملفات أولاً ثم يعالجها تدريجياً دون تعليق المتصفح.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة. النظام الجديد يرفع الملفات أولاً ثم يعالجها تدريجياً دون تعليق المتصفح.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة. النظام الجديد يرفع الملفات أولاً ثم يعالجها تدريجياً دون تعليق المتصفح.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <p style={styles.cardSub}>ابحثي باسم عضو هيئة التدريس لعرض مفردات مرتبه للشهور المتتالية. يمكنك اختيار شهر معين لسنة معينة أو عدة سنوات لعرض الصور متتابعة. النظام الجديد يرفع الملفات أولاً ثم يعالجها تدريجياً دون تعليق المتصفح.</p>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
+    <div style={styles.page}>
+      <header style={styles.header}>
+        <h1 style={styles.pageTitle}>مفردات مرتب أعضاء هيئة التدريس</h1>
+        <div style={styles.headerActions}>
+          <input
+            type="file"
+            id="salary-file-upload"
+            accept=".pdf"
+            multiple
+            onChange={handleSelectFiles}
+            style={{ display: "none" }}
+          />
+          <label
+            htmlFor="salary-file-upload"
+            style={{
+              ...styles.primaryButton,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <span>📄</span>
+            <span>رفع ملفات المرتبات</span>
+          </label>
         </div>
-        <label style={styles.excelButton}>
-          📥 اختيار ملفات PDF
-          <input type="file" accept=".pdf" multiple onChange={handleSelectFiles} style={{ display: "none" }} />
-        </label>
-        {pendingFiles.length > 0 && (
-          <button style={styles.primaryButton} onClick={uploadAllFiles} disabled={processing}>
-            {processing ? "جاري رفع الملفات..." : `رفع كل الملفات (${pendingFiles.length})`}
-          </button>
-        )}
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-        {uploadedFiles.length > 0 && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <button 
-              onClick={() => setIsProcessingPaused(!isProcessingPaused)}
-              style={{ ...styles.primaryButton, background: isProcessingPaused ? "#10B981" : "#F59E0B" }}
-            >
-              {isProcessingPaused ? "▶️ استئناف المعالجة" : "⏸️ إيقاف مؤقت"}
-            </button>
-            <button 
-              onClick={() => {
-                setUploadedFiles([]);
-                setProcessingQueue([]);
-                setCurrentProcessing(null);
-                setProcessing(false);
-                loadRecords();
-              }}
-              style={{ ...styles.primaryButton, background: "#64748B" }}
-            >
-              🗑️ مسح القائمة
-            </button>
-          </div>
-        )}
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-      </div>
+      </header>
+
+      {error && (
+        <div style={{
+          ...styles.alert,
+          background: "#FEE2E2",
+          border: "1px solid #FECACA",
+          color: "#991B1B",
+          marginBottom: "16px",
+        }}>
+          {error}
+        </div>
+      )}
 
       {pendingFiles.length > 0 && (
-        <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-          <div style={{ ...styles.infoBox, background: "#FEF3C7", color: "#92400E", padding: "12px 16px" }}>
-            💡 نصيحة: يمكنك رفع ملفات متعددة دفعة واحدة (مثلاً: 13 سنة من الملفات). النظام سيحاول استخراج السنة والشهر من اسم الملف تلقائياً.
-          </div>
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
+        <div style={{
+          background: "#EFF6FF",
+          border: "1px solid #BFDBFE",
+          borderRadius: "8px",
+          padding: "16px",
+          marginBottom: "16px",
+        }}>
+          <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "12px", color: "#1E40AF" }}>
+            ملفات جاهزة للرفع ({pendingFiles.length})
+          </h3>
           {pendingFiles.map((item, index) => (
-            <div key={`${item.file.name}-${index}`} style={{ ...styles.infoBox, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <strong style={{ flex: 1, minWidth: 180 }}>{item.file.name}</strong>
-              <input type="number" min="2000" value={item.year} onChange={(event) => updatePendingFile(index, "year", event.target.value)} style={{ ...styles.claimSelect, width: 130 }} placeholder="السنة" />
-              <select value={item.month} onChange={(event) => updatePendingFile(index, "month", event.target.value)} style={{ ...styles.claimSelect, width: 150 }}>
-                <option value="">اختاري الشهر</option>
-                {["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"].map((name, monthIndex) => <option key={name} value={monthIndex + 1}>{name}</option>)}
+            <div key={index} style={{
+              display: "flex",
+              gap: "12px",
+              alignItems: "center",
+              padding: "8px",
+              background: "#fff",
+              borderRadius: "4px",
+              marginBottom: "8px",
+            }}>
+              <span style={{ flex: 1, fontSize: "14px" }}>{item.file.name}</span>
+              <select
+                value={item.year}
+                onChange={(e) => updatePendingFile(index, "year", e.target.value)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "4px",
+                  border: "1px solid #D1D5DB",
+                  fontSize: "14px",
+                }}
+              >
+                {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
               </select>
+              <select
+                value={item.month}
+                onChange={(e) => updatePendingFile(index, "month", e.target.value)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "4px",
+                  border: "1px solid #D1D5DB",
+                  fontSize: "14px",
+                }}
+              >
+                <option value="">اختر الشهر</option>
+                {MONTH_NAMES.map((name, i) => (
+                  <option key={i} value={i + 1}>{name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                style={{
+                  padding: "6px 12px",
+                  background: "#FEE2E2",
+                  border: "1px solid #FECACA",
+                  borderRadius: "4px",
+                  color: "#991B1B",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                }}
+              >
+                حذف
+              </button>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: "12px", marginTop: "12px" }}>
+            <button
+              onClick={uploadAllFiles}
+              disabled={processing}
+              style={{
+                ...styles.primaryButton,
+                opacity: processing ? 0.6 : 1,
+                cursor: processing ? "not-allowed" : "pointer",
+              }}
+            >
+              {processing ? "جاري الرفع..." : "رفع جميع الملفات"}
+            </button>
+            <button
+              onClick={() => setPendingFiles([])}
+              style={{
+                padding: "10px 20px",
+                background: "#F3F4F6",
+                border: "1px solid #D1D5DB",
+                borderRadius: "6px",
+                color: "#374151",
+                cursor: "pointer",
+                fontSize: "14px",
+              }}
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
+
+      {processingQueue.length > 0 && (
+        <div style={{
+          background: "#ECFDF5",
+          border: "1px solid #A7F3D0",
+          borderRadius: "8px",
+          padding: "16px",
+          marginBottom: "16px",
+        }}>
+          <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "12px", color: "#065F46" }}>
+            جاري معالجة الملفات ({processingQueue.length})
+          </h3>
+          {processingQueue.map((item, index) => (
+            <div key={index} style={{
+              padding: "12px",
+              background: "#fff",
+              borderRadius: "4px",
+              marginBottom: "8px",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ fontSize: "14px", fontWeight: "500" }}>{item.file.name}</span>
+                <span style={{ fontSize: "12px", color: "#6B7280" }}>
+                  {item.status === "completed" ? "✓ مكتمل" : 
+                   item.status === "failed" ? "✗ فشل" : 
+                   `${Math.round(item.progress)}%`}
+                </span>
+              </div>
+              {item.status !== "completed" && item.status !== "failed" && (
+                <div style={{
+                  height: "4px",
+                  background: "#E5E7EB",
+                  borderRadius: "2px",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%",
+                    background: "#10B981",
+                    width: `${item.progress}%`,
+                    transition: "width 0.3s ease",
+                  }} />
+                </div>
+              )}
+              {item.status === "failed" && (
+                <div style={{ fontSize: "12px", color: "#DC2626", marginTop: "4px" }}>
+                  {item.error}
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-      <div style={styles.filterRow}>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
+      <div style={styles.filters}>
         <input
-          type="number"
-          min="2000"
+          type="text"
+          placeholder="بحث في النص..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            ...styles.input,
+            flex: 1,
+          }}
+        />
+        <select
           value={filterFromYear}
-          onChange={(event) => setFilterFromYear(event.target.value)}
-          style={styles.claimSelect}
-          placeholder="من سنة"
-        />
-        <input
-          type="number"
-          min="2000"
-          value={filterToYear}
-          onChange={(event) => setFilterToYear(event.target.value)}
-          style={styles.claimSelect}
-          placeholder="إلى سنة"
-        />
-        <select value={filterMonth} onChange={(event) => setFilterMonth(event.target.value)} style={styles.claimSelect}>
-          <option value="all">كل الشهور</option>
-          {["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
+          onChange={(e) => setFilterFromYear(e.target.value)}
+          style={styles.input}
+        >
+          <option value="">من سنة</option>
+          {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+            <option key={year} value={year}>{year}</option>
+          ))}
         </select>
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-      {uploadedFiles.length > 0 && (
-        <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
-          <div style={{ ...styles.infoBox, background: "#DBEAFE", color: "#1E40AF", padding: "12px 16px" }}>
-            📊 حالة معالجة الملفات: {uploadedFiles.filter(f => f.status === "completed").length} من {uploadedFiles.length} مكتمل
-          </div>
-          {uploadedFiles.map((item, index) => (
-            <div key={`${item.file.name}-${index}`} style={{ ...styles.infoBox, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <strong style={{ flex: 1, minWidth: 180 }}>{item.file.name}</strong>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 200 }}>
-                {item.status === "uploaded" && <span style={{ color: "#64748B" }}>⏳ في انتظار المعالجة</span>}
-                {item.status === "processing" && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-                    <div style={{ flex: 1, height: 8, background: "#E2E8F0", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ height: "100%", background: "#3B82F6", width: `${item.progress}%`, transition: "width 0.3s" }} />
-                    </div>
-                    <span style={{ color: "#3B82F6", fontSize: 12, minWidth: 40 }}>{Math.round(item.progress)}%</span>
+        <select
+          value={filterToYear}
+          onChange={(e) => setFilterToYear(e.target.value)}
+          style={styles.input}
+        >
+          <option value="">إلى سنة</option>
+          {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+        <select
+          value={filterMonth}
+          onChange={(e) => setFilterMonth(e.target.value)}
+          style={styles.input}
+        >
+          <option value="all">جميع الشهور</option>
+          {MONTH_NAMES.map((name, i) => (
+            <option key={i} value={i + 1}>{name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={styles.stats}>
+        <ClaimStat label="إجمالي الصفحات" value={results.length} icon="📄" />
+        <ClaimStat label="مجلدات فريدة" value={new Set(results.map(r => r.period_year + "-" + r.period_month)).size} icon="📁" />
+      </div>
+
+      {paginatedResults.length === 0 ? (
+        <EmptyState message="لا توجد صفحات مرتبات محفوظة" />
+      ) : (
+        <>
+          <div style={styles.grid}>
+            {paginatedResults.map((record) => (
+              <div
+                key={record.id}
+                style={{
+                  ...styles.card,
+                  cursor: "pointer",
+                }}
+                onClick={() => setSelectedRecord(record)}
+              >
+                <div style={{
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  marginBottom: "8px",
+                  color: "#1F2937",
+                }}>
+                  {MONTH_NAMES[record.period_month - 1]} {record.period_year}
+                </div>
+                <div style={{
+                  fontSize: "12px",
+                  color: "#6B7280",
+                  marginBottom: "12px",
+                }}>
+                  صفحة {record.page_number}
+                </div>
+                {record.page_image_url ? (
+                  <img
+                    src={record.page_image_url}
+                    alt={`صفحة ${record.page_number}`}
+                    style={{
+                      width: "100%",
+                      height: "150px",
+                      objectFit: "cover",
+                      borderRadius: "4px",
+                    }}
+                  />
+                ) : (
+                  <div style={{
+                    height: "150px",
+                    background: "#F3F4F6",
+                    borderRadius: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#9CA3AF",
+                    fontSize: "14px",
+                  }}>
+                    لا توجد صورة
                   </div>
                 )}
-                {item.status === "completed" && <span style={{ color: "#10B981" }}>✅ مكتمل</span>}
-                {item.status === "failed" && <span style={{ color: "#EF4444" }}>❌ فشل: {item.error}</span>}
-              </div>
-            </div>
-          ))}
-          {processingQueue.length > 0 && (
-            <div style={{ ...styles.infoBox, background: "#F3F4F6", color: "#374151", padding: "12px 16px" }}>
-              ⏳ جاري معالجة {processingQueue.length} ملف المتبقي... يمكنك إغلاق الصفحة والعودة لاحقاً
-            </div>
-          )}
-        </div>
-      )}
-
-      <div style={styles.filterRow}>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14, color: "#64748B" }}>السنة:</span>
-          <input
-            type="number"
-            min="2000"
-            value={filterFromYear}
-            onChange={(event) => setFilterFromYear(event.target.value)}
-            style={styles.claimSelect}
-            placeholder="من"
-          />
-          <span style={{ fontSize: 14, color: "#64748B" }}>-</span>
-          <input
-            type="number"
-            min="2000"
-            value={filterToYear}
-            onChange={(event) => setFilterToYear(event.target.value)}
-            style={styles.claimSelect}
-            placeholder="إلى"
-          />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14, color: "#64748B" }}>الشهر:</span>
-          <select value={filterMonth} onChange={(event) => setFilterMonth(event.target.value)} style={styles.claimSelect}>
-            <option value="all">كل الشهور</option>
-            {["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
-          </select>
-        </div>
-        <button 
-          onClick={() => { setFilterFromYear(""); setFilterToYear(""); setFilterMonth("all"); }}
-          style={{ ...styles.claimSelect, background: "#EF4444", color: "#fff", border: "none", cursor: "pointer" }}
-        >
-          مسح الفلاتر
-        </button>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-      </div>
-
-      <div style={styles.claimStats}>
-        <ClaimStat title="النتائج" value={results.length} icon="🔎" />
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-        <ClaimStat title="الصفحات المفهرسة" value={records.length} icon="📄" />
-=======
-        <ClaimStat title="الصفحات المفهرسة" value={totalRecords} icon="📄" />
-        <ClaimStat title="الصفحة الحالية" value={`${currentPage} من ${totalPages || 1}`} icon="�" />
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-      </div>
-
-      <div style={styles.filterRow}>
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="🔎 اكتبي اسم عضو هيئة التدريس"
-          style={styles.claimSearch}
-        />
-      </div>
-
-      {error && <div style={styles.errorBox}>{error}</div>}
-      {fileName && <div style={styles.infoBox}>{processing ? "جاري قراءة نص صفحات الملف وحفظها..." : `آخر ملف: ${fileName}`}</div>}
-      {results.length && search.trim() ? (
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 22 }}>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-          {results.map((record) => (
-            <div key={record.id} style={{ overflow: "hidden", border: "1px solid #DCE6F0", borderRadius: 14, background: "#fff", boxShadow: "0 6px 18px rgba(15,41,66,.08)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
-                <strong style={{ color: "#1E293B" }}>{MONTH_NAMES[Number(record.period_month) - 1] || record.period_month} {record.period_year}</strong>
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-          {results.map((record, index) => (
-            <div key={record.id} style={{ overflow: "hidden", border: "1px solid #DCE6F0", borderRadius: 14, background: "#fff", boxShadow: "0 6px 18px rgba(15,41,66,.08)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ background: "#3B82F6", color: "#fff", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: "bold" }}>
-                    #{index + 1}
-                  </span>
-                  <strong style={{ color: "#1E293B" }}>{MONTH_NAMES[Number(record.period_month) - 1] || record.period_month} {record.period_year}</strong>
-                </div>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-                <span style={{ color: "#64748B", fontSize: 12 }}>صفحة {record.page_number}</span>
-              </div>
-              <div style={{ padding: 16, background: "#E2E8F0", display: "flex", justifyContent: "center" }}>
-                <SalaryPagePreview record={record} />
-              </div>
-            </div>
-          ))}
-=======
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-        <div>
-          <div style={{ marginBottom: 16, textAlign: "center", fontSize: 14, color: "#64748B" }}>
-            📊 عدد النتائج: {results.length} - مرتبة حسب التاريخ (الأقدم أولاً)
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 22 }}>
-            {results.map((record, index) => (
-              <div key={record.id} style={{ overflow: "hidden", border: "1px solid #DCE6F0", borderRadius: 14, background: "#fff", boxShadow: "0 6px 18px rgba(15,41,66,.08)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ background: "#3B82F6", color: "#fff", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: "bold" }}>
-                      #{index + 1}
-                    </span>
-                    <strong style={{ color: "#1E293B" }}>{MONTH_NAMES[Number(record.period_month) - 1] || record.period_month} {record.period_year}</strong>
-                  </div>
-                  <span style={{ color: "#64748B", fontSize: 12 }}>صفحة {record.page_number}</span>
-                </div>
-                <div style={{ padding: 16, background: "#E2E8F0", display: "flex", justifyContent: "center" }}>
-                  <SalaryPagePreview record={record} />
-                </div>
               </div>
             ))}
           </div>
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
-<<<<<<< C:/Users/DELL/Desktop/Insurance-System/src/dashboard/FacultySalariesPage.jsx
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
-=======
->>>>>>> c:/Users/DELL/.windsurf/worktrees/Insurance-System/Insurance-System-ivory-hopper/src/dashboard/FacultySalariesPage.jsx
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: "24px",
+              padding: "16px",
+              background: "#fff",
+              borderRadius: "8px",
+              border: "1px solid #E5E7EB",
+            }}>
+              <div style={{ fontSize: "14px", color: "#6B7280" }}>
+                عرض {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, results.length)} من {results.length}
+              </div>
+              
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => handleItemsPerPageChange(parseInt(e.target.value))}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "4px",
+                    border: "1px solid #D1D5DB",
+                    fontSize: "14px",
+                  }}
+                >
+                  <option value="10">10 صفوف</option>
+                  <option value="25">25 صفوف</option>
+                  <option value="50">50 صفوف</option>
+                  <option value="100">100 صفوف</option>
+                </select>
+                
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "4px",
+                    border: "1px solid #D1D5DB",
+                    background: currentPage === 1 ? "#F3F4F6" : "#fff",
+                    color: currentPage === 1 ? "#9CA3AF" : "#374151",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    fontSize: "14px",
+                  }}
+                >
+                  السابق
+                </button>
+                
+                <span style={{ fontSize: "14px", color: "#374151" }}>
+                  صفحة {currentPage} من {totalPages}
+                </span>
+                
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "4px",
+                    border: "1px solid #D1D5DB",
+                    background: currentPage === totalPages ? "#F3F4F6" : "#fff",
+                    color: currentPage === totalPages ? "#9CA3AF" : "#374151",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                    fontSize: "14px",
+                  }}
+                >
+                  التالي
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {selectedRecord && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: "#fff",
+            borderRadius: "8px",
+            maxWidth: "90vw",
+            maxHeight: "90vh",
+            overflow: "auto",
+            position: "relative",
+          }}>
+            <button
+              onClick={() => setSelectedRecord(null)}
+              style={{
+                position: "absolute",
+                top: "16px",
+                right: "16px",
+                background: "#F3F4F6",
+                border: "none",
+                borderRadius: "50%",
+                width: "32px",
+                height: "32px",
+                cursor: "pointer",
+                fontSize: "18px",
+                zIndex: 1,
+              }}
+            >
+              ×
+            </button>
+            <SalaryPagePreview record={selectedRecord} />
+          </div>
         </div>
-      ) : (
-        <EmptyState text={search ? "لا توجد نتائج مطابقة للاسم." : "اكتبي اسم عضو هيئة التدريس لعرض مفرداته."} />
       )}
     </div>
   );
