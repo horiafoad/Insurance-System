@@ -679,25 +679,25 @@ function App() {
                 marginTop: "12px",
                 marginBottom: "20px",
                 color: "#FFFFFF",
-                fontSize: isMobile ? "20px" : "28px",
+                fontSize: isMobile ? "18px" : "24px",
                 fontWeight: "700",
                 letterSpacing: ".1px",
               }}>
-                قطاع أمين عام الكلية
-              </div>
+          قطاع أمين عام الكلية
+</div>
 
-              <div style={{
-                display: "inline-block",
-                marginBottom: "20px",
-                padding: "10px 24px",
-                borderRadius: "999px",
-                background: "rgba(255,255,255,.14)",
-                border: "1px solid rgba(255,255,255,.45)",
-                color: "#FFFFFF",
-                fontSize: isMobile ? "20px" : "26px",
-                fontWeight: "700",
-                letterSpacing: ".2px",
-              }}>
+<div style={{
+  display: "inline-block",
+  marginBottom: "16px",
+  padding: "8px 20px",
+  borderRadius: "999px",
+  background: "rgba(255,255,255,.14)",
+  border: "1px solid rgba(255,255,255,.45)",
+  color: "#FFFFFF",
+ fontSize: isMobile ? "17px" : "20px",
+  fontWeight: "700",
+  letterSpacing: ".2px",
+}}>
                 إدارة الاستحقاقات
               </div>
 
@@ -1733,7 +1733,7 @@ const styles = {
 
   heroSubtitle: {
     margin: "0 0 16px",
-    fontSize: "25px",
+    fontSize: "22px",
     fontWeight: "800",
     color: "#ffffff",
   },
