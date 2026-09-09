@@ -23,6 +23,8 @@ import EmployeePerformance from "./dashboard/EmployeePerformance";
 import EmployeeProfilePage from "./dashboard/EmployeeProfilePage";
 import EmployeePerformanceDashboard from "./dashboard/EmployeePerformanceDashboard";
 import FacultySalariesPage from "./dashboard/FacultySalariesPage";
+import IssuesManagementPage from "./dashboard/IssuesManagementPage";
+import ConnectionTest from "./dashboard/ConnectionTest";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -654,7 +656,9 @@ export default function AdminDashboard({ currentUser }) {
       ? "المطالبات"
       : activeMenu === "study_leaves"
         ? "الإجازات الدراسية"
-        : MENU_ITEMS.find((item) => item.id === activeMenu)?.title || "الرئيسية";
+        : activeMenu === "issues_management"
+          ? "إدارة القضايا"
+          : MENU_ITEMS.find((item) => item.id === activeMenu)?.title || "الرئيسية";
 
   if (appLoading) {
     return (
@@ -859,6 +863,10 @@ export default function AdminDashboard({ currentUser }) {
             onStopSalary={stopStudyLeaveSalary}
           />
         )}
+
+        {activeMenu === "issues_management" && <IssuesManagementPage />}
+
+        {activeMenu === "connection_test" && <ConnectionTest />}
 
         {activeMenu === "weekly" && (
           <div style={styles.card}>

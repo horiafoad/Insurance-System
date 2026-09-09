@@ -56,6 +56,10 @@ export default function Sidebar({
                 setActiveMenu("claims");
                 return;
               }
+              if (type.id === "issues_management") {
+                setActiveMenu("issues_management");
+                return;
+              }
               if (SERVICE_REQUEST_TYPES[type.id]) {
                 setServiceRequestFilter(SERVICE_REQUEST_TYPES[type.id]);
                 setActiveMenu("service_requests");
@@ -74,6 +78,9 @@ export default function Sidebar({
                 ? styles.smallMenuButtonActive
                 : {}),
               ...(type.id === "claims" && activeMenu === "claims"
+                ? styles.smallMenuButtonActive
+                : {}),
+              ...(type.id === "issues_management" && activeMenu === "issues_management"
                 ? styles.smallMenuButtonActive
                 : {}),
               ...(SERVICE_REQUEST_TYPES[type.id] && activeMenu === "service_requests"

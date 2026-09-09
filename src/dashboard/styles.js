@@ -914,5 +914,180 @@
     gap: 8,
     flexShrink: 0,
   },
+
+  // Issues Management Page Styles
+  pageHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 15,
+    marginBottom: 20,
+  },
+
+  uploadSections: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
+    gap: 20,
+    marginBottom: 24,
+  },
+
+  uploadSection: {
+    background: "#F8FAFC",
+    border: "1px solid #E2E8F0",
+    borderRadius: 12,
+    padding: 20,
+  },
+
+  uploadSectionTitle: {
+    margin: "0 0 16px",
+    fontSize: 16,
+    fontWeight: 800,
+    color: "#1E293B",
+  },
+
+  formGroup: {
+    marginBottom: 14,
+  },
+
+  formLabel: {
+    display: "block",
+    fontSize: 13,
+    fontWeight: 700,
+    marginBottom: 6,
+    color: "#334155",
+  },
+
+  textarea: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #CBD5E1",
+    borderRadius: 8,
+    padding: "11px 12px",
+    fontSize: 14,
+    outline: "none",
+    resize: "vertical",
+    fontFamily: "inherit",
+  },
+
+  fileUploadArea: {
+    border: "2px dashed #2563EB",
+    borderRadius: 8,
+    padding: "24px",
+    textAlign: "center",
+    background: "#EFF6FF",
+    cursor: "pointer",
+    transition: "all 0.2s",
+  },
+
+  fileUploadLabel: {
+    color: "#2563EB",
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    display: "block",
+  },
+
+  searchInput: {
+    flex: 1,
+    minWidth: 280,
+    border: "1px solid #CBD5E1",
+    borderRadius: 8,
+    padding: "11px 12px",
+    fontSize: 14,
+    boxSizing: "border-box",
+  },
+
+  filterSelect: {
+    minWidth: 180,
+    border: "1px solid #CBD5E1",
+    background: "#fff",
+    borderRadius: 8,
+    padding: "11px 12px",
+    fontSize: 14,
+  },
+
+  statusSelect: {
+    border: "1px solid #CBD5E1",
+    background: "#fff",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontSize: 12,
+  },
+
+  tableWrapper: {
+    overflow: "auto",
+    maxHeight: "500px",
+    border: "1px solid #E5E7EB",
+    borderRadius: 10,
+  },
+
+  successBox: {
+    background: "#D1FAE5",
+    color: "#065F46",
+    borderRadius: 9,
+    padding: 11,
+    marginBottom: 12,
+    fontSize: 13,
+  },
+
+  emptyState: {
+    minHeight: 200,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    color: "#64748B",
+    fontSize: 14,
+    padding: 40,
+  },
+
+  statLabel: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+  },
+
+  // Modal Styles
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15,23,42,.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+    padding: 20,
+  },
+
+  loginBox: {
+    background: "#fff",
+    borderRadius: 15,
+    width: "min(850px, 100%)",
+    maxHeight: "90vh",
+    overflowY: "auto",
+    padding: 22,
+    boxSizing: "border-box",
+  },
+
+  loginTitle: {
+    margin: "0 0 20px",
+    fontSize: 21,
+    fontWeight: 800,
+    textAlign: "center",
+  },
+
+  closeButton: {
+    border: 0,
+    background: "#F1F5F9",
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 16,
+    position: "absolute",
+    top: 15,
+    left: 15,
+  },
 };
 

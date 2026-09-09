@@ -2,6 +2,7 @@ import logo from "./assets/logo.png";
 import background from "./assets/engineering.jpg";
 import AdminDashboard from "./AdminDashboard";
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import NetworkBanner from './NetworkBanner';
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
 
@@ -427,9 +428,11 @@ function App() {
     setIsLoggedIn(false);
     setActivePage("home");
   };
-
-  return (
+return (
     <div dir="rtl" style={styles.page}>
+      {/* شريط مراقبة حالة الإنترنت */}
+      <NetworkBanner />
+
       {/* ================= HEADER ================= */}
 
       <header

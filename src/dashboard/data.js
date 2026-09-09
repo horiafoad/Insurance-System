@@ -97,6 +97,13 @@ export const TASK_TYPES = [
     color: "#E0F2FE",
     frequency: "حسب الورود",
   },
+  {
+    id: "issues_management",
+    title: "إدارة القضايا",
+    icon: "⚖️",
+    color: "#ECE9FE",
+    frequency: "حسب الورود",
+  },
 ];
 
 export const STATUS = {
@@ -171,7 +178,12 @@ export const MENU_ITEMS = [
   {
     id: "user_management",
     title: "إدارة المستخدمين",
-    icon: "�",
+    icon: "👤",
+  },
+  {
+    id: "connection_test",
+    title: "اختبار الاتصال",
+    icon: "🔧",
   },
 ];
 

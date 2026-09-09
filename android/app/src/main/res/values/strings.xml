@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">البوابة الإلكترونية الذكية</string>
+    <string name="title_activity_main">البوابة الإلكترونية الذكية</string>
+    <string name="package_name">com.horiafoad.insurance</string>
+    <string name="custom_url_scheme">com.horiafoad.insurance</string>
+</resources>
