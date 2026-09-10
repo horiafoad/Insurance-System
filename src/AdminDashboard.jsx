@@ -25,6 +25,7 @@ import EmployeePerformanceDashboard from "./dashboard/EmployeePerformanceDashboa
 import FacultySalariesPage from "./dashboard/FacultySalariesPage";
 import IssuesManagementPage from "./dashboard/IssuesManagementPage";
 import ConnectionTest from "./dashboard/ConnectionTest";
+import LettersTrackingPage from "./dashboard/LettersTrackingPage";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -36,7 +37,16 @@ import {
 } from "./dashboard/studyLeaves";
 
 export default function AdminDashboard({ currentUser }) {
-  const [activeMenu, setActiveMenu] = useState("home");
+  const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
+  const [activeMenu, setActiveMenu] = useState(
+    qrCodeFromUrl ? "letters_tracking" : "home"
+  );
+
+  useEffect(() => {
+    if (qrCodeFromUrl) {
+      setActiveMenu("letters_tracking");
+    }
+  }, [qrCodeFromUrl]);
 
   const [tasks, setTasks] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -75,7 +85,6 @@ export default function AdminDashboard({ currentUser }) {
     loadClaims();
     setStudyLeaves(loadStudyLeaves());
   }, []);
-
 
   const loadTasks = async () => {
     try {
@@ -157,30 +166,50 @@ export default function AdminDashboard({ currentUser }) {
       { table: "claims", label: "مطالبة جديدة", icon: "📋" },
       { table: "employee_tasks", label: "مهمة موظف جديدة", icon: "📝" },
     ];
+
     let channel = null;
     let pollingTimer = null;
     let storageListener = null;
+
     const notificationCheckpointKey = "admin_notifications_checkpoint";
     const previousCheckpoint = localStorage.getItem(notificationCheckpointKey);
-    const checkpointDate = previousCheckpoint ? new Date(previousCheckpoint) : null;
+    const checkpointDate = previousCheckpoint
+      ? new Date(previousCheckpoint)
+      : null;
 
     const setupNotifications = async () => {
       const notify = (source, itemId) => {
         const notificationId = `${source.table}-${itemId}`;
+
         if (knownNotificationIds.current.has(notificationId)) return;
+
         knownNotificationIds.current.add(notificationId);
+
         const notification = {
           id: notificationId,
           title: source.label,
           icon: source.icon,
-          time: new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }),
+          time: new Date().toLocaleTimeString("ar-EG", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
         };
-        setNotifications((current) => [notification, ...current].slice(0, 20));
+
+        setNotifications((current) =>
+          [notification, ...current].slice(0, 20)
+        );
+
         if (source.table === "public_feedback") {
           setUrgentNotification(notification);
         }
-        if ("Notification" in window && Notification.permission === "granted") {
-          new Notification(source.label, { body: "تم استلام بيانات جديدة في لوحة الإدارة." });
+
+        if (
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          new Notification(source.label, {
+            body: "تم استلام بيانات جديدة في لوحة الإدارة.",
+          });
         }
       };
 
@@ -193,23 +222,37 @@ export default function AdminDashboard({ currentUser }) {
             .limit(100)
         )
       );
+
       results.forEach(({ data }, index) =>
         (data || []).forEach((item) => {
           const notificationId = `${notificationSources[index].table}-${item.id}`;
-          if (checkpointDate && item.created_at && new Date(item.created_at) > checkpointDate) {
+
+          if (
+            checkpointDate &&
+            item.created_at &&
+            new Date(item.created_at) > checkpointDate
+          ) {
             notify(notificationSources[index], item.id);
           } else {
             knownNotificationIds.current.add(notificationId);
           }
         })
       );
+
       try {
-        const localFeedback = JSON.parse(localStorage.getItem("backup_public_feedback") || "[]");
-        const seenLocalFeedback = new Set(
-          JSON.parse(localStorage.getItem("admin_seen_local_feedback") || "[]")
+        const localFeedback = JSON.parse(
+          localStorage.getItem("backup_public_feedback") || "[]"
         );
+
+        const seenLocalFeedback = new Set(
+          JSON.parse(
+            localStorage.getItem("admin_seen_local_feedback") || "[]"
+          )
+        );
+
         localFeedback.forEach((item) => {
           const notificationId = `public_feedback-${item.id}`;
+
           if (!seenLocalFeedback.has(String(item.id))) {
             notify(notificationSources[1], item.id);
             seenLocalFeedback.add(String(item.id));
@@ -217,6 +260,7 @@ export default function AdminDashboard({ currentUser }) {
             knownNotificationIds.current.add(notificationId);
           }
         });
+
         localStorage.setItem(
           "admin_seen_local_feedback",
           JSON.stringify([...seenLocalFeedback])
@@ -224,65 +268,109 @@ export default function AdminDashboard({ currentUser }) {
       } catch (storageError) {
         console.error("تعذر تحميل نسخ الشكاوى المحلية:", storageError);
       }
-      localStorage.setItem(notificationCheckpointKey, new Date().toISOString());
+
+      localStorage.setItem(
+        notificationCheckpointKey,
+        new Date().toISOString()
+      );
 
       channel = supabase
         .channel("admin-notifications")
-        .on("postgres_changes", { event: "INSERT", schema: "public" }, (payload) => {
-          const source = notificationSources.find((item) => item.table === payload.table);
-          if (source) notify(source, payload.new.id);
-        })
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public" },
+          (payload) => {
+            const source = notificationSources.find(
+              (item) => item.table === payload.table
+            );
+
+            if (source) {
+              notify(source, payload.new.id);
+            }
+          }
+        )
         .subscribe();
 
-      // Polling fallback keeps notifications working when Realtime is not enabled
-      // for a table in the Supabase publication.
       pollingTimer = window.setInterval(async () => {
         const results = await Promise.all(
           notificationSources.map((source) =>
-            supabase.from(source.table).select("id").order("created_at", { ascending: false }).limit(20)
+            supabase
+              .from(source.table)
+              .select("id")
+              .order("created_at", { ascending: false })
+              .limit(20)
           )
         );
+
         results.forEach(({ data }, index) => {
           const source = notificationSources[index];
-          (data || []).forEach((item) => notify(source, item.id));
+
+          (data || []).forEach((item) => {
+            notify(source, item.id);
+          });
         });
       }, 5000);
+
       storageListener = (event) => {
         try {
-          const item = event.type === "storage"
-            ? (event.key === "new_public_feedback_event" && event.newValue ? JSON.parse(event.newValue) : null)
-            : event.detail;
+          const item =
+            event.type === "storage"
+              ? event.key === "new_public_feedback_event" &&
+                event.newValue
+                ? JSON.parse(event.newValue)
+                : null
+              : event.detail;
+
           if (!item) return;
+
           notify(notificationSources[1], item.id);
         } catch (storageError) {
-          console.error("تعذر قراءة إشعار الشكوى المحلي:", storageError);
+          console.error(
+            "تعذر قراءة إشعار الشكوى المحلي:",
+            storageError
+          );
         }
       };
+
       window.addEventListener("storage", storageListener);
       window.addEventListener("new-public-feedback", storageListener);
     };
 
     setupNotifications().catch((notificationError) => {
-      console.error("تعذر تشغيل إشعارات لوحة الإدارة:", notificationError);
+      console.error(
+        "تعذر تشغيل إشعارات لوحة الإدارة:",
+        notificationError
+      );
     });
 
     return () => {
       if (channel) supabase.removeChannel(channel);
       if (pollingTimer) window.clearInterval(pollingTimer);
-      if (storageListener) window.removeEventListener("storage", storageListener);
-      if (storageListener) window.removeEventListener("new-public-feedback", storageListener);
+
+      if (storageListener) {
+        window.removeEventListener("storage", storageListener);
+        window.removeEventListener(
+          "new-public-feedback",
+          storageListener
+        );
+      }
     };
   }, []);
 
   const enableNotifications = async () => {
-    if ("Notification" in window && Notification.permission === "default") {
+    if (
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
       await Notification.requestPermission();
     }
+
     setNotificationsOpen((current) => !current);
   };
 
   const importClaimsExcel = async (event) => {
     const file = event.target.files?.[0];
+
     if (!file) return;
 
     setClaimLoading(true);
@@ -290,6 +378,7 @@ export default function AdminDashboard({ currentUser }) {
 
     try {
       const buffer = await file.arrayBuffer();
+
       const workbook = XLSX.read(buffer, {
         type: "array",
         cellDates: true,
@@ -299,6 +388,7 @@ export default function AdminDashboard({ currentUser }) {
 
       workbook.SheetNames.forEach((sheetName) => {
         const worksheet = workbook.Sheets[sheetName];
+
         const rows = XLSX.utils.sheet_to_json(worksheet, {
           defval: "",
           raw: false,
@@ -318,23 +408,31 @@ export default function AdminDashboard({ currentUser }) {
         return;
       }
 
-      const { error } = await supabase.from("claims").insert(importedClaims);
+      const { error } = await supabase
+        .from("claims")
+        .insert(importedClaims);
 
       if (error) {
         console.error(error);
+
         setClaimError(
           "تمت قراءة Excel ولكن حدث خطأ أثناء حفظ البيانات في قاعدة البيانات: " +
             error.message
         );
+
         return;
       }
 
       await loadClaims();
       setClaimSearch("");
       setClaimSheetFilter("all");
-      alert(`تم استيراد ${importedClaims.length} مطالبة بنجاح.`);
+
+      alert(
+        `تم استيراد ${importedClaims.length} مطالبة بنجاح.`
+      );
     } catch (error) {
       console.error(error);
+
       setClaimError(
         "حدث خطأ أثناء قراءة ملف Excel. تأكدي أن الملف XLSX أو XLS."
       );
@@ -345,8 +443,13 @@ export default function AdminDashboard({ currentUser }) {
   };
 
   const addManualClaim = async () => {
-    if (!claimForm.claimantName.trim() && !claimForm.claimNumber.trim()) {
-      alert("من فضلك أدخلي اسم صاحب المطالبة أو رقم المطالبة على الأقل.");
+    if (
+      !claimForm.claimantName.trim() &&
+      !claimForm.claimNumber.trim()
+    ) {
+      alert(
+        "من فضلك أدخلي اسم صاحب المطالبة أو رقم المطالبة على الأقل."
+      );
       return;
     }
 
@@ -363,23 +466,31 @@ export default function AdminDashboard({ currentUser }) {
         ملاحظات: claimForm.notes.trim(),
       };
 
-      const { error } = await supabase.from("claims").insert({
-        sheet_name: claimForm.sheetName.trim() || "إضافة يدوية",
-        row_number: 0,
-        data: manualData,
-      });
+      const { error } = await supabase
+        .from("claims")
+        .insert({
+          sheet_name: claimForm.sheetName.trim() || "إضافة يدوية",
+          row_number: 0,
+          data: manualData,
+        });
 
       if (error) {
         console.error(error);
-        setClaimError("حدث خطأ أثناء حفظ المطالبة:\n" + error.message);
+
+        setClaimError(
+          "حدث خطأ أثناء حفظ المطالبة:\n" + error.message
+        );
+
         return;
       }
 
       await loadClaims();
+
       setClaimForm(createEmptyClaim());
       setShowClaimForm(false);
       setClaimSearch("");
       setClaimSheetFilter("all");
+
       alert("تمت إضافة المطالبة وحفظها في قاعدة البيانات بنجاح.");
     } catch (error) {
       console.error(error);
@@ -394,7 +505,8 @@ export default function AdminDashboard({ currentUser }) {
 
     return claims.filter((claim) => {
       const sheetMatch =
-        claimSheetFilter === "all" || claim.sheet_name === claimSheetFilter;
+        claimSheetFilter === "all" ||
+        claim.sheet_name === claimSheetFilter;
 
       if (!sheetMatch) return false;
       if (!search) return true;
@@ -407,22 +519,42 @@ export default function AdminDashboard({ currentUser }) {
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
-      const typeOK = filterType === "all" || task.type === filterType;
-      const statusOK = filterStatus === "all" || task.status === filterStatus;
+      const typeOK =
+        filterType === "all" || task.type === filterType;
+
+      const statusOK =
+        filterStatus === "all" || task.status === filterStatus;
+
       return typeOK && statusOK;
     });
   }, [tasks, filterType, filterStatus]);
 
   const stats = useMemo(() => {
     const total = tasks.length;
-    const completed = tasks.filter((task) => task.status === "completed").length;
+
+    const completed = tasks.filter(
+      (task) => task.status === "completed"
+    ).length;
+
     const inProgress = tasks.filter(
       (task) => task.status === "in_progress"
     ).length;
-    const waiting = tasks.filter((task) => task.status === "waiting").length;
-    const late = tasks.filter((task) => task.status === "late").length;
-    const reviewed = tasks.filter((task) => task.reviewed).length;
-    const uploaded = tasks.filter((task) => task.uploaded).length;
+
+    const waiting = tasks.filter(
+      (task) => task.status === "waiting"
+    ).length;
+
+    const late = tasks.filter(
+      (task) => task.status === "late"
+    ).length;
+
+    const reviewed = tasks.filter(
+      (task) => task.reviewed
+    ).length;
+
+    const uploaded = tasks.filter(
+      (task) => task.uploaded
+    ).length;
 
     return {
       total,
@@ -432,9 +564,15 @@ export default function AdminDashboard({ currentUser }) {
       late,
       reviewed,
       uploaded,
-      completionRate: total ? Math.round((completed / total) * 100) : 0,
-      reviewRate: total ? Math.round((reviewed / total) * 100) : 0,
-      uploadRate: total ? Math.round((uploaded / total) * 100) : 0,
+      completionRate: total
+        ? Math.round((completed / total) * 100)
+        : 0,
+      reviewRate: total
+        ? Math.round((reviewed / total) * 100)
+        : 0,
+      uploadRate: total
+        ? Math.round((uploaded / total) * 100)
+        : 0,
     };
   }, [tasks]);
 
@@ -446,7 +584,8 @@ export default function AdminDashboard({ currentUser }) {
           (tasks.filter(
             (task) =>
               task.status === "completed" &&
-              (!task.dueDate || task.dueDate >= task.receivedDate)
+              (!task.dueDate ||
+                task.dueDate >= task.receivedDate)
           ).length /
             tasks.length) *
             100
@@ -457,20 +596,27 @@ export default function AdminDashboard({ currentUser }) {
 
     const speed = tasks.length
       ? Math.round(
-          (tasks.filter((task) => task.status === "completed").length /
+          (tasks.filter(
+            (task) => task.status === "completed"
+          ).length /
             tasks.length) *
             100
         )
       : 0;
 
     const reviewUpload = tasks.length
-      ? Math.round((stats.reviewRate + stats.uploadRate) / 2)
+      ? Math.round(
+          (stats.reviewRate + stats.uploadRate) / 2
+        )
       : 0;
 
     const organization = tasks.length
       ? Math.round(
           (tasks.filter(
-            (task) => task.title && task.responsible && task.receivedDate
+            (task) =>
+              task.title &&
+              task.responsible &&
+              task.receivedDate
           ).length /
             tasks.length) *
             100
@@ -511,13 +657,20 @@ export default function AdminDashboard({ currentUser }) {
   }, [tasks, stats]);
 
   const addTask = async () => {
-    if (!taskForm.title || !taskForm.responsible || !taskForm.receivedDate) {
-      alert("من فضلك أدخلي اسم المهمة والمسؤول وتاريخ الورود.");
+    if (
+      !taskForm.title ||
+      !taskForm.responsible ||
+      !taskForm.receivedDate
+    ) {
+      alert(
+        "من فضلك أدخلي اسم المهمة والمسؤول وتاريخ الورود."
+      );
       return;
     }
 
     try {
       const databaseTask = mapTaskToDatabase(taskForm);
+
       const { data, error } = await supabase
         .from("tasks")
         .insert(databaseTask)
@@ -526,11 +679,16 @@ export default function AdminDashboard({ currentUser }) {
 
       if (error) {
         console.error(error);
-        alert("حدث خطأ أثناء حفظ المهمة:\n" + error.message);
+
+        alert(
+          "حدث خطأ أثناء حفظ المهمة:\n" + error.message
+        );
+
         return;
       }
 
       const newTask = mapTaskFromDatabase(data);
+
       setTasks((prev) => [newTask, ...prev]);
       setTaskForm(createEmptyTask());
       setShowTaskForm(false);
@@ -542,7 +700,10 @@ export default function AdminDashboard({ currentUser }) {
 
   const updateTask = async (id, changes) => {
     try {
-      const currentTask = tasks.find((task) => task.id === id);
+      const currentTask = tasks.find(
+        (task) => task.id === id
+      );
+
       if (!currentTask) return;
 
       const updatedTask = {
@@ -550,7 +711,9 @@ export default function AdminDashboard({ currentUser }) {
         ...changes,
       };
 
-      const databaseChanges = mapTaskToDatabase(updatedTask);
+      const databaseChanges =
+        mapTaskToDatabase(updatedTask);
+
       const { data, error } = await supabase
         .from("tasks")
         .update(databaseChanges)
@@ -560,14 +723,25 @@ export default function AdminDashboard({ currentUser }) {
 
       if (error) {
         console.error(error);
-        alert("حدث خطأ أثناء تحديث المهمة:\n" + error.message);
+
+        alert(
+          "حدث خطأ أثناء تحديث المهمة:\n" + error.message
+        );
+
         return;
       }
 
       const mapped = mapTaskFromDatabase(data);
 
-      setTasks((prev) => prev.map((task) => (task.id === id ? mapped : task)));
-      setSelectedTask((prev) => (prev && prev.id === id ? mapped : prev));
+      setTasks((prev) =>
+        prev.map((task) =>
+          task.id === id ? mapped : task
+        )
+      );
+
+      setSelectedTask((prev) =>
+        prev && prev.id === id ? mapped : prev
+      );
     } catch (error) {
       console.error(error);
       alert("تعذر تحديث المهمة.");
@@ -580,15 +754,25 @@ export default function AdminDashboard({ currentUser }) {
     }
 
     try {
-      const { error } = await supabase.from("tasks").delete().eq("id", id);
+      const { error } = await supabase
+        .from("tasks")
+        .delete()
+        .eq("id", id);
 
       if (error) {
         console.error(error);
-        alert("حدث خطأ أثناء حذف المهمة:\n" + error.message);
+
+        alert(
+          "حدث خطأ أثناء حذف المهمة:\n" + error.message
+        );
+
         return;
       }
 
-      setTasks((prev) => prev.filter((task) => task.id !== id));
+      setTasks((prev) =>
+        prev.filter((task) => task.id !== id)
+      );
+
       setSelectedTask(null);
     } catch (error) {
       console.error(error);
@@ -603,23 +787,31 @@ export default function AdminDashboard({ currentUser }) {
 
   const importStudyLeaves = (imported) => {
     persistStudyLeaves(imported);
-    alert(`تم ربط شيت الإجازات الدراسية. تم استيراد ${imported.length} سجل.`);
+
+    alert(
+      `تم ربط شيت الإجازات الدراسية. تم استيراد ${imported.length} سجل.`
+    );
   };
 
   const saveStudyLeave = (leave) => {
     setStudyLeaveError("");
     setStudyLeaveLoading(true);
+
     try {
       if (leave.id) {
         persistStudyLeaves(
-          studyLeaves.map((item) => (item.id === leave.id ? leave : item))
+          studyLeaves.map((item) =>
+            item.id === leave.id ? leave : item
+          )
         );
       } else {
         persistStudyLeaves([
           {
             ...leave,
             id: `leave-${Date.now()}`,
-            serial: leave.serial || String(studyLeaves.length + 1),
+            serial:
+              leave.serial ||
+              String(studyLeaves.length + 1),
           },
           ...studyLeaves,
         ]);
@@ -633,8 +825,17 @@ export default function AdminDashboard({ currentUser }) {
   };
 
   const deleteStudyLeave = (id) => {
-    if (!window.confirm("هل تريدين حذف سجل هذه الإجازة الدراسية؟")) return;
-    persistStudyLeaves(studyLeaves.filter((leave) => leave.id !== id));
+    if (
+      !window.confirm(
+        "هل تريدين حذف سجل هذه الإجازة الدراسية؟"
+      )
+    ) {
+      return;
+    }
+
+    persistStudyLeaves(
+      studyLeaves.filter((leave) => leave.id !== id)
+    );
   };
 
   const stopStudyLeaveSalary = (id) => {
@@ -644,7 +845,8 @@ export default function AdminDashboard({ currentUser }) {
           ? {
               ...leave,
               salaryStatus: "يوقف المرتب",
-              leaveStatus: leave.leaveStatus || "منتهية",
+              leaveStatus:
+                leave.leaveStatus || "منتهية",
             }
           : leave
       )
@@ -658,7 +860,11 @@ export default function AdminDashboard({ currentUser }) {
         ? "الإجازات الدراسية"
         : activeMenu === "issues_management"
           ? "إدارة القضايا"
-          : MENU_ITEMS.find((item) => item.id === activeMenu)?.title || "الرئيسية";
+          : activeMenu === "letters_tracking"
+            ? "متابعة الخطابات"
+            : MENU_ITEMS.find(
+                (item) => item.id === activeMenu
+              )?.title || "الرئيسية";
 
   if (appLoading) {
     return (
@@ -695,7 +901,11 @@ export default function AdminDashboard({ currentUser }) {
             <div style={styles.breadcrumb}>
               قسم الاستحقاقات / {currentTitle}
             </div>
-            <h1 style={styles.pageTitle}>{currentTitle}</h1>
+
+            <h1 style={styles.pageTitle}>
+              {currentTitle}
+            </h1>
+
             <p style={styles.pageSub}>
               {activeMenu === "study_leaves"
                 ? "متابعة الإجازات الدراسية بمرتب، التعديل من البرنامج، والتنبيه عند قرب أو توقف المرتب"
@@ -703,33 +913,137 @@ export default function AdminDashboard({ currentUser }) {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "12px", alignItems: "center", position: "relative" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              alignItems: "center",
+              position: "relative",
+            }}
+          >
             <button
-              style={{ ...styles.secondaryButton, position: "relative", padding: "10px 14px" }}
+              style={{
+                ...styles.secondaryButton,
+                position: "relative",
+                padding: "10px 14px",
+              }}
               onClick={enableNotifications}
               title="الإشعارات"
             >
               🔔
+
               {notifications.length > 0 && (
-                <span style={{ position: "absolute", top: -6, right: -6, minWidth: 20, height: 20, borderRadius: "50%", background: "#DC2626", color: "#fff", fontSize: 11, display: "grid", placeItems: "center" }}>
-                  {notifications.length > 9 ? "9+" : notifications.length}
+                <span
+                  style={{
+                    position: "absolute",
+                    top: -6,
+                    right: -6,
+                    minWidth: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    background: "#DC2626",
+                    color: "#fff",
+                    fontSize: 11,
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  {notifications.length > 9
+                    ? "9+"
+                    : notifications.length}
                 </span>
               )}
             </button>
+
             {notificationsOpen && (
-              <div style={{ position: "absolute", top: 48, right: 0, width: 310, maxWidth: "80vw", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 12px 30px rgba(15,41,66,.18)", zIndex: 20, padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 48,
+                  right: 0,
+                  width: 310,
+                  maxWidth: "80vw",
+                  background: "#fff",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: 12,
+                  boxShadow:
+                    "0 12px 30px rgba(15,41,66,.18)",
+                  zIndex: 20,
+                  padding: 12,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 8,
+                  }}
+                >
                   <strong>الإشعارات الجديدة</strong>
-                  <button style={{ border: 0, background: "transparent", color: "#64748B", cursor: "pointer" }} onClick={() => setNotifications([])}>مسح</button>
+
+                  <button
+                    style={{
+                      border: 0,
+                      background: "transparent",
+                      color: "#64748B",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setNotifications([])}
+                  >
+                    مسح
+                  </button>
                 </div>
-                {notifications.length === 0 ? <div style={{ padding: 18, color: "#64748B", textAlign: "center" }}>لا توجد إشعارات جديدة</div> : notifications.map((item) => (
-                  <div key={item.id} style={{ padding: 10, borderTop: "1px solid #F1F5F9", display: "flex", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 20 }}>{item.icon}</span>
-                    <div><strong style={{ display: "block", fontSize: 13 }}>{item.title}</strong><small style={{ color: "#64748B" }}>{item.time}</small></div>
+
+                {notifications.length === 0 ? (
+                  <div
+                    style={{
+                      padding: 18,
+                      color: "#64748B",
+                      textAlign: "center",
+                    }}
+                  >
+                    لا توجد إشعارات جديدة
                   </div>
-                ))}
+                ) : (
+                  notifications.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        padding: 10,
+                        borderTop:
+                          "1px solid #F1F5F9",
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      <span style={{ fontSize: 20 }}>
+                        {item.icon}
+                      </span>
+
+                      <div>
+                        <strong
+                          style={{
+                            display: "block",
+                            fontSize: 13,
+                          }}
+                        >
+                          {item.title}
+                        </strong>
+
+                        <small
+                          style={{ color: "#64748B" }}
+                        >
+                          {item.time}
+                        </small>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
+
             <button
               style={styles.secondaryButton}
               onClick={() => {
@@ -741,26 +1055,33 @@ export default function AdminDashboard({ currentUser }) {
               🔄 تحديث
             </button>
 
-            {activeMenu !== "claims" && activeMenu !== "study_leaves" && activeMenu !== "employee_profiles" && (
-              <button
-                style={styles.primaryButton}
-                onClick={() => {
-                  setTaskForm(createEmptyTask());
-                  setShowTaskForm(true);
-                }}
-              >
-                ＋ إضافة مهمة جديدة
-              </button>
-            )}
+            {activeMenu !== "claims" &&
+              activeMenu !== "study_leaves" &&
+              activeMenu !== "employee_profiles" &&
+              activeMenu !== "letters_tracking" && (
+                <button
+                  style={styles.primaryButton}
+                  onClick={() => {
+                    setTaskForm(createEmptyTask());
+                    setShowTaskForm(true);
+                  }}
+                >
+                  ＋ إضافة مهمة جديدة
+                </button>
+              )}
           </div>
         </header>
 
-        {appError && <div style={styles.errorBox}>{appError}</div>}
+        {appError && (
+          <div style={styles.errorBox}>{appError}</div>
+        )}
 
         {urgentNotification && (
           <div
             style={styles.modalOverlay}
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
             <div
               style={{
@@ -770,15 +1091,37 @@ export default function AdminDashboard({ currentUser }) {
                 borderTop: "5px solid #DC2626",
               }}
             >
-              <div style={{ fontSize: 48, marginBottom: 8 }}>💬</div>
-              <h2 style={styles.loginTitle}>شكوى أو تقييم جديد</h2>
-              <p style={{ color: "#475569", lineHeight: 1.8 }}>
-                تم استلام شكوى أو تقييم جديد من بوابة الخدمات.
+              <div
+                style={{
+                  fontSize: 48,
+                  marginBottom: 8,
+                }}
+              >
+                💬
+              </div>
+
+              <h2 style={styles.loginTitle}>
+                شكوى أو تقييم جديد
+              </h2>
+
+              <p
+                style={{
+                  color: "#475569",
+                  lineHeight: 1.8,
+                }}
+              >
+                تم استلام شكوى أو تقييم جديد من بوابة
+                الخدمات.
                 <br />
                 يرجى الضغط على موافق لمتابعة العمل.
               </p>
+
               <button
-                style={{ ...styles.primaryButton, background: "#DC2626", minWidth: 140 }}
+                style={{
+                  ...styles.primaryButton,
+                  background: "#DC2626",
+                  minWidth: 140,
+                }}
                 onClick={() => {
                   setUrgentNotification(null);
                   setNotificationsOpen(true);
@@ -825,11 +1168,15 @@ export default function AdminDashboard({ currentUser }) {
         {activeMenu === "service_requests" && (
           <ServiceRequestsView
             selectedService={serviceRequestFilter}
-            onServiceFilterChange={setServiceRequestFilter}
+            onServiceFilterChange={
+              setServiceRequestFilter
+            }
           />
         )}
 
-        {activeMenu === "faculty_salaries" && <FacultySalariesPage />}
+        {activeMenu === "faculty_salaries" && (
+          <FacultySalariesPage />
+        )}
 
         {activeMenu === "feedback" && <FeedbackView />}
 
@@ -864,9 +1211,17 @@ export default function AdminDashboard({ currentUser }) {
           />
         )}
 
-        {activeMenu === "issues_management" && <IssuesManagementPage />}
+        {activeMenu === "issues_management" && (
+          <IssuesManagementPage />
+        )}
 
-        {activeMenu === "connection_test" && <ConnectionTest />}
+        {activeMenu === "connection_test" && (
+          <ConnectionTest />
+        )}
+
+        {activeMenu === "letters_tracking" && (
+          <LettersTrackingPage qrCode={qrCodeFromUrl} />
+        )}
 
         {activeMenu === "weekly" && (
           <div style={styles.card}>
@@ -883,16 +1238,25 @@ export default function AdminDashboard({ currentUser }) {
           <div style={styles.card}>
             <div style={styles.cardHeader}>
               <div>
-                <h2 style={styles.cardTitle}>التقييم الشهري</h2>
-                <p style={styles.cardSub}>تقرير أداء القسم خلال الشهر المحدد</p>
+                <h2 style={styles.cardTitle}>
+                  التقييم الشهري
+                </h2>
+
+                <p style={styles.cardSub}>
+                  تقرير أداء القسم خلال الشهر المحدد
+                </p>
               </div>
+
               <input
                 type="month"
                 value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
+                onChange={(e) =>
+                  setSelectedMonth(e.target.value)
+                }
                 style={styles.monthInput}
               />
             </div>
+
             <PerformanceView
               title=""
               period={selectedMonth}
@@ -904,18 +1268,32 @@ export default function AdminDashboard({ currentUser }) {
 
         {activeMenu === "criteria" && <CriteriaView />}
 
-        {activeMenu === "employee_performance" && <EmployeePerformance />}
-
-        {activeMenu === "performance_dashboard" && <EmployeePerformanceDashboard />}
-
-        {activeMenu === "employee_profiles" && (
-          <EmployeeProfilePage onManageTasks={() => setActiveMenu("employee_performance")} />
+        {activeMenu === "employee_performance" && (
+          <EmployeePerformance />
         )}
 
-        {activeMenu === "training_courses" && <TrainingCourses />}
+        {activeMenu === "performance_dashboard" && (
+          <EmployeePerformanceDashboard />
+        )}
+
+        {activeMenu === "employee_profiles" && (
+          <EmployeeProfilePage
+            onManageTasks={() =>
+              setActiveMenu("employee_performance")
+            }
+          />
+        )}
+
+        {activeMenu === "training_courses" && (
+          <TrainingCourses />
+        )}
 
         {activeMenu === "user_management" &&
-          (["creator", "super_admin", "admin"].includes(currentUser?.role) ? (
+          ([
+            "creator",
+            "super_admin",
+            "admin",
+          ].includes(currentUser?.role) ? (
             <UserManagement />
           ) : (
             <div style={styles.card}>

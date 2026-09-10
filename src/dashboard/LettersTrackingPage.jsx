@@ -1,0 +1,3997 @@
+
+import { Html5Qrcode } from "html5-qrcode";
+import React, { useEffect, useState } from "react";
+import QRCode from "qrcode";
+import { supabase } from "../supabaseClient";
+import LetterCreationPanel from "./LetterCreationPanel";
+
+const PUBLIC_APP_URL = "https://insurance-system-9et.pages.dev/";
+
+export default function LettersTrackingPage({ qrCode = "" }) {
+  const [qrCodes, setQrCodes] = useState([]);
+  const [letters, setLetters] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingLetters, setLoadingLetters] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [printLoading, setPrintLoading] = useState(false);
+
+  const [quantity, setQuantity] = useState(40);
+  const [search, setSearch] = useState("");
+
+  const [printCodes, setPrintCodes] = useState([]);
+  const [selectedLetter, setSelectedLetter] = useState(null);
+  const [refreshingLetters, setRefreshingLetters] = useState(false);
+
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerLoading, setScannerLoading] = useState(false);
+  const [scannedLetter, setScannedLetter] = useState(null);
+  const [receivedNotes, setReceivedNotes] = useState("");
+  const [receiving, setReceiving] = useState(false);
+  const [scanError, setScanError] = useState("");
+
+
+  const startQrScanner = async () => {
+    setScanError("");
+    setScannedLetter(null);
+    setReceivedNotes("");
+    setScannerOpen(true);
+    setScannerLoading(true);
+
+    const scanner = new Html5Qrcode("letter-qr-reader");
+
+    try {
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 220, height: 220 },
+        },
+        async (decodedText) => {
+          let code = decodedText.trim();
+
+try {
+  const parsedUrl = new URL(code);
+  const qrParam = parsedUrl.searchParams.get("qr");
+
+  if (qrParam) {
+    code = qrParam.trim();
+  }
+} catch {
+  // الكود QR قد يكون قيمة مباشرة مثل QR-000001
+}
+
+          try {
+            await scanner.stop();
+            await scanner.clear();
+          } catch (stopError) {
+            console.warn("Scanner stop warning:", stopError);
+          }
+
+          const { data: qrData, error: qrError } = await supabase
+            .from("archive_qr_codes")
+            .select("id, code, status, letter_id")
+            .eq("code", code)
+            .maybeSingle();
+
+          if (qrError) {
+            console.error("QR lookup error:", qrError);
+            setScanError("حدث خطأ أثناء البحث عن كود QR.");
+            setScannerLoading(false);
+            return;
+          }
+
+          if (!qrData) {
+            setScanError("كود QR غير موجود في النظام.");
+            setScannerLoading(false);
+            return;
+          }
+
+          const { data: letterData, error: letterError } = await supabase
+            .from("letters")
+            .select(
+              "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+            )
+            .eq("qr_code_id", qrData.id)
+            .maybeSingle();
+
+          if (letterError) {
+            console.error("Letter lookup error:", letterError);
+            setScanError("حدث خطأ أثناء تحميل بيانات الخطاب.");
+            setScannerLoading(false);
+            return;
+          }
+
+          if (!letterData) {
+            setScanError("هذا QR غير مرتبط بخطاب حتى الآن.");
+            setScannerLoading(false);
+            return;
+          }
+
+          const { data: movementsData, error: movementsError } = await supabase
+            .from("letter_movements")
+            .select("id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status")
+            .eq("letter_id", letterData.id)
+            .order("step_order", { ascending: true });
+
+          if (movementsError) {
+            console.error("Movements lookup error:", movementsError);
+            setScanError("حدث خطأ أثناء تحميل حركة الخطاب.");
+            setScannerLoading(false);
+            return;
+          }
+
+          const departmentIds = [...new Set((movementsData || []).map((item) => item.department_id))];
+
+          let departments = [];
+
+          if (departmentIds.length > 0) {
+            const { data: departmentData, error: departmentError } = await supabase
+              .from("letter_departments")
+              .select("id, name")
+              .in("id", departmentIds);
+
+            if (departmentError) {
+              console.error("Departments lookup error:", departmentError);
+            } else {
+              departments = departmentData || [];
+            }
+          }
+
+          const senderData = letterData.sender_id
+            ? (await supabase
+                .from("letter_senders")
+                .select("id, name")
+                .eq("id", letterData.sender_id)
+                .maybeSingle()).data
+            : null;
+
+          const enrichedMovements = (movementsData || []).map((movement) => ({
+            ...movement,
+            department: departments.find((department) => department.id === movement.department_id) || null,
+          }));
+
+          const enrichedLetter = {
+            ...letterData,
+            qr: qrData,
+            sender: senderData,
+            movements: enrichedMovements,
+          };
+
+          setScannedLetter(enrichedLetter);
+          setReceivedNotes(
+            enrichedMovements.find((movement) => movement.status === "in_progress")?.notes || ""
+          );
+          setScannerLoading(false);
+        },
+        () => {}
+      );
+    } catch (error) {
+      console.error("QR scanner error:", error);
+      setScanError("تعذر تشغيل الكاميرا. تأكدي من السماح باستخدام الكاميرا.");
+      setScannerLoading(false);
+    }
+  };
+
+  const moveLetterToNextStation = async (letter) => {
+    if (!letter || !letter.movements?.length) return;
+
+    const movements = letter.movements;
+    const currentIndex = movements.findIndex(
+      (movement) => movement.status === "in_progress"
+    );
+
+    if (currentIndex < 0) {
+      alert("لا توجد محطة قيد التنفيذ حاليًا.");
+      return;
+    }
+
+    const currentMovement = movements[currentIndex];
+    const nextMovement = movements[currentIndex + 1];
+    const now = new Date().toISOString();
+
+    try {
+      const { error: currentError } = await supabase
+        .from("letter_movements")
+        .update({
+          status: "completed",
+          sent_at: now,
+        })
+        .eq("id", currentMovement.id);
+
+      if (currentError) throw currentError;
+
+      if (nextMovement) {
+        const { error: nextError } = await supabase
+          .from("letter_movements")
+          .update({
+            status: "in_progress",
+            received_at: now,
+          })
+          .eq("id", nextMovement.id);
+
+        if (nextError) throw nextError;
+
+        await supabase
+          .from("letters")
+          .update({
+            status: "in_progress",
+            updated_at: now,
+          })
+          .eq("id", letter.id);
+      } else {
+        await supabase
+          .from("letters")
+          .update({
+            status: "completed",
+            updated_at: now,
+          })
+          .eq("id", letter.id);
+      }
+
+      await loadLetters();
+      setSelectedLetter(null);
+
+      alert(
+        nextMovement
+          ? "تم تنفيذ المحطة والانتقال للمحطة التالية."
+          : "تم تنفيذ آخر محطة وإغلاق حركة الخطاب."
+      );
+    } catch (error) {
+      console.error("Error moving letter:", error);
+      alert("حدث خطأ أثناء تحديث حركة الخطاب.");
+    }
+  };
+  useEffect(() => {
+    loadQRCodes();
+    loadLetters();
+  }, []);
+
+  const loadQRCodes = async () => {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("archive_qr_codes")
+      .select("id, code, status, created_at, letter_id, used_at")
+      .order("id", { ascending: false });
+
+    if (error) {
+      console.error("Error loading QR codes:", error);
+      alert("حدث خطأ أثناء تحميل أكواد QR.");
+    } else {
+      setQrCodes(data || []);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (!qrCode || !letters.length) return;
+
+    const normalizedQr = qrCode.trim().toLowerCase();
+
+    const matchingLetter = letters.find(
+      (letter) =>
+        letter.qr?.code?.trim().toLowerCase() === normalizedQr
+    );
+
+    if (matchingLetter) {
+      setSelectedLetter(matchingLetter);
+    }
+  }, [qrCode, letters]);
+  const loadLetters = async () => {
+    setLoadingLetters(true);
+
+    try {
+      const { data: lettersData, error: lettersError } =
+        await supabase
+          .from("letters")
+          .select(
+            "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+          )
+          .order("id", { ascending: false });
+
+      if (lettersError) {
+        console.error("Error loading letters:", lettersError);
+        setLetters([]);
+        return;
+      }
+
+      const safeLetters = lettersData || [];
+
+      if (safeLetters.length === 0) {
+        setLetters([]);
+        return;
+      }
+
+      const senderIds = [
+        ...new Set(
+          safeLetters
+            .map((letter) => letter.sender_id)
+            .filter(
+              (id) => id !== null && id !== undefined
+            )
+        ),
+      ];
+
+      const qrIds = [
+        ...new Set(
+          safeLetters
+            .map((letter) => letter.qr_code_id)
+            .filter(
+              (id) => id !== null && id !== undefined
+            )
+        ),
+      ];
+
+      const letterIds = safeLetters.map(
+        (letter) => letter.id
+      );
+
+      let senders = [];
+      let qrData = [];
+      let movements = [];
+      let departments = [];
+
+      if (senderIds.length > 0) {
+        const { data, error } = await supabase
+          .from("letter_senders")
+          .select("id, name")
+          .in("id", senderIds);
+
+        if (!error) {
+          senders = data || [];
+        }
+      }
+
+      if (qrIds.length > 0) {
+        const { data, error } = await supabase
+          .from("archive_qr_codes")
+          .select("id, code, status")
+          .in("id", qrIds);
+
+        if (!error) {
+          qrData = data || [];
+        }
+      }
+
+      const {
+        data: movementsData,
+        error: movementsError,
+      } = await supabase
+        .from("letter_movements")
+        .select(
+          "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status"
+        )
+        .in("letter_id", letterIds)
+        .order("step_order", { ascending: true });
+
+      if (movementsError) {
+        console.error(
+          "Error loading letter movements:",
+          movementsError
+        );
+      } else {
+        movements = movementsData || [];
+      }
+
+      const departmentIds = [
+        ...new Set(
+          movements
+            .map(
+              (movement) => movement.department_id
+            )
+            .filter(
+              (id) =>
+                id !== null && id !== undefined
+            )
+        ),
+      ];
+
+      if (departmentIds.length > 0) {
+        const { data, error } = await supabase
+          .from("letter_departments")
+          .select("id, name")
+          .in("id", departmentIds);
+
+        if (!error) {
+          departments = data || [];
+        }
+      }
+
+      const enrichedLetters = safeLetters.map(
+        (letter) => {
+          const sender = senders.find(
+            (item) => item.id === letter.sender_id
+          );
+
+          const qr = qrData.find(
+            (item) => item.id === letter.qr_code_id
+          );
+
+          const letterMovements = movements
+            .filter(
+              (item) =>
+                item.letter_id === letter.id
+            )
+            .sort(
+              (a, b) =>
+                a.step_order - b.step_order
+            )
+            .map((movement) => ({
+              ...movement,
+              department:
+                departments.find(
+                  (department) =>
+                    department.id ===
+                    movement.department_id
+                ) || null,
+            }));
+
+          return {
+            ...letter,
+            sender: sender || null,
+            qr: qr || null,
+            movements: letterMovements,
+          };
+        }
+      );
+
+      setLetters(enrichedLetters);
+
+      if (selectedLetter) {
+        const updatedSelectedLetter =
+          enrichedLetters.find(
+            (letter) =>
+              letter.id === selectedLetter.id
+          );
+
+        setSelectedLetter(
+          updatedSelectedLetter || null
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Unexpected letters loading error:",
+        error
+      );
+      setLetters([]);
+    } finally {
+      setLoadingLetters(false);
+    }
+  };
+
+  const refreshLetters = async () => {
+    setRefreshingLetters(true);
+
+    await Promise.all([
+      loadQRCodes(),
+      loadLetters(),
+    ]);
+
+    setRefreshingLetters(false);
+  };
+
+  const getNextNumber = async () => {
+    const { data, error } = await supabase
+      .from("archive_qr_codes")
+      .select("code")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        "Error getting last QR code:",
+        error
+      );
+      throw error;
+    }
+
+    if (!data?.code) {
+      return 1;
+    }
+
+    const match = String(data.code).match(
+      /QR-(\d+)/
+    );
+
+    if (!match) {
+      return 1;
+    }
+
+    return Number(match[1]) + 1;
+  };
+
+  const generateQRCodes = async () => {
+    const count = Number(quantity);
+
+    if (
+      !Number.isInteger(count) ||
+      count < 1 ||
+      count > 200
+    ) {
+      alert(
+        "من فضلك اختاري عددًا من 1 إلى 200 كود."
+      );
+      return;
+    }
+
+    setGenerating(true);
+
+    try {
+      const nextNumber =
+        await getNextNumber();
+
+      const newCodes = [];
+
+      for (let i = 0; i < count; i++) {
+        const number = String(
+          nextNumber + i
+        ).padStart(6, "0");
+
+        newCodes.push({
+          code: "QR-" + number,
+          status: "available",
+        });
+      }
+
+      const { data, error } = await supabase
+        .from("archive_qr_codes")
+        .insert(newCodes)
+        .select(
+          "id, code, status, created_at, letter_id, used_at"
+        );
+
+      if (error) {
+        console.error(
+          "Error creating QR codes:",
+          error
+        );
+
+        if (error.code === "23505") {
+          alert(
+            "حدث تعارض أثناء إنشاء الأكواد. اضغطي مرة أخرى وسيتم إنشاء دفعة جديدة."
+          );
+        } else {
+          alert(
+            "حدث خطأ أثناء إنشاء أكواد QR."
+          );
+        }
+
+        return;
+      }
+
+      const createdCodes = data || [];
+
+      const sortedCreatedCodes = [
+        ...createdCodes,
+      ].sort((a, b) => a.id - b.id);
+
+      setQrCodes((previous) => [
+        ...sortedCreatedCodes,
+        ...previous,
+      ]);
+
+      await preparePrintCodes(
+        sortedCreatedCodes
+      );
+
+      alert(
+        "تم إنشاء " +
+          createdCodes.length +
+          " كود QR بنجاح."
+      );
+    } catch (error) {
+      console.error(
+        "Unexpected QR generation error:",
+        error
+      );
+
+      alert(
+        "حدث خطأ غير متوقع أثناء إنشاء الأكواد."
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const preparePrintCodes = async (codes) => {
+    if (!codes || codes.length === 0) {
+      return [];
+    }
+
+    setPrintLoading(true);
+
+    try {
+      const result = [];
+
+      for (const item of codes) {
+        const trackingUrl =
+          PUBLIC_APP_URL +
+          "?qr=" +
+          encodeURIComponent(item.code);
+
+        const dataUrl =
+          await QRCode.toDataURL(
+            trackingUrl,
+            {
+              width: 600,
+              margin: 2,
+              errorCorrectionLevel: "H",
+              color: {
+                dark: "#000000",
+                light: "#ffffff",
+              },
+            }
+          );
+
+        result.push({
+          ...item,
+          dataUrl,
+          trackingUrl,
+        });
+      }
+
+      setPrintCodes(result);
+
+      return result;
+    } catch (error) {
+      console.error(
+        "QR generation error:",
+        error
+      );
+
+      alert(
+        "حدث خطأ أثناء تجهيز أكواد QR للطباعة."
+      );
+
+      return [];
+    } finally {
+      setPrintLoading(false);
+    }
+  };
+
+  const handlePrintExisting = async () => {
+    const availableCodes = qrCodes
+      .filter(
+        (item) =>
+          item.status === "available"
+      )
+      .sort((a, b) => a.id - b.id);
+
+    if (availableCodes.length === 0) {
+      alert(
+        "لا توجد أكواد متاحة للطباعة."
+      );
+      return;
+    }
+
+    setPrintLoading(true);
+
+    try {
+      const result = [];
+
+      for (const item of availableCodes) {
+        const trackingUrl =
+          PUBLIC_APP_URL +
+          "?qr=" +
+          encodeURIComponent(item.code);
+
+        const dataUrl =
+          await QRCode.toDataURL(
+            trackingUrl,
+            {
+              width: 600,
+              margin: 2,
+              errorCorrectionLevel: "H",
+              color: {
+                dark: "#000000",
+                light: "#ffffff",
+              },
+            }
+          );
+
+        result.push({
+          ...item,
+          dataUrl,
+          trackingUrl,
+        });
+      }
+
+      setPrintCodes(result);
+
+      setTimeout(() => {
+        window.print();
+      }, 700);
+    } catch (error) {
+      console.error(
+        "Print preparation error:",
+        error
+      );
+
+      alert(
+        "حدث خطأ أثناء تجهيز الأكواد للطباعة."
+      );
+    } finally {
+      setPrintLoading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    if (printCodes.length === 0) {
+      alert(
+        "لا توجد أكواد جاهزة للطباعة."
+      );
+      return;
+    }
+
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
+  const filteredCodes = qrCodes.filter(
+    (item) => {
+      const value =
+        search.trim().toLowerCase();
+
+      if (!value) {
+        return true;
+      }
+
+      return (
+        String(item.code || "")
+          .toLowerCase()
+          .includes(value) ||
+        String(item.status || "")
+          .toLowerCase()
+          .includes(value)
+      );
+    }
+  );
+
+  const availableCount =
+    qrCodes.filter(
+      (item) =>
+        item.status === "available"
+    ).length;
+
+  const usedCount =
+    qrCodes.filter(
+      (item) =>
+        item.status === "used"
+    ).length;
+
+  const archivedCount =
+    qrCodes.filter(
+      (item) =>
+        item.status === "archived"
+    ).length;
+
+  const filteredLetters =
+    letters.filter((letter) => {
+      const value =
+        search.trim().toLowerCase();
+
+      if (!value) {
+        return true;
+      }
+
+      return (
+        String(
+          letter.letter_number || ""
+        )
+          .toLowerCase()
+          .includes(value) ||
+        String(letter.subject || "")
+          .toLowerCase()
+          .includes(value) ||
+        String(
+          letter.sender?.name || ""
+        )
+          .toLowerCase()
+          .includes(value) ||
+        String(letter.qr?.code || "")
+          .toLowerCase()
+          .includes(value)
+      );
+    });
+
+  const confirmLetterReceived = async () => {
+    if (!scannedLetter?.movements?.length) return;
+
+    const currentMovement = scannedLetter.movements.find(
+      (movement) => movement.status === "in_progress"
+    );
+
+    if (!currentMovement) {
+      alert("لا توجد محطة حالية قيد التنفيذ.");
+      return;
+    }
+
+    setReceiving(true);
+    const now = new Date().toISOString();
+
+    try {
+      const { error } = await supabase
+        .from("letter_movements")
+        .update({
+          received_at: now,
+          status: "in_progress",
+          action: "تم الاستلام",
+          notes: receivedNotes.trim() || null,
+        })
+        .eq("id", currentMovement.id);
+
+      if (error) throw error;
+
+      const updatedMovements = scannedLetter.movements.map((movement) =>
+        movement.id === currentMovement.id
+          ? {
+              ...movement,
+              received_at: now,
+              status: "in_progress",
+              action: "تم الاستلام",
+              notes: receivedNotes.trim() || null,
+            }
+          : movement
+      );
+
+      setScannedLetter({
+        ...scannedLetter,
+        movements: updatedMovements,
+      });
+
+      await loadLetters();
+
+      alert("تم تسجيل استلام الخطاب بنجاح.");
+    } catch (error) {
+      console.error("Error receiving letter:", error);
+      alert("حدث خطأ أثناء تسجيل استلام الخطاب.");
+    } finally {
+      setReceiving(false);
+    }
+  };
+
+  const closeQrScanner = async () => {
+    setScannerOpen(false);
+    setScannerLoading(false);
+    setScanError("");
+  };
+
+  return (
+    <>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          marginBottom: "18px",
+        }}
+      >
+        <button
+          type="button"
+          onClick={startQrScanner}
+          style={{
+            border: "none",
+            borderRadius: "16px",
+            padding: "14px 28px",
+            background: "linear-gradient(135deg,#0F3D66,#1976A8)",
+            color: "#fff",
+            fontWeight: "800",
+            fontSize: "15px",
+            cursor: "pointer",
+            boxShadow: "0 8px 22px rgba(15,61,102,0.22)",
+          }}
+        >
+          {"📱 مسح QR للخطاب"}
+        </button>
+      </div>
+
+      {scannerOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 99999,
+            background: "rgba(0,0,0,0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "430px",
+              maxHeight: "92vh",
+              overflowY: "auto",
+              background: "#fff",
+              borderRadius: "24px",
+              padding: "18px",
+              boxSizing: "border-box",
+              direction: "rtl",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "14px",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "20px", fontWeight: "900" }}>
+                  {"📷 مسح خطاب"}
+                </div>
+                <div
+                  style={{
+                    marginTop: "4px",
+                    fontSize: "12px",
+                    color: "#64748B",
+                  }}
+                >
+                  {"وجهي الكاميرا إلى QR الموجود على الخطاب"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeQrScanner}
+                style={{
+                  border: "none",
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "50%",
+                  background: "#F1F5F9",
+                  color: "#334155",
+                  fontSize: "20px",
+                  cursor: "pointer",
+                }}
+              >
+                {"×"}
+              </button>
+            </div>
+
+            {!scannedLetter && (
+              <div
+                id="letter-qr-reader"
+                style={{
+                  width: "100%",
+                  overflow: "hidden",
+                  borderRadius: "18px",
+                  background: "#0F172A",
+                }}
+              />
+            )}
+
+            {scannerLoading && !scanError && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "12px",
+                  color: "#475569",
+                  fontWeight: "700",
+                }}
+              >
+                {"جاري تشغيل الكاميرا..."}
+              </div>
+            )}
+
+            {scanError && (
+              <div
+                style={{
+                  marginTop: "12px",
+                  padding: "12px",
+                  borderRadius: "12px",
+                  background: "#FEF2F2",
+                  color: "#B91C1C",
+                  fontWeight: "700",
+                  textAlign: "center",
+                }}
+              >
+                {scanError}
+              </div>
+            )}
+
+            {scannedLetter && (
+              <div
+                style={{
+                  marginTop: "14px",
+                  borderRadius: "18px",
+                  background: "#F8FAFC",
+                  padding: "16px",
+                }}
+              >
+                <div
+                  style={{
+                    background: "linear-gradient(135deg,#0F3D66,#1976A8)",
+                    color: "#fff",
+                    borderRadius: "16px",
+                    padding: "16px",
+                    marginBottom: "14px",
+                  }}
+                >
+                  <div style={{ fontSize: "12px", opacity: 0.85 }}>
+                    {"QR"}
+                  </div>
+                  <div style={{ fontSize: "21px", fontWeight: "900" }}>
+                    {scannedLetter.qr?.code || "—"}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gap: "10px" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"رقم الخطاب"}
+                    </div>
+                    <div style={{ fontWeight: "800" }}>
+                      {scannedLetter.letter_number || "بدون رقم"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"الجهة المرسلة"}
+                    </div>
+                    <div style={{ fontWeight: "800" }}>
+                      {scannedLetter.sender?.name || "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"الموضوع"}
+                    </div>
+                    <div style={{ fontWeight: "800" }}>
+                      {scannedLetter.subject || "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"المحطة الحالية"}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: "900",
+                        color: "#0F766E",
+                        fontSize: "16px",
+                      }}
+                    >
+                      {scannedLetter.movements?.find(
+                        (movement) => movement.status === "in_progress"
+                      )?.department?.name || "لا توجد محطة حالية"}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "16px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "7px",
+                      fontWeight: "800",
+                      color: "#334155",
+                    }}
+                  >
+                    {"📝 ملاحظات الاستلام"}
+                  </label>
+                  <textarea
+                    value={receivedNotes}
+                    onChange={(event) => setReceivedNotes(event.target.value)}
+                    placeholder="اكتبي ملاحظات الاستلام إن وجدت..."
+                    rows={3}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      border: "1px solid #CBD5E1",
+                      borderRadius: "12px",
+                      padding: "11px",
+                      fontFamily: "inherit",
+                      fontSize: "14px",
+                      resize: "vertical",
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={confirmLetterReceived}
+                  disabled={receiving}
+                  style={{
+                    width: "100%",
+                    marginTop: "14px",
+                    border: "none",
+                    borderRadius: "14px",
+                    padding: "14px",
+                    background: receiving
+                      ? "#94A3B8"
+                      : "linear-gradient(135deg,#0F766E,#14B8A6)",
+                    color: "#fff",
+                    fontWeight: "900",
+                    fontSize: "15px",
+                    cursor: receiving ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {receiving ? "جاري تسجيل الاستلام..." : "✅ تم الاستلام"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div
+        className="letters-tracking-page"
+        dir="rtl"
+        style={{
+          width: "100%",
+          minHeight: "100%",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* =========================
+            Header
+           ========================= */}
+        <div
+          style={{
+            position: "relative",
+            overflow: "hidden",
+            background:
+              "linear-gradient(135deg,#071A3A 0%,#123D78 55%,#2563EB 100%)",
+            borderRadius: "22px",
+            padding: "27px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 15px 35px rgba(15,23,42,0.16)",
+            color: "#fff",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              width: "190px",
+              height: "190px",
+              borderRadius: "50%",
+              border:
+                "1px solid rgba(255,255,255,0.08)",
+              left: "-60px",
+              top: "-100px",
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "18px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "15px",
+              }}
+            >
+              <div
+                style={{
+                  width: "58px",
+                  height: "58px",
+                  minWidth: "58px",
+                  borderRadius: "17px",
+                  background:
+                    "rgba(255,255,255,0.12)",
+                  border:
+                    "1px solid rgba(255,255,255,0.20)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "29px",
+                }}
+              >
+                ✉️
+              </div>
+
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "25px",
+                    fontWeight: "800",
+                  }}
+                >
+                  متابعة الخطابات
+                </h2>
+
+                <p
+                  style={{
+                    margin:
+                      "7px 0 0",
+                    fontSize: "13px",
+                    color:
+                      "rgba(255,255,255,0.72)",
+                  }}
+                >
+                  🧭 متابعة رحلة الخطابات
+                  وحركة المراسلات بين الإدارات
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "9px",
+                flexWrap: "wrap",
+              }}
+            >
+              {printCodes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  style={headerButtonStyle(
+                    "#10B981"
+                  )}
+                >
+                  🖨️ طباعة الدفعة الحالية (
+                  {printCodes.length})
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={refreshLetters}
+                disabled={refreshingLetters}
+                style={headerButtonStyle(
+                  refreshingLetters
+                    ? "#64748B"
+                    : "rgba(255,255,255,0.12)"
+                )}
+              >
+                {refreshingLetters
+                  ? "⏳ جاري التحديث..."
+                  : "🔄 تحديث"}
+              </button>
+
+              <button
+                type="button"
+                onClick={
+                  handlePrintExisting
+                }
+                disabled={
+                  printLoading ||
+                  availableCount === 0
+                }
+                style={headerButtonStyle(
+                  printLoading ||
+                    availableCount === 0
+                    ? "#64748B"
+                    : "#2563EB"
+                )}
+              >
+                {printLoading
+                  ? "⏳ تجهيز الطباعة..."
+                  : "🖨️ طباعة الأكواد المتاحة"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* =========================
+            إنشاء الخطاب
+           ========================= */}
+        <div
+          style={{
+            marginBottom: "20px",
+          }}
+        >
+          <LetterCreationPanel />
+        </div>
+
+        {/* =========================
+            سجل الخطابات
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 8px 25px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #E2E8F0",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "20px",
+              borderBottom:
+                "1px solid #E5E7EB",
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "18px",
+                  fontWeight: "800",
+                  color: "#0F172A",
+                }}
+              >
+                📋 سجل الخطابات
+              </h3>
+
+              <p
+                style={{
+                  margin:
+                    "6px 0 0",
+                  fontSize: "13px",
+                  color: "#64748B",
+                }}
+              >
+                ✨ الخطابات المسجلة ومسار حركتها بين الإدارات
+              </p>
+            </div>
+
+            <span
+              style={{
+                padding: "7px 12px",
+                borderRadius: "999px",
+                background: "#EFF6FF",
+                color: "#1D4ED8",
+                fontSize: "12px",
+                fontWeight: "800",
+              }}
+            >
+              ✉️ {letters.length} خطاب
+            </span>
+          </div>
+
+          {loadingLetters ? (
+            <div
+              style={{
+                padding: "55px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "40px",
+                  marginBottom: "10px",
+                }}
+              >
+                ⏳
+              </div>
+
+              جاري تحميل الخطابات...
+            </div>
+          ) : filteredLetters.length ===
+            0 ? (
+            <div
+              style={{
+                padding: "55px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "48px",
+                  marginBottom: "12px",
+                }}
+              >
+                📭
+              </div>
+
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: "800",
+                  color: "#334155",
+                  marginBottom: "6px",
+                }}
+              >
+                لا توجد خطابات مسجلة
+              </div>
+
+              <div
+                style={{
+                  fontSize: "13px",
+                }}
+              >
+                عند حفظ خطاب جديد سيظهر هنا مع رحلة حركته 🧭
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse:
+                    "collapse",
+                  minWidth: "900px",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background:
+                        "#F8FAFC",
+                    }}
+                  >
+                    <th
+                      style={thStyle}
+                    >
+                      📄 رقم الخطاب
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      📅 التاريخ
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      🏢 الجهة المرسلة
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      📝 الموضوع
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      🏷️ QR
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      🧭 المسار
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      👁️ الإجراء
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredLetters.map(
+                    (letter) => (
+                      <tr
+                        key={letter.id}
+                        style={{
+                          transition:
+                            "background 0.2s",
+                        }}
+                      >
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <strong
+                            style={{
+                              color:
+                                "#0F172A",
+                            }}
+                          >
+                            📄{" "}
+                            {letter.letter_number ||
+                              "—"}
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {formatDate(
+                            letter.letter_date
+                          )}
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          🏢{" "}
+                          {letter.sender
+                            ?.name ||
+                            "—"}
+                        </td>
+
+                        <td
+                          style={{
+                            ...tdStyle,
+                            whiteSpace:
+                              "normal",
+                            minWidth:
+                              "180px",
+                            maxWidth:
+                              "260px",
+                          }}
+                        >
+                          📝{" "}
+                          {letter.subject ||
+                            "—"}
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <strong
+                            style={{
+                              color:
+                                "#2563EB",
+                              direction:
+                                "ltr",
+                              display:
+                                "inline-block",
+                            }}
+                          >
+                            🏷️{" "}
+                            {letter.qr
+                              ?.code ||
+                              "—"}
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <span
+                            style={{
+                              display:
+                                "inline-flex",
+                              alignItems:
+                                "center",
+                              justifyContent:
+                                "center",
+                              gap: "5px",
+                              padding:
+                                "6px 11px",
+                              borderRadius:
+                                "999px",
+                              background:
+                                "#EFF6FF",
+                              color:
+                                "#1D4ED8",
+                              fontSize:
+                                "12px",
+                              fontWeight:
+                                "800",
+                            }}
+                          >
+                            🧭{" "}
+                            {letter
+                              .movements
+                              ?.length ||
+                              0}{" "}
+                            محطة
+                          </span>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedLetter(
+                                letter
+                              )
+                            }
+                            style={{
+                              border:
+                                "1px solid #BFDBFE",
+                              borderRadius:
+                                "10px",
+                              padding:
+                                "8px 13px",
+                              background:
+                                "#EFF6FF",
+                              color:
+                                "#1D4ED8",
+                              fontSize:
+                                "13px",
+                              fontWeight:
+                                "800",
+                              cursor:
+                                "pointer",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            🧭 عرض الرحلة
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* =========================
+            تفاصيل الخطاب
+           ========================= */}
+        {selectedLetter && (
+          <LetterDetails
+            letter={selectedLetter}
+            onClose={() =>
+              setSelectedLetter(null)
+            }
+            onMoveNext={moveLetterToNextStation}
+          />
+        )}
+
+        {/* =========================
+            إنشاء دفعة QR
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "21px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 8px 25px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #E2E8F0",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent:
+                "space-between",
+              gap: "20px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "13px",
+              }}
+            >
+              <div
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  borderRadius: "14px",
+                  background:
+                    "linear-gradient(135deg,#DBEAFE,#EFF6FF)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "24px",
+                }}
+              >
+                🏷️
+              </div>
+
+              <div>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: "17px",
+                    fontWeight: "800",
+                    color: "#0F172A",
+                  }}
+                >
+                  إنشاء دفعة QR جديدة
+                </h3>
+
+                <p
+                  style={{
+                    margin:
+                      "6px 0 0",
+                    fontSize: "13px",
+                    color: "#64748B",
+                  }}
+                >
+                  أكواد مختلفة وجاهزة للطباعة والاستخدام في الأرشيف
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                flexWrap: "wrap",
+              }}
+            >
+              <label
+                style={{
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  color: "#334155",
+                }}
+              >
+                عدد الأكواد
+              </label>
+
+              <select
+                value={quantity}
+                onChange={(e) =>
+                  setQuantity(
+                    Number(e.target.value)
+                  )
+                }
+                style={{
+                  border:
+                    "1px solid #CBD5E1",
+                  borderRadius: "10px",
+                  padding:
+                    "10px 12px",
+                  fontSize: "14px",
+                  background: "#fff",
+                  minWidth: "90px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                <option value={10}>
+                  10
+                </option>
+
+                <option value={20}>
+                  20
+                </option>
+
+                <option value={40}>
+                  40
+                </option>
+
+                <option value={60}>
+                  60
+                </option>
+
+                <option value={80}>
+                  80
+                </option>
+
+                <option value={100}>
+                  100
+                </option>
+
+                <option value={200}>
+                  200
+                </option>
+              </select>
+
+              <button
+                type="button"
+                onClick={
+                  generateQRCodes
+                }
+                disabled={generating}
+                style={{
+                  border: "none",
+                  borderRadius: "10px",
+                  padding:
+                    "10px 18px",
+                  background:
+                    generating
+                      ? "#94A3B8"
+                      : "#0F172A",
+                  color: "#fff",
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  cursor:
+                    generating
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                {generating
+                  ? "⏳ جاري الإنشاء..."
+                  : "✨ إنشاء الأكواد"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* =========================
+            الإحصائيات
+           ========================= */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit,minmax(180px,1fr))",
+            gap: "14px",
+            marginBottom: "20px",
+          }}
+        >
+          <StatCard
+            title="إجمالي الأكواد"
+            value={qrCodes.length}
+            icon="📦"
+          />
+
+          <StatCard
+            title="متاح للاستخدام"
+            value={availableCount}
+            icon="🟢"
+          />
+
+          <StatCard
+            title="مستخدم"
+            value={usedCount}
+            icon="🔵"
+          />
+
+          <StatCard
+            title="مؤرشف"
+            value={archivedCount}
+            icon="🟡"
+          />
+        </div>
+
+        {/* =========================
+            البحث
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "18px",
+            padding: "18px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 7px 22px rgba(15,23,42,0.05)",
+            border:
+              "1px solid #E2E8F0",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                right: "14px",
+                top: "50%",
+                transform:
+                  "translateY(-50%)",
+                fontSize: "18px",
+              }}
+            >
+              🔎
+            </span>
+
+            <input
+              type="text"
+              value={search}
+              onChange={(e) =>
+                setSearch(
+                  e.target.value
+                )
+              }
+              placeholder="بحث برقم QR أو رقم الخطاب أو الموضوع..."
+              style={{
+                width: "100%",
+                boxSizing:
+                  "border-box",
+                padding:
+                  "13px 45px 13px 14px",
+                border:
+                  "1px solid #CBD5E1",
+                borderRadius: "12px",
+                fontSize: "14px",
+                outline: "none",
+                direction: "rtl",
+                background: "#F8FAFC",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* =========================
+            سجل أكواد QR
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            overflow: "hidden",
+            boxShadow:
+              "0 8px 25px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #E2E8F0",
+          }}
+        >
+          <div
+            style={{
+              padding: "19px 20px",
+              borderBottom:
+                "1px solid #E5E7EB",
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "22px",
+                }}
+              >
+                🏷️
+              </span>
+
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "17px",
+                  fontWeight: "800",
+                  color: "#0F172A",
+                }}
+              >
+                سجل أكواد الأرشيف
+              </h3>
+            </div>
+
+            <span
+              style={{
+                padding: "6px 11px",
+                borderRadius: "999px",
+                background: "#F1F5F9",
+                color: "#475569",
+                fontSize: "12px",
+                fontWeight: "700",
+              }}
+            >
+              {filteredCodes.length} كود
+            </span>
+          </div>
+
+          {loading ? (
+            <div
+              style={{
+                padding: "60px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "40px",
+                  marginBottom: "10px",
+                }}
+              >
+                ⏳
+              </div>
+
+              جاري تحميل الأكواد...
+            </div>
+          ) : filteredCodes.length ===
+            0 ? (
+            <div
+              style={{
+                padding: "60px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "48px",
+                  marginBottom: "12px",
+                }}
+              >
+                🏷️
+              </div>
+
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  color: "#334155",
+                  marginBottom: "6px",
+                }}
+              >
+                لا توجد أكواد QR حتى الآن
+              </div>
+
+              <div
+                style={{
+                  fontSize: "13px",
+                }}
+              >
+                اختاري عدد الأكواد واضغطي "إنشاء الأكواد"
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse:
+                    "collapse",
+                  minWidth: "650px",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background:
+                        "#F8FAFC",
+                    }}
+                  >
+                    <th
+                      style={thStyle}
+                    >
+                      🏷️ رقم QR
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      📌 الحالة
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      📄 رقم الخطاب
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      📅 تاريخ الإنشاء
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredCodes.map(
+                    (item) => (
+                      <tr key={item.id}>
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <strong
+                            style={{
+                              color:
+                                "#0F172A",
+                              direction:
+                                "ltr",
+                              display:
+                                "inline-block",
+                            }}
+                          >
+                            {item.code}
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <StatusBadge
+                            status={
+                              item.status
+                            }
+                          />
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {item.letter_id ||
+                            "—"}
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {formatDate(
+                            item.created_at
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* =========================
+          منطقة الطباعة
+         ========================= */}
+      {printCodes.length > 0 && (
+        <div
+          className="qr-print-area"
+          dir="rtl"
+        >
+          <div className="qr-print-header">
+            <div>
+              <div className="qr-print-title">
+                أكواد QR للأرشيف
+              </div>
+
+              <div className="qr-print-subtitle">
+                قسم الاستحقاقات - كلية الهندسة
+              </div>
+
+              <div className="qr-print-count">
+                عدد الأكواد:{" "}
+                {printCodes.length}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="qr-print-button no-print"
+              onClick={handlePrint}
+            >
+              🖨️ طباعة
+            </button>
+          </div>
+
+          <div className="qr-grid">
+            {printCodes.map((item) => (
+              <div
+                className="qr-print-card"
+                key={item.id}
+              >
+                <img
+                  src={item.dataUrl}
+                  alt={item.code}
+                  className="qr-image"
+                />
+
+                <div className="qr-code-number">
+                  {item.code}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <style>
+        {`
+          .qr-print-area {
+            display: none;
+          }
+
+          @media print {
+            @page {
+              size: A4 portrait;
+              margin: 5mm;
+            }
+
+            html,
+            body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              background: #fff !important;
+            }
+
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            body * {
+              visibility: hidden !important;
+            }
+
+            .qr-print-area,
+            .qr-print-area * {
+              visibility: visible !important;
+            }
+
+            .qr-print-area {
+              display: block !important;
+              position: absolute !important;
+              top: 0 !important;
+              left: 0 !important;
+              width: 200mm !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #fff !important;
+            }
+
+            .qr-print-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              height: 12mm;
+              box-sizing: border-box;
+              margin: 0 0 2mm 0;
+              padding: 0 1mm 1mm 1mm;
+              border-bottom: 0.3mm solid #ddd;
+            }
+
+            .qr-print-title {
+              font-size: 14px;
+              font-weight: 700;
+              color: #111;
+            }
+
+            .qr-print-subtitle {
+              margin-top: 0.7mm;
+              font-size: 8px;
+              color: #555;
+            }
+
+            .qr-print-count {
+              margin-top: 0.7mm;
+              font-size: 7px;
+              color: #777;
+            }
+
+            .qr-print-button {
+              display: none !important;
+            }
+
+            .qr-grid {
+              width: 200mm !important;
+              box-sizing: border-box;
+              display: grid !important;
+              grid-template-columns: repeat(5, 1fr) !important;
+              grid-template-rows: repeat(8, 31mm) !important;
+              column-gap: 1mm !important;
+              row-gap: 1mm !important;
+              align-content: start !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #fff !important;
+            }
+
+            .qr-print-card {
+              width: 100% !important;
+              height: 31mm !important;
+              box-sizing: border-box;
+              border: 0.25mm dashed #999;
+              display: flex !important;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              overflow: hidden;
+            }
+
+            .qr-image {
+              width: 25mm !important;
+              height: 25mm !important;
+              max-width: 25mm !important;
+              max-height: 25mm !important;
+              display: block !important;
+              object-fit: contain;
+            }
+
+            .qr-code-number {
+              margin-top: 0.6mm;
+              font-size: 7px;
+              line-height: 2.2mm;
+              font-weight: 700;
+              color: #111;
+              direction: ltr;
+              text-align: center;
+            }
+          }
+
+          @media screen {
+            .qr-print-area {
+              display: none !important;
+            }
+          }
+        `}
+      </style>
+    </>
+  );
+}
+
+/* =========================================================
+   تفاصيل الخطاب - التصميم المميز
+   ========================================================= */
+
+function LetterDetails({ letter, onClose, onMoveNext }) {
+  const movements = letter.movements || [];
+
+  const completedCount = movements.filter(
+    (movement) =>
+      movement.status === "completed"
+  ).length;
+
+  const currentIndex = movements.findIndex(
+    (movement) =>
+      movement.status === "in_progress"
+  );
+
+  const progress =
+    movements.length === 0
+      ? 0
+      : Math.min(
+          100,
+          Math.round(
+            ((completedCount +
+              (currentIndex >= 0
+                ? 0.5
+                : 0)) /
+              movements.length) *
+              100
+          )
+        );
+
+  const currentMovement =
+    currentIndex >= 0
+      ? movements[currentIndex]
+      : movements[completedCount - 1] ||
+        movements[0];
+
+  return (
+    <div
+      style={{
+        background: "#F8FAFC",
+        borderRadius: "24px",
+        marginBottom: "24px",
+        border: "1px solid #DCE5F2",
+        boxShadow:
+          "0 18px 45px rgba(15,23,42,0.12)",
+        overflow: "hidden",
+      }}
+    >
+      {/* الرأس */}
+      <div
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          padding: "28px",
+          background:
+            "linear-gradient(135deg,#071A3A 0%,#123D78 48%,#2563EB 100%)",
+          color: "#fff",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: "220px",
+            height: "220px",
+            borderRadius: "50%",
+            border:
+              "1px solid rgba(255,255,255,0.08)",
+            top: "-120px",
+            left: "-50px",
+          }}
+        />
+
+        <div
+          style={{
+            position: "absolute",
+            width: "150px",
+            height: "150px",
+            borderRadius: "50%",
+            background:
+              "rgba(255,255,255,0.04)",
+            bottom: "-80px",
+            right: "15%",
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            gap: "20px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+            }}
+          >
+            <div
+              style={{
+                width: "64px",
+                height: "64px",
+                minWidth: "64px",
+                borderRadius: "18px",
+                background:
+                  "rgba(255,255,255,0.12)",
+                border:
+                  "1px solid rgba(255,255,255,0.20)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "32px",
+                boxShadow:
+                  "0 10px 25px rgba(0,0,0,0.12)",
+              }}
+            >
+              ✉️
+            </div>
+
+            <div>
+              <div
+                style={{
+                  fontSize: "12px",
+                  color:
+                    "rgba(255,255,255,0.68)",
+                  marginBottom: "5px",
+                  fontWeight: "600",
+                }}
+              >
+                🧭 نظام متابعة حركة الخطابات
+              </div>
+
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "26px",
+                  fontWeight: "800",
+                }}
+              >
+                خطاب رقم{" "}
+                {letter.letter_number ||
+                  "—"}
+              </h3>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  marginTop: "9px",
+                }}
+              >
+                {letter.qr?.code && (
+                  <span
+                    style={{
+                      direction: "ltr",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      padding:
+                        "6px 11px",
+                      borderRadius:
+                        "999px",
+                      background:
+                        "rgba(255,255,255,0.12)",
+                      border:
+                        "1px solid rgba(255,255,255,0.18)",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                    }}
+                  >
+                    🏷️{" "}
+                    {letter.qr.code}
+                  </span>
+                )}
+
+                <span
+                  style={{
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
+                    gap: "5px",
+                    padding:
+                      "6px 11px",
+                    borderRadius:
+                      "999px",
+                    background:
+                      "rgba(255,255,255,0.12)",
+                    border:
+                      "1px solid rgba(255,255,255,0.18)",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                  }}
+                >
+                  📝{" "}
+                  {letter.subject ||
+                    "بدون موضوع"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border:
+                "1px solid rgba(255,255,255,0.25)",
+              borderRadius: "12px",
+              padding:
+                "10px 16px",
+              background:
+                "rgba(255,255,255,0.10)",
+              color: "#fff",
+              fontSize: "13px",
+              fontWeight: "700",
+              cursor: "pointer",
+              backdropFilter:
+                "blur(8px)",
+            }}
+          >
+            إغلاق ✕
+          </button>
+        </div>
+      </div>
+
+      <div style={{ padding: "24px" }}>
+        {/* الحالة والإحصائيات */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit,minmax(230px,1fr))",
+            gap: "14px",
+            marginBottom: "22px",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              background:
+                "linear-gradient(135deg,#EFF6FF,#DBEAFE)",
+              border:
+                "1px solid #BFDBFE",
+              borderRadius: "17px",
+              padding: "17px",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                fontSize: "65px",
+                opacity: 0.07,
+                left: "-5px",
+                bottom: "-15px",
+              }}
+            >
+              🚀
+            </div>
+
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#64748B",
+                fontWeight: "700",
+                marginBottom: "6px",
+              }}
+            >
+              🚀 الحالة الحالية
+            </div>
+
+            <div
+              style={{
+                fontSize: "18px",
+                fontWeight: "800",
+                color: "#1D4ED8",
+              }}
+            >
+              {currentMovement
+                ?.department?.name ||
+                getLetterStatusText(
+                  letter.status
+                )}
+            </div>
+
+            <div
+              style={{
+                marginTop: "5px",
+                fontSize: "12px",
+                color: "#64748B",
+              }}
+            >
+              {currentMovement
+                ? getMovementStatusText(
+                    currentMovement.status
+                  )
+                : getLetterStatusText(
+                    letter.status
+                  )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#FFFFFF",
+              border:
+                "1px solid #E2E8F0",
+              borderRadius: "17px",
+              padding: "17px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#64748B",
+                fontWeight: "700",
+                marginBottom: "6px",
+              }}
+            >
+              🧭 عدد المحطات
+            </div>
+
+            <div
+              style={{
+                fontSize: "25px",
+                fontWeight: "800",
+                color: "#0F172A",
+              }}
+            >
+              {movements.length}
+            </div>
+
+            <div
+              style={{
+                marginTop: "3px",
+                fontSize: "12px",
+                color: "#64748B",
+              }}
+            >
+              محطة في رحلة الخطاب
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#FFFFFF",
+              border:
+                "1px solid #E2E8F0",
+              borderRadius: "17px",
+              padding: "17px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                alignItems: "center",
+                marginBottom: "8px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                📊 نسبة الإنجاز
+              </div>
+
+              <strong
+                style={{
+                  fontSize: "18px",
+                  color:
+                    progress >= 100
+                      ? "#047857"
+                      : "#2563EB",
+                }}
+              >
+                {progress}%
+              </strong>
+            </div>
+
+            <div
+              style={{
+                height: "9px",
+                background: "#E2E8F0",
+                borderRadius:
+                  "999px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width:
+                    `${progress}%`,
+                  height: "100%",
+                  background:
+                    progress >= 100
+                      ? "linear-gradient(90deg,#059669,#10B981)"
+                      : "linear-gradient(90deg,#2563EB,#38BDF8)",
+                  borderRadius:
+                    "999px",
+                  transition:
+                    "width 0.5s ease",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: "6px",
+                fontSize: "11px",
+                color: "#94A3B8",
+              }}
+            >
+              {completedCount} من{" "}
+              {movements.length} محطة مكتملة
+            </div>
+          </div>
+        </div>
+
+        {/* معلومات الخطاب */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit,minmax(175px,1fr))",
+            gap: "12px",
+            marginBottom: "20px",
+          }}
+        >
+          <InfoBox
+            label="رقم الخطاب"
+            value={`📄 ${
+              letter.letter_number ||
+              "—"
+            }`}
+          />
+
+          <InfoBox
+            label="تاريخ الخطاب"
+            value={`📅 ${formatDate(
+              letter.letter_date
+            )}`}
+          />
+
+          <InfoBox
+            label="الجهة المرسلة"
+            value={`🏢 ${
+              letter.sender?.name ||
+              "—"
+            }`}
+          />
+
+          <InfoBox
+            label="كود QR"
+            value={`🏷️ ${
+              letter.qr?.code ||
+              "—"
+            }`}
+            ltr
+          />
+
+          <InfoBox
+            label="الموضوع"
+            value={`📝 ${
+              letter.subject ||
+              "—"
+            }`}
+          />
+
+          <InfoBox
+            label="الحالة الحالية"
+            value={`🔵 ${getLetterStatusText(
+              letter.status
+            )}`}
+            highlight
+          />
+        </div>
+
+        {/* الملاحظات */}
+        {letter.notes && (
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg,#FFFBEB,#FEF3C7)",
+              border:
+                "1px solid #FDE68A",
+              borderRadius: "16px",
+              padding:
+                "17px 18px",
+              marginBottom: "28px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems:
+                  "flex-start",
+                gap: "12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "25px",
+                }}
+              >
+                💡
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "#92400E",
+                    marginBottom:
+                      "5px",
+                    fontWeight:
+                      "800",
+                  }}
+                >
+                  ملاحظات الخطاب
+                </div>
+
+                <div
+                  style={{
+                    fontSize: "14px",
+                    color: "#78350F",
+                    lineHeight:
+                      "1.9",
+                  }}
+                >
+                  {letter.notes}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* عنوان الرحلة */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            gap: "15px",
+            flexWrap: "wrap",
+            marginBottom: "18px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems:
+                "center",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius:
+                  "15px",
+                background:
+                  "linear-gradient(135deg,#DBEAFE,#EFF6FF)",
+                border:
+                  "1px solid #BFDBFE",
+                display: "flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                fontSize: "25px",
+              }}
+            >
+              🧭
+            </div>
+
+            <div>
+              <h4
+                style={{
+                  margin: 0,
+                  fontSize: "20px",
+                  fontWeight: "800",
+                  color: "#0F172A",
+                }}
+              >
+                رحلة حركة الخطاب
+              </h4>
+
+              <div
+                style={{
+                  marginTop:
+                    "4px",
+                  fontSize: "12px",
+                  color: "#64748B",
+                }}
+              >
+                📨 تتبع انتقال الخطاب بين الإدارات
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding:
+                "8px 13px",
+              borderRadius:
+                "999px",
+              background:
+                "#F1F5F9",
+              border:
+                "1px solid #E2E8F0",
+              color: "#475569",
+              fontSize: "12px",
+              fontWeight: "700",
+            }}
+          >
+            🗂️ {movements.length} محطة
+          </div>
+        </div>
+
+        {/* الرحلة */}
+        {movements.length === 0 ? (
+          <div
+            style={{
+              padding:
+                "50px 20px",
+              textAlign:
+                "center",
+              background:
+                "#FFFFFF",
+              borderRadius:
+                "18px",
+              color: "#64748B",
+              border:
+                "1px dashed #CBD5E1",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "50px",
+                marginBottom:
+                  "12px",
+              }}
+            >
+              🧭
+            </div>
+
+            <div
+              style={{
+                fontSize: "16px",
+                fontWeight: "800",
+                color: "#334155",
+                marginBottom:
+                  "6px",
+              }}
+            >
+              لا توجد محطات مسجلة
+            </div>
+
+            <div
+              style={{
+                fontSize: "13px",
+              }}
+            >
+              لم يتم إنشاء مسار لهذا الخطاب حتى الآن.
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              position:
+                "relative",
+              background:
+                "linear-gradient(180deg,#F8FAFC,#FFFFFF)",
+              border:
+                "1px solid #E2E8F0",
+              borderRadius:
+                "20px",
+              padding:
+                "22px 18px",
+            }}
+          >
+            {/* الخط العمودي */}
+            <div
+              style={{
+                position:
+                  "absolute",
+                right: "45px",
+                top: "65px",
+                bottom: "65px",
+                width: "4px",
+                background:
+                  "linear-gradient(180deg,#2563EB,#CBD5E1)",
+                borderRadius:
+                  "999px",
+              }}
+            />
+
+            {movements.map(
+              (movement, index) => {
+                const status =
+                  movement.status ||
+                  "waiting";
+
+                const config =
+                  movementStatusConfig[
+                    status
+                  ] ||
+                  movementStatusConfig.waiting;
+
+                const isCurrent =
+                  status ===
+                  "in_progress";
+
+                const isCompleted =
+                  status ===
+                  "completed";
+
+                const isLast =
+                  index ===
+                  movements.length -
+                    1;
+
+                return (
+                  <div
+                    key={
+                      movement.id
+                    }
+                    style={{
+                      position:
+                        "relative",
+                      display:
+                        "flex",
+                      gap: "18px",
+                      marginBottom:
+                        isLast
+                          ? 0
+                          : "18px",
+                    }}
+                  >
+                    {/* دائرة المحطة */}
+                    <div
+                      style={{
+                        width:
+                          "58px",
+                        minWidth:
+                          "58px",
+                        height:
+                          "58px",
+                        borderRadius:
+                          "50%",
+                        background:
+                          isCompleted
+                            ? "linear-gradient(135deg,#059669,#10B981)"
+                            : isCurrent
+                            ? "linear-gradient(135deg,#2563EB,#38BDF8)"
+                            : "#FFFFFF",
+                        border:
+                          "4px solid " +
+                          (isCompleted
+                            ? "#D1FAE5"
+                            : isCurrent
+                            ? "#DBEAFE"
+                            : "#E2E8F0"),
+                        display:
+                          "flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "center",
+                        fontSize:
+                          "22px",
+                        color:
+                          isCompleted ||
+                          isCurrent
+                            ? "#FFFFFF"
+                            : "#64748B",
+                        fontWeight:
+                          "800",
+                        zIndex: 2,
+                        boxShadow:
+                          isCurrent
+                            ? "0 0 0 7px rgba(37,99,235,0.10),0 8px 20px rgba(37,99,235,0.20)"
+                            : "0 5px 12px rgba(15,23,42,0.08)",
+                      }}
+                    >
+                      {isCompleted
+                        ? "✓"
+                        : isCurrent
+                        ? "⚡"
+                        : index + 1}
+                    </div>
+
+                    {/* بطاقة المحطة */}
+                    <div
+                      style={{
+                        flex: 1,
+                        background:
+                          "#FFFFFF",
+                        border:
+                          "1px solid " +
+                          (isCurrent
+                            ? "#93C5FD"
+                            : isCompleted
+                            ? "#A7F3D0"
+                            : "#E2E8F0"),
+                        borderRadius:
+                          "18px",
+                        padding:
+                          "17px",
+                        boxShadow:
+                          isCurrent
+                            ? "0 10px 28px rgba(37,99,235,0.13)"
+                            : "0 5px 15px rgba(15,23,42,0.04)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          alignItems:
+                            "flex-start",
+                          gap: "12px",
+                          flexWrap:
+                            "wrap",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            alignItems:
+                              "center",
+                            gap: "9px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize:
+                                "22px",
+                            }}
+                          >
+                            {getDepartmentEmoji(
+                              movement
+                                .department
+                                ?.name
+                            )}
+                          </span>
+
+                          <div>
+                            <div
+                              style={{
+                                fontSize:
+                                  "10px",
+                                color:
+                                  "#94A3B8",
+                                fontWeight:
+                                  "800",
+                                marginBottom:
+                                  "3px",
+                              }}
+                            >
+                              المحطة{" "}
+                              {index +
+                                1}
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize:
+                                  "16px",
+                                fontWeight:
+                                  "800",
+                                color:
+                                  "#0F172A",
+                              }}
+                            >
+                              {movement
+                                .department
+                                ?.name ||
+                                "إدارة غير محددة"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            gap: "5px",
+                            padding:
+                              "6px 11px",
+                            borderRadius:
+                              "999px",
+                            background:
+                              config.background,
+                            color:
+                              config.color,
+                            border:
+                              "1px solid " +
+                              config.border,
+                            fontSize:
+                              "11px",
+                            fontWeight:
+                              "800",
+                          }}
+                        >
+                          {
+                            config.icon
+                          }{" "}
+                          {
+                            config.text
+                          }
+                        </span>
+                      </div>
+
+                      {movement.action && (
+                        <div
+                          style={{
+                            marginTop:
+                              "12px",
+                            padding:
+                              "10px 12px",
+                            borderRadius:
+                              "11px",
+                            background:
+                              "#F8FAFC",
+                            border:
+                              "1px solid #F1F5F9",
+                            fontSize:
+                              "12px",
+                            color:
+                              "#475569",
+                          }}
+                        >
+                          🔧{" "}
+                          {
+                            movement.action
+                          }
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          gap: "10px",
+                          flexWrap:
+                            "wrap",
+                          marginTop:
+                            "12px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex:
+                              "1 1 190px",
+                            background:
+                              "#F8FAFC",
+                            borderRadius:
+                              "10px",
+                            padding:
+                              "9px 11px",
+                            fontSize:
+                              "11px",
+                            color:
+                              "#64748B",
+                          }}
+                        >
+                          📥{" "}
+                          <strong>
+                            الاستلام
+                          </strong>
+
+                          <div
+                            style={{
+                              marginTop:
+                                "3px",
+                              color:
+                                "#334155",
+                              fontWeight:
+                                "600",
+                            }}
+                          >
+                            {formatDateTime(
+                              movement.received_at
+                            )}
+                          </div>
+                        </div>
+
+                        {movement.sent_at && (
+                          <div
+                            style={{
+                              flex:
+                                "1 1 190px",
+                              background:
+                                "#F8FAFC",
+                              borderRadius:
+                                "10px",
+                              padding:
+                                "9px 11px",
+                              fontSize:
+                                "11px",
+                              color:
+                                "#64748B",
+                            }}
+                          >
+                            📤{" "}
+                            <strong>
+                              الإرسال
+                            </strong>
+
+                            <div
+                              style={{
+                                marginTop:
+                                  "3px",
+                                color:
+                                  "#334155",
+                                fontWeight:
+                                  "600",
+                              }}
+                            >
+                              {formatDateTime(
+                                movement.sent_at
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {movement.notes && (
+                        <div
+                          style={{
+                            marginTop:
+                              "10px",
+                            paddingTop:
+                              "10px",
+                            borderTop:
+                              "1px solid #F1F5F9",
+                            fontSize:
+                              "12px",
+                            color:
+                              "#475569",
+                            lineHeight:
+                              "1.8",
+                          }}
+                        >
+                          💬{" "}
+                          {
+                            movement.notes
+                          }
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        )}
+
+        {/* مفتاح الحالات */}
+        {currentMovement && currentMovement.status === "in_progress" && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginTop: "20px",
+              marginBottom: "8px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => onMoveNext(letter)}
+              style={{
+                border: "none",
+                borderRadius: "14px",
+                padding: "13px 24px",
+                background: "linear-gradient(135deg,#0F766E,#14B8A6)",
+                color: "#fff",
+                fontWeight: "800",
+                fontSize: "14px",
+                cursor: "pointer",
+                boxShadow: "0 8px 20px rgba(15,118,110,0.22)",
+              }}
+            >
+              {"\u062A\u0645 \u0627\u0644\u062A\u0646\u0641\u064A\u0630 \u0648\u0627\u0644\u0627\u0646\u062A\u0642\u0627\u0644 \u0644\u0644\u0645\u062D\u0637\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629"}
+            </button>
+          </div>
+        )}
+
+        {movements.length > 0 && (
+          <div
+            style={{
+              display:
+                "flex",
+              justifyContent:
+                "center",
+              gap: "10px",
+              flexWrap:
+                "wrap",
+              marginTop:
+                "18px",
+            }}
+          >
+            <LegendItem
+              icon="🟢"
+              text="تم التنفيذ"
+            />
+
+            <LegendItem
+              icon="🔵"
+              text="جاري التنفيذ"
+            />
+
+            <LegendItem
+              icon="⚪"
+              text="في الانتظار"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Info Box
+   ========================================================= */
+
+function InfoBox({
+  label,
+  value,
+  ltr = false,
+  highlight = false,
+}) {
+  return (
+    <div
+      style={{
+        background:
+          highlight
+            ? "linear-gradient(135deg,#EFF6FF,#F8FAFC)"
+            : "#FFFFFF",
+        border:
+          "1px solid " +
+          (highlight
+            ? "#BFDBFE"
+            : "#E2E8F0"),
+        borderRadius:
+          "14px",
+        padding:
+          "14px 15px",
+        boxShadow:
+          "0 3px 10px rgba(15,23,42,0.025)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "10px",
+          color: "#94A3B8",
+          marginBottom: "7px",
+          fontWeight: "700",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          fontSize: "14px",
+          fontWeight: "800",
+          color:
+            highlight
+              ? "#1D4ED8"
+              : "#0F172A",
+          direction:
+            ltr ? "ltr" : "rtl",
+          textAlign:
+            ltr ? "left" : "right",
+          lineHeight: "1.6",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   حالات حركة الخطاب
+   ========================================================= */
+
+const movementStatusConfig = {
+  waiting: {
+    text: "في الانتظار",
+    icon: "⚪",
+    color: "#64748B",
+    background: "#F8FAFC",
+    border: "#CBD5E1",
+  },
+
+  in_progress: {
+    text: "جاري التنفيذ",
+    icon: "🔵",
+    color: "#1D4ED8",
+    background: "#EFF6FF",
+    border: "#BFDBFE",
+  },
+
+  completed: {
+    text: "تم التنفيذ",
+    icon: "🟢",
+    color: "#047857",
+    background: "#ECFDF5",
+    border: "#A7F3D0",
+  },
+};
+
+function getMovementStatusText(
+  status
+) {
+  const config =
+    movementStatusConfig[status];
+
+  return config
+    ? config.text
+    : status || "غير محدد";
+}
+
+/* =========================================================
+   Emoji للإدارات
+   ========================================================= */
+
+function getDepartmentEmoji(name) {
+  const value = String(
+    name || ""
+  );
+
+  if (value.includes("أمين")) {
+    return "👨‍💼";
+  }
+
+  if (value.includes("استحقاق")) {
+    return "💰";
+  }
+
+  if (value.includes("حساب")) {
+    return "🧮";
+  }
+
+  if (
+    value.includes("قيد") ||
+    value.includes("حفظ")
+  ) {
+    return "🗄️";
+  }
+
+  if (value.includes("ثقاف")) {
+    return "🎓";
+  }
+
+  if (
+    value.includes("هيئة التدريس")
+  ) {
+    return "👨‍🏫";
+  }
+
+  if (value.includes("مكتب")) {
+    return "🏢";
+  }
+
+  return "🏛️";
+}
+
+/* =========================================================
+   Legend
+   ========================================================= */
+
+function LegendItem({
+  icon,
+  text,
+}) {
+  return (
+    <div
+      style={{
+        display:
+          "inline-flex",
+        alignItems:
+          "center",
+        gap: "6px",
+        padding:
+          "7px 11px",
+        background:
+          "#FFFFFF",
+        border:
+          "1px solid #E2E8F0",
+        borderRadius:
+          "999px",
+        fontSize:
+          "11px",
+        color:
+          "#475569",
+        fontWeight:
+          "700",
+      }}
+    >
+      {icon} {text}
+    </div>
+  );
+}
+
+/* =========================================================
+   الحالة العامة للخطاب
+   ========================================================= */
+
+function getLetterStatusText(
+  status
+) {
+  const config = {
+    incoming: "وارد",
+    in_progress:
+      "جاري التنفيذ",
+    completed:
+      "تم التنفيذ",
+    archived:
+      "مؤرشف",
+  };
+
+  return (
+    config[status] ||
+    status ||
+    "غير محدد"
+  );
+}
+
+/* =========================================================
+   Stat Card
+   ========================================================= */
+
+function StatCard({
+  title,
+  value,
+  icon,
+}) {
+  return (
+    <div
+      style={{
+        position:
+          "relative",
+        overflow:
+          "hidden",
+        background:
+          "#FFFFFF",
+        borderRadius:
+          "17px",
+        padding:
+          "18px",
+        border:
+          "1px solid #E2E8F0",
+        boxShadow:
+          "0 7px 20px rgba(15,23,42,0.05)",
+      }}
+    >
+      <div
+        style={{
+          display:
+            "flex",
+          justifyContent:
+            "space-between",
+          alignItems:
+            "center",
+          gap: "10px",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize:
+                "12px",
+              color:
+                "#64748B",
+              marginBottom:
+                "7px",
+              fontWeight:
+                "700",
+            }}
+          >
+            {title}
+          </div>
+
+          <div
+            style={{
+              fontSize:
+                "26px",
+              fontWeight:
+                "800",
+              color:
+                "#0F172A",
+            }}
+          >
+            {value}
+          </div>
+        </div>
+
+        <div
+          style={{
+            width:
+              "47px",
+            height:
+              "47px",
+            borderRadius:
+              "14px",
+            background:
+              "#F8FAFC",
+            border:
+              "1px solid #E2E8F0",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            fontSize:
+              "24px",
+          }}
+        >
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Status Badge
+   ========================================================= */
+
+function StatusBadge({
+  status,
+}) {
+  const config = {
+    available: {
+      text: "متاح",
+      icon: "🟢",
+      background: "#ECFDF5",
+      color: "#047857",
+    },
+
+    used: {
+      text: "مستخدم",
+      icon: "🔵",
+      background: "#EFF6FF",
+      color: "#1D4ED8",
+    },
+
+    archived: {
+      text: "مؤرشف",
+      icon: "🟡",
+      background: "#FFFBEB",
+      color: "#B45309",
+    },
+  };
+
+  const current =
+    config[status] || {
+      text:
+        status ||
+        "غير محدد",
+      icon: "⚪",
+      background:
+        "#F3F4F6",
+      color:
+        "#374151",
+    };
+
+  return (
+    <span
+      style={{
+        display:
+          "inline-flex",
+        alignItems:
+          "center",
+        justifyContent:
+          "center",
+        gap: "5px",
+        padding:
+          "6px 10px",
+        borderRadius:
+          "999px",
+        background:
+          current.background,
+        color:
+          current.color,
+        fontSize:
+          "12px",
+        fontWeight:
+          "800",
+      }}
+    >
+      {current.icon}{" "}
+      {current.text}
+    </span>
+  );
+}
+
+/* =========================================================
+   Header Button
+   ========================================================= */
+
+function headerButtonStyle(
+  background
+) {
+  return {
+    border:
+      "1px solid rgba(255,255,255,0.18)",
+    borderRadius:
+      "11px",
+    padding:
+      "10px 15px",
+    background,
+    color: "#fff",
+    fontSize:
+      "13px",
+    fontWeight:
+      "700",
+    cursor:
+      background ===
+      "#64748B"
+        ? "not-allowed"
+        : "pointer",
+    backdropFilter:
+      "blur(8px)",
+  };
+}
+
+/* =========================================================
+   Date
+   ========================================================= */
+
+function formatDate(value) {
+  if (!value) {
+    return "—";
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "ar-EG",
+      {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).format(new Date(value));
+  } catch {
+    return "—";
+  }
+}
+
+/* =========================================================
+   Date + Time
+   ========================================================= */
+
+function formatDateTime(
+  value
+) {
+  if (!value) {
+    return "—";
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "ar-EG",
+      {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    ).format(new Date(value));
+  } catch {
+    return "—";
+  }
+}
+
+/* =========================================================
+   Table Styles
+   ========================================================= */
+
+const thStyle = {
+  padding:
+    "14px 16px",
+  textAlign:
+    "right",
+  fontSize:
+    "12px",
+  fontWeight:
+    "800",
+  color:
+    "#334155",
+  borderBottom:
+    "1px solid #E2E8F0",
+  whiteSpace:
+    "nowrap",
+};
+
+const tdStyle = {
+  padding:
+    "14px 16px",
+  fontSize:
+    "13px",
+  color:
+    "#475569",
+  borderBottom:
+    "1px solid #F1F5F9",
+  whiteSpace:
+    "nowrap",
+};

@@ -11,7 +11,123 @@ const SAVED_LOGIN_KEY = "saved_admin_login";
 function App() {
   const [activePage, setActivePage] = useState("home");
   const [showLogin, setShowLogin] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return localStorage.getItem("isLoggedIn") === "true";
+  });
+  const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
+  const [qrLetter, setQrLetter] = useState(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState("");  
+  useEffect(() => {
+    if (!qrCodeFromUrl) return;
+
+    const loadPublicQrLetter = async () => {
+      setQrLoading(true);
+      setQrError("");
+      setQrLetter(null);
+
+      try {
+        const { data: qrData, error: qrError } = await supabase
+          .from("archive_qr_codes")
+          .select("id, code, status, letter_id")
+          .eq("code", qrCodeFromUrl)
+          .maybeSingle();
+
+        if (qrError) throw qrError;
+
+        if (!qrData) {
+          setQrError("كود QR غير موجود في النظام.");
+          return;
+        }
+
+        const { data: letterData, error: letterError } = await supabase
+          .from("letters")
+          .select("id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at")
+          .eq("qr_code_id", qrData.id)
+          .maybeSingle();
+
+        if (letterError) throw letterError;
+
+        if (!letterData) {
+          setQrError("هذا الكود غير مرتبط بخطاب.");
+          return;
+        }
+
+        const { data: movementsData, error: movementsError } = await supabase
+          .from("letter_movements")
+          .select("id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status")
+          .eq("letter_id", letterData.id)
+          .order("step_order", { ascending: true });
+
+        if (movementsError) throw movementsError;
+
+        const departmentIds = [
+          ...new Set(
+            (movementsData || []).map(
+              (movement) => movement.department_id
+            )
+          ),
+        ];
+
+        let departments = [];
+
+        if (departmentIds.length > 0) {
+          const { data: departmentData, error: departmentError } =
+            await supabase
+              .from("letter_departments")
+              .select("id, name")
+              .in("id", departmentIds);
+
+          if (departmentError) throw departmentError;
+
+          departments = departmentData || [];
+        }
+
+        let senderData = null;
+
+        if (letterData.sender_id) {
+          const { data, error } = await supabase
+            .from("letter_senders")
+            .select("id, name")
+            .eq("id", letterData.sender_id)
+            .maybeSingle();
+
+          if (error) throw error;
+
+          senderData = data;
+        }
+
+        const enrichedMovements = (movementsData || []).map(
+          (movement) => ({
+            ...movement,
+            department:
+              departments.find(
+                (department) =>
+                  department.id === movement.department_id
+              ) || null,
+          })
+        );
+
+        setQrLetter({
+          ...letterData,
+          qr: qrData,
+          sender: senderData,
+          movements: enrichedMovements,
+        });
+      } catch (error) {
+        console.error("خطأ في تحميل الخطاب من QR:", error);
+        setQrError("تعذر تحميل بيانات الخطاب حاليًا.");
+      } finally {
+        setQrLoading(false);
+      }
+    };
+
+    loadPublicQrLetter();
+      if (qrCodeFromUrl) {
+        sessionStorage.setItem("pendingQrCode", qrCodeFromUrl);
+      }
+  }, [qrCodeFromUrl]);
+
   const [adminData, setAdminData] = useState([]);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
@@ -43,7 +159,10 @@ function App() {
   });
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem("currentUser");
+    return saved ? JSON.parse(saved) : null;
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
@@ -222,18 +341,18 @@ function App() {
           job_title: serviceForm.job.trim(),
           phone: serviceForm.phone.trim() || null,
           request_month: {
-            يناير: 1,
-            فبراير: 2,
-            مارس: 3,
-            أبريل: 4,
-            مايو: 5,
-            يونيو: 6,
-            يوليو: 7,
-            أغسطس: 8,
-            سبتمبر: 9,
-            أكتوبر: 10,
-            نوفمبر: 11,
-            ديسمبر: 12,
+            "\u064a\u0646\u0627\u064a\u0631": 1,
+            "\u0641\u0628\u0631\u0627\u064a\u0631": 2,
+            "\u0645\u0627\u0631\u0633": 3,
+            "\u0623\u0628\u0631\u064a\u0644": 4,
+            "\u0645\u0627\u064a\u0648": 5,
+            "\u064a\u0648\u0646\u064a\u0648": 6,
+            "\u064a\u0648\u0644\u064a\u0648": 7,
+            "\u0623\u063a\u0633\u0637\u0633": 8,
+            "\u0633\u0628\u062a\u0645\u0628\u0631": 9,
+            "\u0623\u0643\u062a\u0648\u0628\u0631": 10,
+            "\u0646\u0648\u0641\u0645\u0628\u0631": 11,
+            "\u062f\u064a\u0633\u0645\u0628\u0631": 12,
           }[serviceForm.requestedMonth],
           request_year: Number(serviceForm.requestedYear),
           status: "جديد",
@@ -412,7 +531,9 @@ function App() {
 
       console.log("تم تسجيل الدخول بنجاح:", fullUser);
       setCurrentUser(fullUser);
+    localStorage.setItem("currentUser", JSON.stringify(fullUser));
       setIsLoggedIn(true);
+    localStorage.setItem("isLoggedIn", "true");
       setShowLogin(false);
 
     } catch (error) {
@@ -425,7 +546,10 @@ function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    localStorage.removeItem("currentUser");
     setIsLoggedIn(false);
+    localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("pendingQrCode");
     setActivePage("home");
   };
 return (
@@ -602,10 +726,8 @@ return (
           </div>
         )}
 
-        {/* ADMIN BUTTON */}
-
         {isLoggedIn ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
             <div style={{ textAlign: "left" }}>
               <div style={{ fontSize: "12px", color: "#64748B" }}>
                 مرحباً،
@@ -615,6 +737,7 @@ return (
               </div>
             </div>
             <button
+              type="button"
               style={{ ...styles.adminButton, background: "#DC2626" }}
               onClick={handleLogout}
             >
@@ -624,6 +747,7 @@ return (
           </div>
         ) : (
           <button
+            type="button"
             style={{
               ...styles.adminButton,
               ...(isMobile
@@ -642,17 +766,457 @@ return (
         )}
       </header>
 
-      {isLoggedIn ? (
-        <AdminDashboard
-          currentUser={currentUser}
-          adminData={adminData}
-          handleStatusChange={handleStatusChange}
-          styles={styles}
-        />
-      ) : (
-        <main>
-          {/* ================= HERO ================= */}
+      {qrCodeFromUrl ? (
+              <main
+                style={{
+                  minHeight: "calc(100vh - 70px)",
+                  background: "#F4F7FB",
+                  padding: isMobile ? "20px 12px" : "35px 20px",
+                  direction: "rtl",
+                }}
+              >
+                {qrLoading ? (
+                  <div
+                    style={{
+                      maxWidth: "700px",
+                      margin: "40px auto",
+                      background: "#FFFFFF",
+                      borderRadius: "22px",
+                      padding: "50px 25px",
+                      textAlign: "center",
+                      boxShadow: "0 12px 40px rgba(15,23,42,.09)",
+                    }}
+                  >
+                    <div style={{ fontSize: "46px", marginBottom: "15px" }}>
+                      📡
+                    </div>
 
+                    <h2 style={{ color: "#0F172A", margin: 0 }}>
+                      جاري تحميل بيانات الخطاب...
+                    </h2>
+                  </div>
+                ) : qrError ? (
+                  <div
+                    style={{
+                      maxWidth: "700px",
+                      margin: "40px auto",
+                      background: "#FFFFFF",
+                      borderRadius: "22px",
+                      padding: "45px 25px",
+                      textAlign: "center",
+                      boxShadow: "0 12px 40px rgba(15,23,42,.09)",
+                    }}
+                  >
+                    <div style={{ fontSize: "50px", marginBottom: "15px" }}>
+                      ⚠️
+                    </div>
+
+                    <h2 style={{ color: "#B91C1C", marginBottom: "10px" }}>
+                      تعذر فتح الخطاب
+                    </h2>
+
+                    <p style={{ color: "#64748B", fontSize: "16px" }}>
+                      {qrError}
+                    </p>
+
+                    <div
+                      style={{
+                        marginTop: "20px",
+                        display: "inline-block",
+                        padding: "10px 18px",
+                        borderRadius: "12px",
+                        background: "#F1F5F9",
+                        color: "#475569",
+                        fontWeight: "800",
+                      }}
+                    >
+                      {qrCodeFromUrl}
+                    </div>
+                  </div>
+                ) : qrLetter ? (
+                  <div
+                    style={{
+                      maxWidth: "900px",
+                      margin: "0 auto",
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: "#FFFFFF",
+                        borderRadius: "22px",
+                        overflow: "hidden",
+                        boxShadow: "0 12px 40px rgba(15,23,42,.09)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          background:
+                            "linear-gradient(135deg,#0F2F4F,#1D4ED8)",
+                          color: "#FFFFFF",
+                          padding: isMobile ? "25px 18px" : "32px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            opacity: 0.85,
+                            marginBottom: "8px",
+                          }}
+                        >
+                          جامعة عين شمس • كلية الهندسة
+                        </div>
+
+                        <h1
+                          style={{
+                            margin: 0,
+                            fontSize: isMobile ? "25px" : "32px",
+                          }}
+                        >
+                          📬 متابعة حركة الخطاب
+                        </h1>
+
+                        <div
+                          style={{
+                            marginTop: "12px",
+                            fontSize: "14px",
+                            opacity: 0.9,
+                          }}
+                        >
+                          QR: {qrLetter.qr?.code || qrCodeFromUrl}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: isMobile ? "20px 16px" : "30px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: isMobile
+                              ? "1fr"
+                              : "repeat(2, 1fr)",
+                            gap: "12px",
+                            marginBottom: "25px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              padding: "16px",
+                              background: "#F8FAFC",
+                              border: "1px solid #E2E8F0",
+                              borderRadius: "15px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#64748B",
+                                marginBottom: "5px",
+                              }}
+                            >
+                              📄 رقم الخطاب
+                            </div>
+
+                            <div
+                              style={{
+                                fontWeight: "900",
+                                color: "#0F172A",
+                                fontSize: "17px",
+                              }}
+                            >
+                              {qrLetter.letter_number || "غير محدد"}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "16px",
+                              background: "#F8FAFC",
+                              border: "1px solid #E2E8F0",
+                              borderRadius: "15px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#64748B",
+                                marginBottom: "5px",
+                              }}
+                            >
+                              📅 تاريخ الخطاب
+                            </div>
+
+                            <div
+                              style={{
+                                fontWeight: "900",
+                                color: "#0F172A",
+                                fontSize: "17px",
+                              }}
+                            >
+                              {qrLetter.letter_date || "غير محدد"}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "16px",
+                              background: "#F8FAFC",
+                              border: "1px solid #E2E8F0",
+                              borderRadius: "15px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#64748B",
+                                marginBottom: "5px",
+                              }}
+                            >
+                              🏢 الجهة المرسلة
+                            </div>
+
+                            <div
+                              style={{
+                                fontWeight: "900",
+                                color: "#0F172A",
+                                fontSize: "16px",
+                              }}
+                            >
+                              {qrLetter.sender?.name || "غير محدد"}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              padding: "16px",
+                              background: "#EFF6FF",
+                              border: "1px solid #BFDBFE",
+                              borderRadius: "15px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#64748B",
+                                marginBottom: "5px",
+                              }}
+                            >
+                              🔵 الحالة الحالية
+                            </div>
+
+                            <div
+                              style={{
+                                fontWeight: "900",
+                                color: "#1D4ED8",
+                                fontSize: "16px",
+                              }}
+                            >
+                              {qrLetter.status === "completed"
+                                ? "تم إتمام حركة الخطاب"
+                                : "الخطاب قيد التنفيذ"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            background: "#F8FAFC",
+                            borderRadius: "15px",
+                            padding: "18px",
+                            marginBottom: "28px",
+                            border: "1px solid #E2E8F0",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#64748B",
+                              marginBottom: "7px",
+                            }}
+                          >
+                            📝 موضوع الخطاب
+                          </div>
+
+                          <div
+                            style={{
+                              fontWeight: "800",
+                              color: "#0F172A",
+                              lineHeight: 1.7,
+                            }}
+                          >
+                            {qrLetter.subject || "غير محدد"}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h2
+                            style={{
+                              margin: "0 0 25px",
+                              color: "#0F172A",
+                              fontSize: "22px",
+                            }}
+                          >
+                            🧭 خط سير الخطاب
+                          </h2>
+
+                          <div style={{ position: "relative" }}>
+                            {(qrLetter.movements || []).map(
+                              (movement, index) => {
+                                const isCompleted =
+                                  movement.status === "completed";
+
+                                const isCurrent =
+                                  movement.status === "in_progress";
+
+                                return (
+                                  <div
+                                    key={movement.id || index}
+                                    style={{
+                                      position: "relative",
+                                      display: "flex",
+                                      gap: "15px",
+                                      paddingBottom:
+                                        index ===
+                                        qrLetter.movements.length - 1
+                                          ? "0"
+                                          : "25px",
+                                    }}
+                                  >
+                                    {index <
+                                      qrLetter.movements.length - 1 && (
+                                      <div
+                                        style={{
+                                          position: "absolute",
+                                          right: "16px",
+                                          top: "34px",
+                                          width: "3px",
+                                          height: "calc(100% - 10px)",
+                                          background: isCompleted
+                                            ? "#16A34A"
+                                            : "#CBD5E1",
+                                          borderRadius: "5px",
+                                        }}
+                                      />
+                                    )}
+
+                                    <div
+                                      style={{
+                                        position: "relative",
+                                        zIndex: 2,
+                                        minWidth: "34px",
+                                        width: "34px",
+                                        height: "34px",
+                                        borderRadius: "50%",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        background: isCompleted
+                                          ? "#16A34A"
+                                          : isCurrent
+                                          ? "#2563EB"
+                                          : "#E2E8F0",
+                                        color:
+                                          isCompleted || isCurrent
+                                            ? "#FFFFFF"
+                                            : "#64748B",
+                                        fontWeight: "900",
+                                        boxShadow: isCurrent
+                                          ? "0 0 0 6px rgba(37,99,235,.10)"
+                                          : "none",
+                                      }}
+                                    >
+                                      {isCompleted ? "✓" : index + 1}
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        flex: 1,
+                                        background: isCurrent
+                                          ? "#EFF6FF"
+                                          : "#F8FAFC",
+                                        borderRadius: "15px",
+                                        padding: "14px 16px",
+                                        border: isCurrent
+                                          ? "1px solid #BFDBFE"
+                                          : "1px solid #E2E8F0",
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontWeight: "900",
+                                          color: "#0F172A",
+                                          fontSize: "16px",
+                                        }}
+                                      >
+                                        {movement.department?.name ||
+                                          "قسم غير محدد"}
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          marginTop: "6px",
+                                          fontSize: "13px",
+                                          fontWeight: "700",
+                                          color: isCompleted
+                                            ? "#15803D"
+                                            : isCurrent
+                                            ? "#1D4ED8"
+                                            : "#64748B",
+                                        }}
+                                      >
+                                        {isCompleted
+                                          ? "✓ تم التنفيذ"
+                                          : isCurrent
+                                          ? "● الخطاب موجود حاليًا هنا"
+                                          : "○ في انتظار الوصول"}
+                                      </div>
+
+                                      {movement.received_at && (
+                                        <div
+                                          style={{
+                                            marginTop: "7px",
+                                            color: "#64748B",
+                                            fontSize: "12px",
+                                          }}
+                                        >
+                                          📥 تم الاستلام
+                                        </div>
+                                      )}
+
+                                      {movement.notes && (
+                                        <div
+                                          style={{
+                                            marginTop: "8px",
+                                            color: "#475569",
+                                            fontSize: "13px",
+                                          }}
+                                        >
+                                          📝 {movement.notes}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </main>
+            ) : isLoggedIn ? (
+              <AdminDashboard
+                currentUser={currentUser}
+                adminData={adminData}
+                handleStatusChange={handleStatusChange}
+                styles={styles}
+              />
+            ) : (
+            <main>
           <section
             id="home"
             style={{
@@ -1500,12 +2064,13 @@ return (
           </div>
         </div>
       )}
-    </div>
+
+  </div>
   );
 }
-
 /* =====================================================
-   STYLES
+STYLES
+/* =====================================================
 ===================================================== */
 
 const styles = {
@@ -2418,3 +2983,4 @@ const styles = {
 };
 
 export default App;
+
