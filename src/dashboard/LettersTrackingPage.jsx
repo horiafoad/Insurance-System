@@ -1,4 +1,4 @@
-import { Html5Qrcode } from "html5-qrcode";
+﻿import { Html5Qrcode } from "html5-qrcode";
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../supabaseClient";
@@ -2015,7 +2015,7 @@ export default function LettersTrackingPage({ qrCode = "" }) {
   const [scannedLetter, setScannedLetter] = useState(null);
   const [receivedNotes, setReceivedNotes] = useState("");
   const [receiving, setReceiving] = useState(false);
-const [delivering, setDelivering] = useState(false);
+const [returning, setReturning] = useState(false);
 const [scanError, setScanError] = useState("");
 
 const scannerRef = useRef(null);
@@ -2818,15 +2818,23 @@ const startQrScanner = async () => {
       );
     });
 
+  // استلام موحّد: يقفل المحطة الحالية (سواء كانت waiting أو in_progress)
+  // ويفتح المحطة التالية فورًا في نفس الضغطة — من غير زر "تسليم" منفصل.
   const confirmLetterReceived = async () => {
     if (!scannedLetter?.movements?.length) return;
 
-    const targetMovement = scannedLetter.movements.find(
-      (movement) => movement.status === "waiting"
-    );
+    // المحطة "النشطة" دلوقتي: لو فيه واحدة in_progress بالفعل بناخدها،
+    // ولو لأ (أول محطة بعد الإنشاء ممكن تكون waiting) بناخد أول waiting.
+    const activeMovement =
+      scannedLetter.movements.find(
+        (movement) => movement.status === "in_progress"
+      ) ||
+      scannedLetter.movements.find(
+        (movement) => movement.status === "waiting"
+      );
 
-    if (!targetMovement) {
-      alert("لا توجد محطة تنتظر استلام الخطاب.");
+    if (!activeMovement) {
+      alert("لا توجد محطة حالية لاستلام الخطاب منها.");
       return;
     }
 
@@ -2836,104 +2844,35 @@ const startQrScanner = async () => {
     const notes = receivedNotes.trim() || null;
 
     try {
-      const { error: movementError } = await supabase
-        .from("letter_movements")
-        .update({
-          received_at: now,
-          status: "in_progress",
-          action: "تم الاستلام",
-          notes,
-        })
-        .eq("id", targetMovement.id);
-
-      if (movementError) throw movementError;
-
-      const { error: letterError } = await supabase
-        .from("letters")
-        .update({
-          status: "in_progress",
-          updated_at: now,
-        })
-        .eq("id", scannedLetter.id);
-
-      if (letterError) throw letterError;
-
-      const updatedMovements = scannedLetter.movements.map(
-        (movement) =>
-          movement.id === targetMovement.id
-            ? {
-                ...movement,
-                received_at: now,
-                status: "in_progress",
-                action: "تم الاستلام",
-                notes,
-              }
-            : movement
-      );
-
-      setScannedLetter({
-        ...scannedLetter,
-        movements: updatedMovements,
-        status: "in_progress",
-        updated_at: now,
-      });
-
-      await Promise.all([
-        loadLetters(),
-        loadQRCodes(),
-      ]);
-
-      alert(
-        `تم استلام الخطاب بنجاح من محطة ${
-          targetMovement.department?.name || "المحطة الحالية"
-        }.`
-      );
-    } catch (error) {
-      console.error("Error receiving letter:", error);
-      alert("حدث خطأ أثناء تسجيل استلام الخطاب.");
-    } finally {
-      setReceiving(false);
-    }
-  };
-
-  const confirmLetterDelivered = async () => {
-    if (!scannedLetter?.movements?.length) return;
-
-    const currentMovement = scannedLetter.movements.find(
-      (movement) => movement.status === "in_progress"
-    );
-
-    if (!currentMovement) {
-      alert("لا توجد محطة حالية لتسليم الخطاب.");
-      return;
-    }
-
-    if (!currentMovement.received_at) {
-      alert("يجب تسجيل استلام الخطاب أولًا.");
-      return;
-    }
-
-    setDelivering(true);
-
-    const now = new Date().toISOString();
-
-    try {
       const nextMovement = scannedLetter.movements.find(
         (movement) =>
-          movement.step_order > currentMovement.step_order &&
+          movement.step_order > activeMovement.step_order &&
           movement.status === "waiting"
       );
 
+      // 1) قفل المحطة الحالية بالكامل (استلام + تسليم في خطوة واحدة)
       const { error: currentError } = await supabase
         .from("letter_movements")
         .update({
-          status: "completed",
+          received_at: activeMovement.received_at || now,
           sent_at: now,
-          action: "تم التسليم",
+          status: "completed",
+          action: "تم الاستلام والتحويل التلقائي للمحطة التالية",
+          notes,
         })
-        .eq("id", currentMovement.id);
+        .eq("id", activeMovement.id);
 
       if (currentError) throw currentError;
+
+      // 2) فتح المحطة التالية فورًا (لو موجودة)
+      if (nextMovement) {
+        const { error: nextError } = await supabase
+          .from("letter_movements")
+          .update({ status: "in_progress" })
+          .eq("id", nextMovement.id);
+
+        if (nextError) throw nextError;
+      }
 
       const { error: letterError } = await supabase
         .from("letters")
@@ -2945,44 +2884,184 @@ const startQrScanner = async () => {
 
       if (letterError) throw letterError;
 
-      const updatedMovements = scannedLetter.movements.map(
-        (movement) =>
-          movement.id === currentMovement.id
-            ? {
-                ...movement,
-                status: "completed",
-                sent_at: now,
-                action: "تم التسليم",
-              }
-            : movement
-      );
+      const updatedMovements = scannedLetter.movements.map((movement) => {
+        if (movement.id === activeMovement.id) {
+          return {
+            ...movement,
+            received_at: activeMovement.received_at || now,
+            sent_at: now,
+            status: "completed",
+            action: "تم الاستلام والتحويل التلقائي للمحطة التالية",
+            notes,
+          };
+        }
+        if (nextMovement && movement.id === nextMovement.id) {
+          return { ...movement, status: "in_progress" };
+        }
+        return movement;
+      });
 
       setScannedLetter({
         ...scannedLetter,
+        movements: updatedMovements,
         status: nextMovement ? "in_progress" : "completed",
         updated_at: now,
-        movements: updatedMovements,
       });
 
-      await Promise.all([
-        loadLetters(),
-        loadQRCodes(),
-      ]);
+      setReceivedNotes("");
+
+      await Promise.all([loadLetters(), loadQRCodes()]);
 
       if (nextMovement) {
         alert(
-          `تم تسليم الخطاب بنجاح.\n\nالمحطة التالية:\n${
+          `تم الاستلام والتحويل تلقائيًا.\n\nالمحطة التالية:\n${
             nextMovement.department?.name || "المحطة التالية"
-          }\n\nالخطاب الآن في انتظار الاستلام هناك.\n\nنفس QR سيستمر مع الخطاب.`
+          }`
         );
       } else {
-        alert("تم تسليم الخطاب وإغلاق حركته بالكامل بنجاح.");
+        alert("تم استلام الخطاب وإغلاق حركته بالكامل بنجاح.");
       }
     } catch (error) {
-      console.error("Error delivering letter:", error);
-      alert("حدث خطأ أثناء تسجيل تسليم الخطاب.");
+      console.error("Error receiving letter:", error);
+      alert("حدث خطأ أثناء تسجيل استلام الخطاب.");
     } finally {
-      setDelivering(false);
+      setReceiving(false);
+    }
+  };
+
+  // إرجاع الخطاب للمحطة السابقة مباشرة للتعديل، مع الاحتفاظ بكل
+  // الحركة السابقة كاملة في الـ Timeline (مفيش أي حركة بتتمسح).
+  const returnLetterForRevision = async () => {
+    if (!scannedLetter?.movements?.length) return;
+
+    const activeMovement =
+      scannedLetter.movements.find(
+        (movement) => movement.status === "in_progress"
+      ) ||
+      scannedLetter.movements.find(
+        (movement) => movement.status === "waiting"
+      );
+
+    if (!activeMovement) {
+      alert("لا توجد محطة حالية لإرجاع الخطاب منها.");
+      return;
+    }
+
+    const notes = receivedNotes.trim();
+    if (!notes) {
+      alert("لازم تكتبي نوع التعديل المطلوب في الملاحظات قبل الإرجاع.");
+      return;
+    }
+
+    const previousMovement = [...scannedLetter.movements]
+      .filter(
+        (movement) =>
+          movement.step_order < activeMovement.step_order &&
+          movement.status === "completed"
+      )
+      .sort((a, b) => b.step_order - a.step_order)[0];
+
+    if (!previousMovement) {
+      alert("لا توجد محطة سابقة لإرجاع الخطاب إليها — هذه أول محطة في مسار الخطاب.");
+      return;
+    }
+
+    setReturning(true);
+
+    const now = new Date().toISOString();
+
+    try {
+      // نزود step_order لكل المحطات المستقبلية (waiting) اللي لسه ماجتش،
+      // عشان نفضي مكان لمحطة "الإرجاع" الجديدة في التسلسل الزمني الصح.
+      const futureMovements = scannedLetter.movements.filter(
+        (movement) => movement.step_order > activeMovement.step_order
+      );
+
+      for (const movement of futureMovements) {
+        const { error: shiftError } = await supabase
+          .from("letter_movements")
+          .update({ step_order: movement.step_order + 1 })
+          .eq("id", movement.id);
+        if (shiftError) throw shiftError;
+      }
+
+      // قفل المحطة الحالية كـ "تحتاج تعديل" مع سبب الإرجاع
+      const { error: activeError } = await supabase
+        .from("letter_movements")
+        .update({
+          received_at: activeMovement.received_at || now,
+          sent_at: now,
+          status: "needs_revision",
+          action: "تم إرجاعه للتعديل",
+          notes,
+        })
+        .eq("id", activeMovement.id);
+
+      if (activeError) throw activeError;
+
+      // فتح محطة جديدة لنفس الإدارة السابقة لمراجعة التعديل
+      const { data: insertedMovement, error: insertError } = await supabase
+        .from("letter_movements")
+        .insert({
+          letter_id: scannedLetter.id,
+          department_id: previousMovement.department_id,
+          step_order: activeMovement.step_order + 1,
+          status: "in_progress",
+          received_at: now,
+          action: "إعادة فتح المحطة بعد الإرجاع للتعديل",
+        })
+        .select("*, department:letter_departments(*)")
+        .single();
+
+      if (insertError) throw insertError;
+
+      const { error: letterError } = await supabase
+        .from("letters")
+        .update({ status: "needs_revision", updated_at: now })
+        .eq("id", scannedLetter.id);
+
+      if (letterError) throw letterError;
+
+      const updatedMovements = scannedLetter.movements
+        .map((movement) => {
+          if (movement.id === activeMovement.id) {
+            return {
+              ...movement,
+              received_at: activeMovement.received_at || now,
+              sent_at: now,
+              status: "needs_revision",
+              action: "تم إرجاعه للتعديل",
+              notes,
+            };
+          }
+          if (futureMovements.some((m) => m.id === movement.id)) {
+            return { ...movement, step_order: movement.step_order + 1 };
+          }
+          return movement;
+        })
+        .concat(insertedMovement ? [insertedMovement] : []);
+
+      setScannedLetter({
+        ...scannedLetter,
+        movements: updatedMovements,
+        status: "needs_revision",
+        updated_at: now,
+      });
+
+      setReceivedNotes("");
+
+      await Promise.all([loadLetters(), loadQRCodes()]);
+
+      alert(
+        `تم إرجاع الخطاب لمحطة ${
+          previousMovement.department?.name || "المحطة السابقة"
+        } للتعديل.`
+      );
+    } catch (error) {
+      console.error("Error returning letter for revision:", error);
+      alert("حدث خطأ أثناء إرجاع الخطاب للتعديل.");
+    } finally {
+      setReturning(false);
     }
   };
 
@@ -3007,27 +3086,24 @@ const startQrScanner = async () => {
         {(() => {
   if (!scannedLetter) return null;
 
-  const currentMovement =
+  const activeMovement =
     scannedLetter.movements?.find(
-      (movement) =>
-        movement.status === "in_progress"
-    );
-
-  const waitingMovement =
+      (movement) => movement.status === "in_progress"
+    ) ||
     scannedLetter.movements?.find(
-      (movement) =>
-        movement.status === "waiting"
+      (movement) => movement.status === "waiting"
     );
 
-  const canReceive =
-    !currentMovement &&
-    Boolean(waitingMovement);
+  const canAct = Boolean(activeMovement);
 
-  const canDeliver =
-    Boolean(
-      currentMovement &&
-      currentMovement.received_at
-    );
+  const hasPreviousCompletedStation = Boolean(
+    activeMovement &&
+      scannedLetter.movements?.some(
+        (movement) =>
+          movement.step_order < activeMovement.step_order &&
+          movement.status === "completed"
+      )
+  );
 
   return (
     <div
@@ -3037,11 +3113,11 @@ const startQrScanner = async () => {
         marginTop: "14px",
       }}
     >
-      {canReceive && (
+      {canAct && (
         <button
           type="button"
           onClick={confirmLetterReceived}
-          disabled={receiving}
+          disabled={receiving || returning}
           style={{
             width: "100%",
             border: "none",
@@ -3053,60 +3129,56 @@ const startQrScanner = async () => {
             color: "#fff",
             fontWeight: "900",
             fontSize: "15px",
-            cursor: receiving
+            cursor: receiving || returning
               ? "not-allowed"
               : "pointer",
           }}
         >
           {receiving
-            ? "⏳ جاري تسجيل الاستلام..."
-            : "📥 استلام الخطاب"}
+            ? "⏳ جاري الاستلام والتحويل..."
+            : "📥 استلام وتحويل للمحطة التالية"}
         </button>
       )}
 
-      {canDeliver && (
+      {canAct && hasPreviousCompletedStation && (
         <button
           type="button"
-          onClick={confirmLetterDelivered}
-          disabled={delivering}
+          onClick={returnLetterForRevision}
+          disabled={receiving || returning}
           style={{
             width: "100%",
-            border: "none",
+            border: "1px solid #FDBA74",
             borderRadius: "14px",
             padding: "14px",
-            background: delivering
-              ? "#94A3B8"
-              : "linear-gradient(135deg,#2563EB,#1976A8)",
-            color: "#fff",
+            background: returning ? "#FDE8D3" : "#FFF7ED",
+            color: "#C2410C",
             fontWeight: "900",
             fontSize: "15px",
-            cursor: delivering
+            cursor: receiving || returning
               ? "not-allowed"
               : "pointer",
           }}
         >
-          {delivering
-            ? "⏳ جاري تسجيل التسليم..."
-            : "📤 تسليم وتحويل للمحطة التالية"}
+          {returning
+            ? "⏳ جاري الإرجاع..."
+            : "↩️ رجوع للمحطة السابقة (تحتاج تعديل)"}
         </button>
       )}
 
-      {!canReceive &&
-        !canDeliver &&
-        scannedLetter.status === "completed" && (
-          <div
-            style={{
-              padding: "13px",
-              borderRadius: "14px",
-              background: "#ECFDF5",
-              color: "#047857",
-              textAlign: "center",
-              fontWeight: "800",
-            }}
-          >
-            ✅ تم إغلاق حركة الخطاب بالكامل
-          </div>
-        )}
+      {!canAct && scannedLetter.status === "completed" && (
+        <div
+          style={{
+            padding: "13px",
+            borderRadius: "14px",
+            background: "#ECFDF5",
+            color: "#047857",
+            textAlign: "center",
+            fontWeight: "800",
+          }}
+        >
+          ✅ تم إغلاق حركة الخطاب بالكامل
+        </div>
+      )}
     </div>
   );
 })()}
@@ -3292,6 +3364,33 @@ const startQrScanner = async () => {
                 </div>
 
                 <div style={{ marginTop: "16px" }}>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: "900",
+                      color: "#334155",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    {"🧭 خط سير الخطاب"}
+                  </div>
+                  <div
+                    style={{
+                      background: "#fff",
+                      borderRadius: "14px",
+                      padding: "12px",
+                      border: "1px solid #E2E8F0",
+                      maxHeight: "260px",
+                      overflowY: "auto",
+                    }}
+                  >
+                    <LetterTimelineView
+                      movements={scannedLetter.movements || []}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "16px" }}>
                   <label
                     style={{
                       display: "block",
@@ -3300,12 +3399,12 @@ const startQrScanner = async () => {
                       color: "#334155",
                     }}
                   >
-                    {"📝 ملاحظات الاستلام"}
+                    {"📝 ملاحظات الاستلام (إجبارية عند الإرجاع للتعديل)"}
                   </label>
                   <textarea
                     value={receivedNotes}
                     onChange={(event) => setReceivedNotes(event.target.value)}
-                    placeholder="اكتبي ملاحظات الاستلام إن وجدت..."
+                    placeholder="اكتبي ملاحظات الاستلام، أو نوع التعديل المطلوب لو هترجعي الخطاب..."
                     rows={3}
                     style={{
                       width: "100%",
