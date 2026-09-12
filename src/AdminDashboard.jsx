@@ -1220,7 +1220,10 @@ export default function AdminDashboard({ currentUser }) {
         )}
 
         {activeMenu === "letters_tracking" && (
-          <LettersTrackingPage qrCode={qrCodeFromUrl} />
+          <LettersTrackingPage
+            qrCode={qrCodeFromUrl}
+            currentUser={currentUser}
+          />
         )}
 
         {activeMenu === "weekly" && (

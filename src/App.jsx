@@ -1,4 +1,4 @@
-﻿import logo from "./assets/logo.png";
+import logo from "./assets/logo.png";
 import background from "./assets/engineering.jpg";
 import AdminDashboard from "./AdminDashboard";
 import React, { useMemo, useRef, useState, useEffect } from "react";
@@ -7,6 +7,56 @@ import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
+
+function getQrActionMovement(movements = []) {
+  if (!Array.isArray(movements) || movements.length === 0) {
+    return null;
+  }
+
+  return (
+    movements.find((movement) => movement.status === "in_progress") ||
+    movements.find((movement) => movement.status === "waiting") ||
+    null
+  );
+}
+
+function resolveQrLetterStatus(letter) {
+  if (!letter) return "";
+
+  const movements = Array.isArray(letter.movements)
+    ? letter.movements
+    : [];
+
+  if (
+    movements.some(
+      (movement) =>
+        movement.status === "needs_revision"
+    )
+  ) {
+    return "needs_revision";
+  }
+
+  if (
+    movements.some(
+      (movement) =>
+        movement.status === "in_progress" ||
+        movement.status === "waiting"
+    )
+  ) {
+    return "in_progress";
+  }
+
+  if (
+    movements.length > 0 &&
+    movements.every(
+      (movement) => movement.status === "completed"
+    )
+  ) {
+    return "completed";
+  }
+
+  return letter.status || "";
+}
 
 function App() {
   const [activePage, setActivePage] = useState("home");
@@ -21,6 +71,38 @@ function App() {
   const [qrLetter, setQrLetter] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
+  const [qrActionLoading, setQrActionLoading] = useState(false);
+  const [qrReturnLoading, setQrReturnLoading] = useState(false);
+  const [qrReturnNotes, setQrReturnNotes] = useState("");
+  const [qrSuccessMessage, setQrSuccessMessage] = useState("");
+
+  const qrActiveMovement = useMemo(
+    () => getQrActionMovement(qrLetter?.movements || []),
+    [qrLetter]
+  );
+
+  const qrEffectiveStatus = useMemo(
+    () => resolveQrLetterStatus(qrLetter),
+    [qrLetter]
+  );
+
+const qrHasPreviousCompletedStation = useMemo(
+    () =>
+      Boolean(
+        qrActiveMovement &&
+          qrLetter?.movements?.some(
+            (movement) =>
+              movement.step_order <
+                qrActiveMovement.step_order &&
+              movement.status === "completed"
+          )
+      ),
+    [qrActiveMovement, qrLetter]
+  );
+
+  // فقط المستخدم المسجل (وهو المصرح له) يقدر ينفّذ استلام/تسليم/إرجاع.
+  // أي شخص آخر يشوف مسار الخطاب فقط بدون أزرار تعديل الحركة.
+  const qrCanModify = Boolean(isLoggedIn && currentUser);
 
   /* =====================================================
      QR LETTER - LOAD + AUTO REFRESH
@@ -86,7 +168,7 @@ function App() {
           await supabase
             .from("letter_movements")
             .select(
-              "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status"
+              "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status, received_by"
             )
             .eq("letter_id", letterData.id)
             .order("step_order", { ascending: true });
@@ -210,6 +292,326 @@ function App() {
       clearInterval(refreshInterval);
     };
   }, [qrCodeFromUrl]);
+
+  /* =====================================================
+     QR MOBILE - RECEIVE & DELIVER ACTIONS
+     ===================================================== */
+
+  const showQrSuccess = (message) => {
+    setQrSuccessMessage(message);
+    setTimeout(() => setQrSuccessMessage(""), 4000);
+  };
+
+  // تسجيل استلام الخطاب فقط
+  const handleQrReceive = async () => {
+    if (!qrLetter || qrActionLoading || qrReturnLoading) return;
+
+    const activeMovement = getQrActionMovement(
+      qrLetter.movements
+    );
+
+    if (!activeMovement) {
+      alert("لا توجد محطة حالية لاستلام الخطاب.");
+      return;
+    }
+
+    if (activeMovement.received_at) {
+      alert("تم تسجيل استلام الخطاب بالفعل. يمكنك الآن تسليمه.");
+      return;
+    }
+
+    setQrActionLoading(true);
+
+    const now = new Date().toISOString();
+
+try {
+      const { error: movementError } = await supabase
+        .from("letter_movements")
+        .update({
+          received_at: now,
+          status: "in_progress",
+          action: "تم الاستلام",
+          received_by:
+            currentUser?.full_name ||
+            currentUser?.username ||
+            null,
+        })
+        .eq("id", activeMovement.id);
+
+      if (movementError) throw movementError;
+
+      const { error: letterError } = await supabase
+        .from("letters")
+        .update({
+          status: "in_progress",
+          updated_at: now,
+        })
+        .eq("id", qrLetter.id);
+
+      if (letterError) throw letterError;
+
+const updatedMovements = qrLetter.movements.map((movement) =>
+        movement.id === activeMovement.id
+          ? {
+              ...movement,
+              received_at: now,
+              status: "in_progress",
+              action: "تم الاستلام",
+              received_by:
+                currentUser?.full_name ||
+                currentUser?.username ||
+                null,
+            }
+          : movement
+      );
+
+      setQrLetter({
+        ...qrLetter,
+        status: "in_progress",
+        updated_at: now,
+        movements: updatedMovements,
+      });
+
+      showQrSuccess("✅ تم تسجيل استلام الخطاب بنجاح.");
+    } catch (error) {
+      console.error("خطأ في تسجيل استلام الخطاب:", error);
+      alert("حدث خطأ أثناء تسجيل الاستلام. حاول مرة أخرى.");
+    } finally {
+      setQrActionLoading(false);
+    }
+  };
+
+  // تسجيل تسليم الخطاب وتحويله للمحطة التالية
+  const handleQrDeliver = async () => {
+    if (!qrLetter || qrActionLoading || qrReturnLoading) return;
+
+    const currentMovement = qrLetter.movements.find(
+      (m) => m.status === "in_progress"
+    );
+
+    if (!currentMovement) {
+      alert("يجب استلام الخطاب أولًا قبل تسليمه.");
+      return;
+    }
+
+    if (!currentMovement.received_at) {
+      alert("يجب تسجيل استلام الخطاب أولًا.");
+      return;
+    }
+
+    setQrActionLoading(true);
+
+    const now = new Date().toISOString();
+
+    try {
+      const nextMovement = qrLetter.movements.find(
+        (m) =>
+          m.step_order > currentMovement.step_order &&
+          m.status === "waiting"
+      );
+
+      const { error: currentError } = await supabase
+        .from("letter_movements")
+        .update({
+          status: "completed",
+          sent_at: now,
+          action: "تم التسليم",
+        })
+        .eq("id", currentMovement.id);
+
+      if (currentError) throw currentError;
+
+      if (nextMovement) {
+        const { error: nextError } = await supabase
+          .from("letter_movements")
+          .update({
+            status: "in_progress",
+            received_at: null,
+            sent_at: null,
+            action: null,
+          })
+          .eq("id", nextMovement.id);
+
+        if (nextError) throw nextError;
+      }
+
+      const newLetterStatus = nextMovement
+        ? "in_progress"
+        : "completed";
+
+      const { error: letterError } = await supabase
+        .from("letters")
+        .update({
+          status: newLetterStatus,
+          updated_at: now,
+        })
+        .eq("id", qrLetter.id);
+
+      if (letterError) throw letterError;
+
+      const updatedMovements = qrLetter.movements.map((movement) => {
+        if (movement.id === currentMovement.id) {
+          return {
+            ...movement,
+            status: "completed",
+            sent_at: now,
+            action: "تم التسليم",
+          };
+        }
+
+        if (nextMovement && movement.id === nextMovement.id) {
+          return {
+            ...movement,
+            status: "in_progress",
+            received_at: null,
+            sent_at: null,
+            action: null,
+          };
+        }
+
+        return movement;
+      });
+
+      setQrLetter({
+        ...qrLetter,
+        status: newLetterStatus,
+        updated_at: now,
+        movements: updatedMovements,
+      });
+
+      showQrSuccess(
+        nextMovement
+          ? "📤 تم تسليم الخطاب وتحويله للمحطة التالية بنفس QR."
+          : "✅ تم تسليم الخطاب وإغلاق حركته بالكامل."
+      );
+    } catch (error) {
+      console.error("خطأ في تسجيل تسليم الخطاب:", error);
+      alert("حدث خطأ أثناء تسجيل التسليم. حاول مرة أخرى.");
+    } finally {
+      setQrActionLoading(false);
+    }
+  };
+  const handleQrReturn = async () => {
+    if (!qrLetter || qrActionLoading || qrReturnLoading) return;
+
+    const activeMovement = getQrActionMovement(
+      qrLetter.movements
+    );
+
+    if (!activeMovement) {
+      alert("لا توجد محطة حالية لإرجاع الخطاب منها.");
+      return;
+    }
+
+    const notes = qrReturnNotes.trim();
+    if (!notes) {
+      alert("لازم تكتب نوع التعديل المطلوب في الملاحظات قبل الإرجاع.");
+      return;
+    }
+
+    const previousMovement = [...qrLetter.movements]
+      .filter(
+        (m) =>
+          m.step_order < activeMovement.step_order && m.status === "completed"
+      )
+      .sort((a, b) => b.step_order - a.step_order)[0];
+
+    if (!previousMovement) {
+      alert("لا توجد محطة سابقة لإرجاع الخطاب إليها — هذه أول محطة في مسار الخطاب.");
+      return;
+    }
+
+    setQrReturnLoading(true);
+    const now = new Date().toISOString();
+
+    try {
+      const futureMovements = qrLetter.movements.filter(
+        (m) => m.step_order > activeMovement.step_order
+      );
+
+      for (const m of futureMovements) {
+        const { error: shiftError } = await supabase
+          .from("letter_movements")
+          .update({ step_order: m.step_order + 1 })
+          .eq("id", m.id);
+        if (shiftError) throw shiftError;
+      }
+
+      const { error: activeError } = await supabase
+        .from("letter_movements")
+        .update({
+          received_at: activeMovement.received_at || now,
+          sent_at: now,
+          status: "needs_revision",
+          action: "تم إرجاعه للتعديل",
+          notes,
+        })
+        .eq("id", activeMovement.id);
+
+      if (activeError) throw activeError;
+
+      const { data: insertedMovement, error: insertError } = await supabase
+        .from("letter_movements")
+        .insert({
+          letter_id: qrLetter.id,
+          department_id: previousMovement.department_id,
+          step_order: activeMovement.step_order + 1,
+          status: "in_progress",
+          received_at: now,
+          action: "إعادة فتح المحطة بعد الإرجاع للتعديل",
+        })
+        .select("*, department:letter_departments(*)")
+        .single();
+
+      if (insertError) throw insertError;
+
+      const { error: letterError } = await supabase
+        .from("letters")
+        .update({ status: "needs_revision", updated_at: now })
+        .eq("id", qrLetter.id);
+
+      if (letterError) throw letterError;
+
+      const updatedMovements = qrLetter.movements
+        .map((m) => {
+          if (m.id === activeMovement.id) {
+            return {
+              ...m,
+              received_at: activeMovement.received_at || now,
+              sent_at: now,
+              status: "needs_revision",
+              action: "تم إرجاعه للتعديل",
+              notes,
+            };
+          }
+          if (futureMovements.some((f) => f.id === m.id)) {
+            return { ...m, step_order: m.step_order + 1 };
+          }
+          return m;
+        })
+        .concat(insertedMovement ? [insertedMovement] : []);
+
+      setQrLetter({
+        ...qrLetter,
+        status: "needs_revision",
+        updated_at: now,
+        movements: updatedMovements,
+      });
+
+      setQrReturnNotes("");
+
+      showQrSuccess(
+        `↩️ تم إرجاع الخطاب لمحطة ${
+          previousMovement.department?.name || "المحطة السابقة"
+        } للتعديل.`
+      );
+    } catch (error) {
+      console.error("خطأ في إرجاع الخطاب للتعديل:", error);
+      alert("حدث خطأ أثناء إرجاع الخطاب للتعديل.");
+    } finally {
+      setQrReturnLoading(false);
+    }
+  };
 
   const [adminData, setAdminData] = useState([]);
   const [showServiceForm, setShowServiceForm] = useState(false);
@@ -1481,9 +1883,12 @@ function App() {
                           fontSize: "16px",
                         }}
                       >
-                        {qrLetter.status ===
+                        {qrEffectiveStatus ===
                         "completed"
                           ? "تم إتمام حركة الخطاب"
+                          : qrEffectiveStatus ===
+                            "needs_revision"
+                          ? "الخطاب يحتاج تعديل"
                           : "الخطاب قيد التنفيذ"}
                       </div>
                     </div>
@@ -1550,8 +1955,8 @@ function App() {
                             "completed";
 
                           const isCurrent =
-                            movement.status ===
-                            "in_progress";
+                            movement.id ===
+                            qrActiveMovement?.id;
 
                           return (
                             <div
@@ -1734,6 +2139,285 @@ function App() {
                         }
                       )}
                     </div>
+                  </div>
+
+                  {/* ================= ACTIONS FOR MOBILE QR ================= */}
+                  <div
+                    style={{
+                      marginTop: "30px",
+                      paddingTop: "20px",
+                      borderTop: "1px solid #E2E8F0",
+                    }}
+                  >
+                    {qrSuccessMessage && (
+                      <div
+                        style={{
+                          marginBottom: "16px",
+                          padding: "14px 18px",
+                          background: "#DCFCE7",
+                          border: "1px solid #86EFAC",
+                          borderRadius: "14px",
+                          color: "#15803D",
+                          fontWeight: "800",
+                          fontSize: "15px",
+                          textAlign: "center",
+                          animation: "fadeIn 0.3s ease",
+                        }}
+                      >
+                        {qrSuccessMessage}
+                      </div>
+                    )}
+
+                    {qrEffectiveStatus ===
+                    "completed" ? (
+                      <div
+                        style={{
+                          padding: "16px",
+                          background: "#F0FDF4",
+                          border: "1px solid #BBF7D0",
+                          borderRadius: "14px",
+                          textAlign: "center",
+                          color: "#166534",
+                          fontWeight: "800",
+                          fontSize: "16px",
+                        }}
+                      >
+                        ✅ اكتملت دورة هذا الخطاب بالكامل ولا توجد إجراءات إضافية مطلوبة.
+                      </div>
+                    ) : !qrCanModify ? (
+                      <div
+                        style={{
+                          padding: "18px",
+                          background: "#F8FAFC",
+                          border: "1px solid #E2E8F0",
+                          borderRadius: "14px",
+                          textAlign: "center",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "30px",
+                            marginBottom: "10px",
+                          }}
+                        >
+                          🔐
+                        </div>
+
+                        <div
+                          style={{
+                            fontWeight: "800",
+                            color: "#0F172A",
+                            marginBottom: "6px",
+                            fontSize: "15px",
+                          }}
+                        >
+                          تسجيل الدخول مطلوب لتنفيذ الإجراءات
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            color: "#64748B",
+                            marginBottom: "14px",
+                          }}
+                        >
+                          الموظفون المصرح لهم فقط يمكنهم تسجيل
+                          استلام أو تسليم الخطابات، ويمكنك متابعة
+                          مسار الحركة أعلاه.
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowLogin(true)}
+                          style={{
+                            width: "100%",
+                            padding: "14px",
+                            background: "#1D4ED8",
+                            color: "#FFFFFF",
+                            border: "none",
+                            borderRadius: "14px",
+                            fontSize: "16px",
+                            fontWeight: "800",
+                            cursor: "pointer",
+                          }}
+                        >
+                          🔐 دخول الإدارة
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "12px",
+                        }}
+                      >
+                        {/* تحديد الإجراء الحالي للخطاب */}
+                        {(() => {
+                          const activeMovement =
+                            qrActiveMovement;
+
+                          const canReceive =
+                            activeMovement &&
+                            !activeMovement.received_at &&
+                            (
+                              activeMovement.status === "waiting" ||
+                              activeMovement.status === "in_progress"
+                            );
+
+                          const canDeliver =
+                            activeMovement &&
+                            activeMovement.status === "in_progress" &&
+                            Boolean(activeMovement.received_at);
+
+                          return (
+                            <>
+                              {canReceive && (
+                                <button
+                                  type="button"
+                                  onClick={handleQrReceive}
+                                  disabled={
+                                    qrActionLoading ||
+                                    qrReturnLoading
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    padding: "16px",
+                                    background: "#16A34A",
+                                    color: "#FFFFFF",
+                                    border: "none",
+                                    borderRadius: "14px",
+                                    fontSize: "17px",
+                                    fontWeight: "800",
+                                    cursor:
+                                      qrActionLoading ||
+                                      qrReturnLoading
+                                        ? "not-allowed"
+                                        : "pointer",
+                                    opacity:
+                                      qrActionLoading ||
+                                      qrReturnLoading
+                                        ? 0.7
+                                        : 1,
+                                  }}
+                                >
+                                  {qrActionLoading
+                                    ? "⏳ جاري تسجيل الاستلام..."
+                                    : "📥 استلام الخطاب"}
+                                </button>
+                              )}
+
+                              {canDeliver && (
+                                <button
+                                  type="button"
+                                  onClick={handleQrDeliver}
+                                  disabled={
+                                    qrActionLoading ||
+                                    qrReturnLoading
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    padding: "16px",
+                                    background: "#2563EB",
+                                    color: "#FFFFFF",
+                                    border: "none",
+                                    borderRadius: "14px",
+                                    fontSize: "17px",
+                                    fontWeight: "800",
+                                    cursor:
+                                      qrActionLoading ||
+                                      qrReturnLoading
+                                        ? "not-allowed"
+                                        : "pointer",
+                                    opacity:
+                                      qrActionLoading ||
+                                      qrReturnLoading
+                                        ? 0.7
+                                        : 1,
+                                  }}
+                                >
+                                  {qrActionLoading
+                                    ? "⏳ جاري تسجيل التسليم..."
+                                    : "📤 تسليم الخطاب"}
+                                </button>
+                              )}
+
+                              {activeMovement &&
+                                qrHasPreviousCompletedStation && (
+                                  <div>
+                                    <textarea
+                                      value={qrReturnNotes}
+                                      onChange={(e) =>
+                                        setQrReturnNotes(e.target.value)
+                                      }
+                                      placeholder="اكتب نوع التعديل المطلوب هنا قبل الإرجاع..."
+                                      rows={3}
+                                      style={{
+                                        width: "100%",
+                                        boxSizing: "border-box",
+                                        border: "1px solid #FDBA74",
+                                        borderRadius: "12px",
+                                        padding: "12px",
+                                        fontSize: "14px",
+                                        resize: "vertical",
+                                      }}
+                                    />
+
+                                    <button
+                                      type="button"
+                                      onClick={handleQrReturn}
+                                      disabled={
+                                        qrActionLoading ||
+                                        qrReturnLoading
+                                      }
+                                      style={{
+                                        width: "100%",
+                                        marginTop: "10px",
+                                        padding: "14px",
+                                        background: "#F97316",
+                                        color: "#FFFFFF",
+                                        border: "none",
+                                        borderRadius: "14px",
+                                        fontSize: "16px",
+                                        fontWeight: "800",
+                                        cursor:
+                                          qrActionLoading ||
+                                          qrReturnLoading
+                                            ? "not-allowed"
+                                            : "pointer",
+                                        opacity:
+                                          qrActionLoading ||
+                                          qrReturnLoading
+                                            ? 0.7
+                                            : 1,
+                                      }}
+                                    >
+                                      {qrReturnLoading
+                                        ? "⏳ جاري الإرجاع..."
+                                        : "↩️ رجوع للمحطة السابقة (تحتاج تعديل)"}
+                                    </button>
+                                  </div>
+                                )}
+
+                              {!activeMovement && (
+                                <div
+                                  style={{
+                                    padding: "14px",
+                                    background: "#F8FAFC",
+                                    borderRadius: "12px",
+                                    textAlign: "center",
+                                    color: "#64748B",
+                                    fontSize: "14px",
+                                  }}
+                                >
+                                  لا توجد حركات معلقة للتنفيذ حاليًا
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

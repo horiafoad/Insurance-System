@@ -30,17 +30,29 @@ function getQrStatusLabel(status) {
   return QR_STATUS_LABELS[status] || status || "غير محدد";
 }
 
+function sortByStep(movements = []) {
+  return [...movements].sort(
+    (a, b) => (a.step_order || 0) - (b.step_order || 0)
+  );
+}
+
 function getCurrentMovement(movements = []) {
   if (!movements.length) return null;
 
-  const active = movements.find(
-    (m) => m.status === "in_progress" || m.status === "needs_revision"
-  );
+  // الحركة "النشطة" الحالية هي أحدث حركة in_progress (لو في أكتر من واحدة
+  // بسبب الإرجاع للتعديل بناخد أحدث step_order).
+  const sorted = sortByStep(movements);
+  const active = sorted.filter((m) => m.status === "in_progress");
+  if (active.length) return active[active.length - 1];
 
-  if (active) return active;
+  // لو مفيش حركة نشطة حاليًا بناخد آخر حركة needs_revision
+  // (أحدث واحد، لأنّ الإرجاع للتعديل ممكن يكرر نفسه).
+  const revision = sorted.filter((m) => m.status === "needs_revision");
+  if (revision.length) return revision[revision.length - 1];
 
-  const completedOnes = movements.filter((m) => m.status === "completed");
-  return completedOnes[completedOnes.length - 1] || movements[0] || null;
+  // لو كل الحركات خلصت بناخد آخر محطة مكتملة.
+  const completedOnes = sorted.filter((m) => m.status === "completed");
+  return completedOnes[completedOnes.length - 1] || sorted[0] || null;
 }
 
 function isLetterLate(letter, thresholdDays = LATE_THRESHOLD_DAYS) {
@@ -1150,10 +1162,7 @@ function LetterCreationPanel() {
       letter_id: letter.id,
       department_id: Number(department.id),
       step_order: index + 1,
-      received_at:
-        index === 0
-          ? new Date().toISOString()
-          : new Date().toISOString(),
+      received_at: null,
       sent_at: null,
       action: null,
       notes: null,
@@ -1993,7 +2002,7 @@ const creationPanelNewButtonStyle = {
 
 const PUBLIC_APP_URL = "https://insurance-system-9et.pages.dev/";
 
-export default function LettersTrackingPage({ qrCode = "" }) {
+export default function LettersTrackingPage({ qrCode = "", currentUser = null }) {
   const [qrCodes, setQrCodes] = useState([]);
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2078,7 +2087,7 @@ const loadScannedLetter = async (code) => {
     await supabase
       .from("letter_movements")
       .select(
-        "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status"
+        "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status, received_by"
       )
       .eq("letter_id", letterData.id)
       .order("step_order", { ascending: true });
@@ -2379,7 +2388,7 @@ const startQrScanner = async () => {
       } = await supabase
         .from("letter_movements")
         .select(
-          "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status"
+          "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status, received_by"
         )
         .in("letter_id", letterIds)
         .order("step_order", { ascending: true });
@@ -2859,6 +2868,11 @@ const startQrScanner = async () => {
           status: "completed",
           action: "تم الاستلام والتحويل التلقائي للمحطة التالية",
           notes,
+          received_by:
+            currentUser?.full_name ||
+            currentUser?.username ||
+            activeMovement.received_by ||
+            null,
         })
         .eq("id", activeMovement.id);
 
@@ -2893,6 +2907,11 @@ const startQrScanner = async () => {
             status: "completed",
             action: "تم الاستلام والتحويل التلقائي للمحطة التالية",
             notes,
+            received_by:
+              currentUser?.full_name ||
+              currentUser?.username ||
+              movement.received_by ||
+              null,
           };
         }
         if (nextMovement && movement.id === nextMovement.id) {
@@ -3009,6 +3028,10 @@ const startQrScanner = async () => {
           status: "in_progress",
           received_at: now,
           action: "إعادة فتح المحطة بعد الإرجاع للتعديل",
+          received_by:
+            currentUser?.full_name ||
+            currentUser?.username ||
+            null,
         })
         .select("*, department:letter_departments(*)")
         .single();
@@ -3074,6 +3097,67 @@ const startQrScanner = async () => {
   setScannedLetter(null);
   setReceivedNotes("");
 };
+
+  // إعادة طباعة نفس QR للخطاب نفسه (بعد ضياعه) من غير إنشاء خطاب جديد.
+  const handleReprintLetterQr = async (letter) => {
+    const code = letter?.qr?.code;
+
+    if (!code) {
+      alert("لا يوجد كود QR مرتبط بهذا الخطاب.");
+      return;
+    }
+
+    setPrintLoading(true);
+
+    try {
+      const trackingUrl =
+        PUBLIC_APP_URL +
+        "?qr=" +
+        encodeURIComponent(code);
+
+      const dataUrl = await QRCode.toDataURL(
+        trackingUrl,
+        {
+          width: 600,
+          margin: 2,
+          errorCorrectionLevel: "H",
+          color: {
+            dark: "#000000",
+            light: "#ffffff",
+          },
+        }
+      );
+
+      setPrintCodes([
+        {
+          id: letter.qr.id,
+          code,
+          dataUrl,
+          trackingUrl,
+        },
+      ]);
+
+      alert(
+        "تم تجهيز QR للخطاب نفسه للطباعة.\n" +
+          "رقم الخطاب: " +
+          (letter.letter_number || "—") +
+          "\nكود QR: " +
+          code
+      );
+
+      setTimeout(() => {
+        window.print();
+      }, 700);
+    } catch (error) {
+      console.error(
+        "Reprint letter QR error:",
+        error
+      );
+      alert("حدث خطأ أثناء تجهيز QR للطباعة.");
+    } finally {
+      setPrintLoading(false);
+    }
+  };
   return (
     <>
       <div
@@ -3756,7 +3840,7 @@ const startQrScanner = async () => {
                   width: "100%",
                   borderCollapse:
                     "collapse",
-                  minWidth: "900px",
+                  minWidth: "1150px",
                 }}
               >
                 <thead>
@@ -3799,7 +3883,25 @@ const startQrScanner = async () => {
                     <th
                       style={thStyle}
                     >
+                      🏢 القسم الحالي
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      📊 الحالة
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
                       🧭 المسار
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ⏱️ آخر حركة
                     </th>
 
                     <th
@@ -3879,21 +3981,121 @@ const startQrScanner = async () => {
                             tdStyle
                           }
                         >
-                          <strong
+                          <div
                             style={{
-                              color:
-                                "#2563EB",
-                              direction:
-                                "ltr",
-                              display:
-                                "inline-block",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "flex-start",
+                              gap: "6px",
                             }}
                           >
-                            🏷️{" "}
-                            {letter.qr
-                              ?.code ||
-                              "—"}
-                          </strong>
+                            <strong
+                              style={{
+                                color:
+                                  "#2563EB",
+                                direction:
+                                  "ltr",
+                                display:
+                                  "inline-block",
+                              }}
+                            >
+                              🏷️{" "}
+                              {letter.qr
+                                ?.code ||
+                                "—"}
+                            </strong>
+
+                            {letter.qr?.code && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReprintLetterQr(
+                                    letter
+                                  )
+                                }
+                                style={{
+                                  border:
+                                    "1px solid #BFDBFE",
+                                  borderRadius:
+                                    "8px",
+                                  padding:
+                                    "4px 10px",
+                                  background:
+                                    "#EFF6FF",
+                                  color:
+                                    "#1D4ED8",
+                                  fontSize:
+                                    "11px",
+                                  fontWeight:
+                                    "800",
+                                  cursor:
+                                    "pointer",
+                                  whiteSpace:
+                                    "nowrap",
+                                }}
+                              >
+                                🖨️ إعادة طباعة
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {getCurrentMovement(
+                            letter.movements ||
+                              []
+                          )?.department
+                            ?.name || "—"}
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <span
+                            style={{
+                              display:
+                                "inline-flex",
+                              alignItems:
+                                "center",
+                              justifyContent:
+                                "center",
+                              gap: "5px",
+                              padding:
+                                "6px 11px",
+                              borderRadius:
+                                "999px",
+                              background:
+                                letter.status ===
+                                "completed"
+                                  ? "#ECFDF5"
+                                  : letter.status ===
+                                    "needs_revision"
+                                  ? "#FFF7ED"
+                                  : "#EFF6FF",
+                              color:
+                                letter.status ===
+                                "completed"
+                                  ? "#047857"
+                                  : letter.status ===
+                                    "needs_revision"
+                                  ? "#C2410C"
+                                  : "#1D4ED8",
+                              fontSize:
+                                "12px",
+                              fontWeight:
+                                "800",
+                            }}
+                          >
+                            {getLetterStatusLabel(
+                              letter.status
+                            )}
+                          </span>
                         </td>
 
                         <td
@@ -3931,6 +4133,23 @@ const startQrScanner = async () => {
                               0}{" "}
                             محطة
                           </span>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {formatDateTime(
+                            getCurrentMovement(
+                              letter.movements ||
+                                []
+                            )?.sent_at ||
+                              getCurrentMovement(
+                                letter.movements ||
+                                  []
+                              )?.received_at
+                          )}
                         </td>
 
                         <td
@@ -3987,6 +4206,7 @@ const startQrScanner = async () => {
             onClose={() =>
               setSelectedLetter(null)
             }
+            onReprintQr={handleReprintLetterQr}
           />
         )}
 
@@ -4688,7 +4908,7 @@ const startQrScanner = async () => {
    تفاصيل الخطاب - التصميم المميز
    ========================================================= */
 
-function LetterDetails({ letter, onClose }) {
+function LetterDetails({ letter, onClose, onReprintQr }) {
   const movements = letter.movements || [];
 
   const completedCount = movements.filter(
@@ -4895,27 +5115,60 @@ function LetterDetails({ letter, onClose }) {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
+          <div
             style={{
-              border:
-                "1px solid rgba(255,255,255,0.25)",
-              borderRadius: "12px",
-              padding:
-                "10px 16px",
-              background:
-                "rgba(255,255,255,0.10)",
-              color: "#fff",
-              fontSize: "13px",
-              fontWeight: "700",
-              cursor: "pointer",
-              backdropFilter:
-                "blur(8px)",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              flexWrap: "wrap",
             }}
           >
-            إغلاق ✕
-          </button>
+            {letter.qr?.code && (
+              <button
+                type="button"
+                onClick={() => onReprintQr?.(letter)}
+                style={{
+                  border:
+                    "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: "12px",
+                  padding:
+                    "10px 16px",
+                  background:
+                    "rgba(255,255,255,0.10)",
+                  color: "#fff",
+                  fontSize: "13px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  backdropFilter:
+                    "blur(8px)",
+                }}
+              >
+                🖨️ طباعة QR
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                border:
+                  "1px solid rgba(255,255,255,0.25)",
+                borderRadius: "12px",
+                padding:
+                  "10px 16px",
+                background:
+                  "rgba(255,255,255,0.10)",
+                color: "#fff",
+                fontSize: "13px",
+                fontWeight: "700",
+                cursor: "pointer",
+                backdropFilter:
+                  "blur(8px)",
+              }}
+            >
+              إغلاق ✕
+            </button>
+          </div>
         </div>
       </div>
 

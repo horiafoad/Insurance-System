@@ -299,10 +299,7 @@ export default function LetterCreationPanel() {
       letter_id: letter.id,
       department_id: Number(department.id),
       step_order: index + 1,
-      received_at:
-        index === 0
-          ? new Date().toISOString()
-          : new Date().toISOString(),
+      received_at: null,
       sent_at: null,
       action: null,
       notes: null,
