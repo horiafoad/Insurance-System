@@ -1,1999 +1,13 @@
+
 import { Html5Qrcode } from "html5-qrcode";
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../supabaseClient";
-
-
-// --- letterHelpers.js ---
-const LATE_THRESHOLD_DAYS = 3;
-
-const LETTER_STATUS_LABELS = {
-  incoming: "وارد",
-  in_progress: "جاري التنفيذ",
-  needs_revision: "تحتاج تعديل",
-  completed: "تم التنفيذ",
-  archived: "مؤرشف",
-};
-
-const QR_STATUS_LABELS = {
-  available: "متاح",
-  used: "مستخدم",
-  archived: "مؤرشف",
-  replaced: "مستبدل",
-};
-
-function getLetterStatusLabel(status) {
-  return LETTER_STATUS_LABELS[status] || status || "غير محدد";
-}
-
-function getQrStatusLabel(status) {
-  return QR_STATUS_LABELS[status] || status || "غير محدد";
-}
-
-function getCurrentMovement(movements = []) {
-  if (!movements.length) return null;
-
-  const active = movements.find(
-    (m) => m.status === "in_progress" || m.status === "needs_revision"
-  );
-
-  if (active) return active;
-
-  const completedOnes = movements.filter((m) => m.status === "completed");
-  return completedOnes[completedOnes.length - 1] || movements[0] || null;
-}
-
-function isLetterLate(letter, thresholdDays = LATE_THRESHOLD_DAYS) {
-  if (!letter || letter.status === "completed" || letter.status === "archived") {
-    return false;
-  }
-
-  const current = getCurrentMovement(letter.movements || []);
-
-  if (!current || current.status !== "in_progress" || !current.received_at) {
-    return false;
-  }
-
-  const receivedAt = new Date(current.received_at).getTime();
-  const now = Date.now();
-  const diffDays = (now - receivedAt) / (1000 * 60 * 60 * 24);
-
-  return diffDays >= thresholdDays;
-}
-
-function computeLetterStats(letters = [], qrCodes = []) {
-  const stats = {
-    totalLetters: letters.length,
-    inProgress: 0,
-    needsRevision: 0,
-    completed: 0,
-    late: 0,
-    totalQr: qrCodes.length,
-    availableQr: 0,
-    usedQr: 0,
-    replacedQr: 0,
-  };
-
-  for (const letter of letters) {
-    if (letter.status === "in_progress") stats.inProgress += 1;
-    if (letter.status === "needs_revision") stats.needsRevision += 1;
-    if (letter.status === "completed") stats.completed += 1;
-    if (isLetterLate(letter)) stats.late += 1;
-  }
-
-  for (const qr of qrCodes) {
-    if (qr.status === "available") stats.availableQr += 1;
-    if (qr.status === "used") stats.usedQr += 1;
-    if (qr.status === "replaced") stats.replacedQr += 1;
-  }
-
-  return stats;
-}
-
-function searchLetters(letters = [], term = "") {
-  const normalized = term.trim().toLowerCase();
-
-  if (!normalized) return letters;
-
-  return letters.filter((letter) => {
-    const senderName = (letter.sender?.name || "").toLowerCase();
-    const letterNumber = (letter.letter_number || "").toLowerCase();
-    const qrCode = (letter.qr?.code || "").toLowerCase();
-    const subject = (letter.subject || "").toLowerCase();
-
-    return (
-      senderName.includes(normalized) ||
-      letterNumber.includes(normalized) ||
-      qrCode.includes(normalized) ||
-      subject.includes(normalized)
-    );
-  });
-}
-
-function filterLetters(letters = [], filters = {}) {
-  const {
-    departmentId,
-    letterType,
-    status,
-    dateFrom,
-    dateTo,
-    archivedOnly,
-  } = filters;
-
-  return letters.filter((letter) => {
-    if (departmentId) {
-      const current = getCurrentMovement(letter.movements || []);
-      if (String(current?.department_id) !== String(departmentId)) {
-        return false;
-      }
-    }
-
-    if (letterType && letter.letter_type !== letterType) {
-      return false;
-    }
-
-    if (status && letter.status !== status) {
-      return false;
-    }
-
-    if (dateFrom && letter.letter_date < dateFrom) {
-      return false;
-    }
-
-    if (dateTo && letter.letter_date > dateTo) {
-      return false;
-    }
-
-    if (archivedOnly === "archived" && letter.status !== "archived") {
-      return false;
-    }
-
-    if (archivedOnly === "not_archived" && letter.status === "archived") {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-function buildArchiveTree(letters = []) {
-  const archived = letters.filter((l) => l.status === "archived");
-  const tree = {};
-
-  for (const letter of archived) {
-    if (!letter.letter_date) continue;
-
-    const date = new Date(letter.letter_date);
-    const year = date.getFullYear();
-    const weekNumber = getIsoWeekNumber(date);
-    const weekLabel = `الأسبوع ${weekNumber}`;
-
-    const current = getCurrentMovement(letter.movements || []);
-    const departmentName = current?.department?.name || "بدون إدارة";
-    const typeName = letter.letter_type || "غير مصنف";
-
-    tree[year] ??= {};
-    tree[year][weekLabel] ??= {};
-    tree[year][weekLabel][departmentName] ??= {};
-    tree[year][weekLabel][departmentName][typeName] ??= [];
-    tree[year][weekLabel][departmentName][typeName].push(letter);
-  }
-
-  return tree;
-}
-
-function getIsoWeekNumber(date) {
-  const d = new Date(
-    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
-  );
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-}
-
-// --- LetterSearchFilters.jsx ---
-function LetterSearchFilters({
-  search,
-  onSearchChange,
-  filters,
-  onFiltersChange,
-  departments = [],
-  letters = [],
-}) {
-  const letterTypes = useMemo(() => {
-    const set = new Set(
-      letters.map((l) => l.letter_type).filter(Boolean)
-    );
-    return [...set];
-  }, [letters]);
-
-  const setFilter = (key, value) => {
-    onFiltersChange({ ...filters, [key]: value || undefined });
-  };
-
-  return (
-    <div
-      style={{
-        background: "#FFFFFF",
-        border: "1px solid #E2E8F0",
-        borderRadius: "17px",
-        padding: "16px",
-        marginBottom: "20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-      }}
-    >
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="ابحث بالاسم، رقم الخطاب، أو كود QR..."
-        style={searchFilterInputStyle}
-      />
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: "10px",
-        }}
-      >
-        <select
-          value={filters.departmentId || ""}
-          onChange={(e) => setFilter("departmentId", e.target.value)}
-          style={searchFilterInputStyle}
-        >
-          <option value="">كل الإدارات</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filters.letterType || ""}
-          onChange={(e) => setFilter("letterType", e.target.value)}
-          style={searchFilterInputStyle}
-        >
-          <option value="">كل الأنواع</option>
-          {letterTypes.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filters.status || ""}
-          onChange={(e) => setFilter("status", e.target.value)}
-          style={searchFilterInputStyle}
-        >
-          <option value="">كل الحالات</option>
-          {Object.entries(LETTER_STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filters.archivedOnly || ""}
-          onChange={(e) => setFilter("archivedOnly", e.target.value)}
-          style={searchFilterInputStyle}
-        >
-          <option value="">مؤرشف وغير مؤرشف</option>
-          <option value="archived">مؤرشف فقط</option>
-          <option value="not_archived">غير مؤرشف فقط</option>
-        </select>
-
-        <input
-          type="date"
-          value={filters.dateFrom || ""}
-          onChange={(e) => setFilter("dateFrom", e.target.value)}
-          style={searchFilterInputStyle}
-          title="من تاريخ"
-        />
-
-        <input
-          type="date"
-          value={filters.dateTo || ""}
-          onChange={(e) => setFilter("dateTo", e.target.value)}
-          style={searchFilterInputStyle}
-          title="إلى تاريخ"
-        />
-      </div>
-    </div>
-  );
-}
-
-const searchFilterInputStyle = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: "1px solid #cbd5e1",
-  borderRadius: "11px",
-  padding: "10px 13px",
-  background: "#fff",
-  color: "#0f172a",
-  fontSize: "13px",
-  outline: "none",
-};
-
-// --- LetterImageUpload.jsx ---
-function LetterImageUpload({
-  letterId,
-  currentImageUrl,
-  onUploaded,
-}) {
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !letterId) return;
-
-    setUploading(true);
-    setError(null);
-
-    try {
-      const ext = file.name.split(".").pop();
-      const path = `letters/${letterId}-${Date.now()}.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("letter-images")
-        .upload(path, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("letter-images")
-        .getPublicUrl(path);
-
-      const publicUrl = publicUrlData?.publicUrl;
-
-      const { error: updateError } = await supabase
-        .from("letters")
-        .update({ image_url: publicUrl })
-        .eq("id", letterId);
-
-      if (updateError) throw updateError;
-
-      onUploaded?.(publicUrl);
-    } catch (err) {
-      console.error("Image upload error:", err);
-      setError("حصل خطأ أثناء رفع الصورة، حاول تاني");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {currentImageUrl && (
-        <img
-          src={currentImageUrl}
-          alt="صورة الخطاب"
-          style={{
-            width: "100%",
-            maxWidth: 260,
-            borderRadius: 12,
-            border: "1px solid #E2E8F0",
-          }}
-        />
-      )}
-
-      <label
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 13,
-          fontWeight: 700,
-          color: "#334155",
-          cursor: "pointer",
-        }}
-      >
-        📎 {currentImageUrl ? "استبدال الصورة" : "إرفاق صورة (اختياري)"}
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          disabled={uploading}
-          style={{ display: "none" }}
-        />
-      </label>
-
-      {uploading && (
-        <span style={{ fontSize: 12, color: "#64748B" }}>
-          جاري الرفع...
-        </span>
-      )}
-
-      {error && (
-        <span style={{ fontSize: 12, color: "#DC2626" }}>{error}</span>
-      )}
-    </div>
-  );
-}
-
-// --- LetterStatsBar.jsx ---
-const CARD_DEFS = [
-  { key: "totalLetters", title: "إجمالي الخطابات", icon: "📨" },
-  { key: "inProgress", title: "قيد التنفيذ", icon: "🔵" },
-  { key: "needsRevision", title: "تحتاج تعديل", icon: "🟠" },
-  { key: "completed", title: "منفذة", icon: "🟢" },
-  { key: "late", title: "متأخرة", icon: "⏰" },
-  { key: "totalQr", title: "إجمالي QR", icon: "🏷️" },
-  { key: "availableQr", title: "QR المتاح", icon: "🟢" },
-  { key: "usedQr", title: "QR المستخدم", icon: "🔵" },
-  { key: "replacedQr", title: "QR المستبدل", icon: "🟡" },
-];
-
-function LetterStatsBar({ letters = [], qrCodes = [] }) {
-  const stats = computeLetterStats(letters, qrCodes);
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns:
-          "repeat(auto-fit, minmax(150px, 1fr))",
-        gap: "12px",
-        marginBottom: "20px",
-      }}
-    >
-      {CARD_DEFS.map((def) => (
-        <StatMiniCard
-          key={def.key}
-          title={def.title}
-          icon={def.icon}
-          value={stats[def.key]}
-          highlight={def.key === "late" && stats.late > 0}
-        />
-      ))}
-    </div>
-  );
-}
-
-function StatMiniCard({ title, value, icon, highlight }) {
-  return (
-    <div
-      style={{
-        position: "relative",
-        overflow: "hidden",
-        background: "#FFFFFF",
-        borderRadius: "17px",
-        padding: "16px",
-        border: highlight ? "1px solid #FCA5A5" : "1px solid #E2E8F0",
-        boxShadow: "0 7px 20px rgba(15,23,42,0.05)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "10px",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: "12px",
-              color: "#64748B",
-              marginBottom: "6px",
-              fontWeight: "700",
-            }}
-          >
-            {title}
-          </div>
-
-          <div
-            style={{
-              fontSize: "22px",
-              fontWeight: "800",
-              color: highlight ? "#DC2626" : "#0F172A",
-            }}
-          >
-            {value ?? 0}
-          </div>
-        </div>
-
-        <div
-          style={{
-            width: "40px",
-            height: "40px",
-            borderRadius: "12px",
-            background: "#F8FAFC",
-            border: "1px solid #E2E8F0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "18px",
-          }}
-        >
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- LetterTimelineView.jsx ---
-const TIMELINE_STATUS_COLORS = {
-  waiting: { bg: "#F8FAFC", border: "#E2E8F0", text: "#64748B", dot: "#94A3B8" },
-  in_progress: { bg: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8", dot: "#2563EB" },
-  needs_revision: { bg: "#FFF7ED", border: "#FED7AA", text: "#C2410C", dot: "#EA580C" },
-  completed: { bg: "#F0FDF4", border: "#BBF7D0", text: "#16A34A", dot: "#16A34A" },
-};
-
-function LetterTimelineView({ movements = [] }) {
-  if (!movements.length) {
-    return (
-      <div style={{ color: "#94A3B8", fontSize: 13, padding: 12 }}>
-        لا توجد حركة مسجّلة لهذا الخطاب بعد.
-      </div>
-    );
-  }
-
-  const sorted = [...movements].sort(
-    (a, b) => (a.step_order || 0) - (b.step_order || 0)
-  );
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      {sorted.map((movement, index) => {
-        const colors =
-          TIMELINE_STATUS_COLORS[movement.status] || TIMELINE_STATUS_COLORS.waiting;
-        const isLast = index === sorted.length - 1;
-
-        return (
-          <div
-            key={movement.id}
-            style={{ display: "flex", gap: 12 }}
-          >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                width: 20,
-              }}
-            >
-              <div
-                style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: "50%",
-                  background: colors.dot,
-                  marginTop: 6,
-                  flexShrink: 0,
-                }}
-              />
-              {!isLast && (
-                <div
-                  style={{
-                    width: 2,
-                    flex: 1,
-                    background: "#E2E8F0",
-                    minHeight: 40,
-                  }}
-                />
-              )}
-            </div>
-
-            <div
-              style={{
-                flex: 1,
-                background: colors.bg,
-                border: `1px solid ${colors.border}`,
-                borderRadius: 14,
-                padding: "12px 14px",
-                marginBottom: 14,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 8,
-                }}
-              >
-                <div style={{ fontWeight: 800, fontSize: 14, color: "#0F172A" }}>
-                  {movement.department?.name || "إدارة غير محددة"}
-                </div>
-
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: colors.text,
-                    background: "#fff",
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: 999,
-                    padding: "3px 9px",
-                  }}
-                >
-                  {timelineStatusLabel(movement.status)}
-                </span>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-                  gap: 6,
-                  fontSize: 12,
-                  color: "#475569",
-                }}
-              >
-                <TimelineInfoRow label="المستلم" value={movement.received_by || "—"} />
-                <TimelineInfoRow label="التاريخ" value={formatDatePart(movement.received_at)} />
-                <TimelineInfoRow label="الوقت" value={formatTimePart(movement.received_at)} />
-                <TimelineInfoRow label="الإجراء" value={movement.action || "—"} />
-              </div>
-
-              {movement.notes && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: 12,
-                    color: "#334155",
-                    background: "#fff",
-                    border: "1px solid #E2E8F0",
-                    borderRadius: 10,
-                    padding: "8px 10px",
-                  }}
-                >
-                  📝 {movement.notes}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TimelineInfoRow({ label, value }) {
-  return (
-    <div>
-      <span style={{ color: "#94A3B8", fontWeight: 700 }}>{label}: </span>
-      <span style={{ fontWeight: 700 }}>{value}</span>
-    </div>
-  );
-}
-
-function timelineStatusLabel(status) {
-  const labels = {
-    waiting: "في الانتظار",
-    in_progress: "جاري التنفيذ",
-    needs_revision: "تم إرجاعه للتعديل",
-    completed: "تم التنفيذ",
-  };
-  return labels[status] || status;
-}
-
-function formatDatePart(value) {
-  if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat("ar-EG", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return "—";
-  }
-}
-
-function formatTimePart(value) {
-  if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat("ar-EG", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return "—";
-  }
-}
-
-// --- LettersArchiveSection.jsx ---
-function LettersArchiveSection({ letters = [], onOpenLetter }) {
-  const tree = useMemo(() => buildArchiveTree(letters), [letters]);
-  const years = Object.keys(tree).sort((a, b) => b - a);
-
-  const [openYear, setOpenYear] = useState(years[0] || null);
-  const [openWeek, setOpenWeek] = useState(null);
-  const [openDept, setOpenDept] = useState(null);
-
-  if (!years.length) {
-    return (
-      <div style={{ color: "#94A3B8", fontSize: 13, padding: 20, textAlign: "center" }}>
-        لا توجد خطابات مؤرشفة حاليًا.
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {years.map((year) => (
-        <div key={year} style={archiveGroupStyle}>
-          <button
-            onClick={() => setOpenYear(openYear === year ? null : year)}
-            style={archiveHeaderButtonStyle}
-          >
-            <span>📅 {year}</span>
-            <span>{openYear === year ? "▲" : "▼"}</span>
-          </button>
-
-          {openYear === year && (
-            <div style={{ padding: "8px 8px 8px 20px" }}>
-              {Object.keys(tree[year]).map((week) => (
-                <div key={week} style={archiveGroupStyle}>
-                  <button
-                    onClick={() =>
-                      setOpenWeek(openWeek === week ? null : week)
-                    }
-                    style={{ ...archiveHeaderButtonStyle, background: "#F8FAFC" }}
-                  >
-                    <span>🗓️ {week}</span>
-                    <span>{openWeek === week ? "▲" : "▼"}</span>
-                  </button>
-
-                  {openWeek === week && (
-                    <div style={{ padding: "8px 8px 8px 20px" }}>
-                      {Object.keys(tree[year][week]).map((dept) => (
-                        <div key={dept} style={archiveGroupStyle}>
-                          <button
-                            onClick={() =>
-                              setOpenDept(openDept === dept ? null : dept)
-                            }
-                            style={{ ...archiveHeaderButtonStyle, background: "#F1F5F9" }}
-                          >
-                            <span>🏢 {dept}</span>
-                            <span>{openDept === dept ? "▲" : "▼"}</span>
-                          </button>
-
-                          {openDept === dept && (
-                            <div style={{ padding: "8px 8px 8px 20px" }}>
-                              {Object.keys(tree[year][week][dept]).map(
-                                (type) => (
-                                  <div key={type} style={{ marginBottom: 10 }}>
-                                    <div
-                                      style={{
-                                        fontSize: 12,
-                                        fontWeight: 800,
-                                        color: "#64748B",
-                                        marginBottom: 6,
-                                      }}
-                                    >
-                                      🏷️ {type}
-                                    </div>
-
-                                    {tree[year][week][dept][type].map(
-                                      (letter) => (
-                                        <button
-                                          key={letter.id}
-                                          onClick={() => onOpenLetter?.(letter)}
-                                          style={archiveLetterRowStyle}
-                                        >
-                                          <span>
-                                            {letter.letter_number || "بدون رقم"} —{" "}
-                                            {letter.sender?.name || "بدون مرسل"}
-                                          </span>
-                                          <span style={{ color: "#94A3B8" }}>
-                                            {getLetterStatusLabel(letter.status)}
-                                          </span>
-                                        </button>
-                                      )
-                                    )}
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const archiveGroupStyle = {
-  border: "1px solid #E2E8F0",
-  borderRadius: 12,
-  overflow: "hidden",
-  background: "#fff",
-};
-
-const archiveHeaderButtonStyle = {
-  width: "100%",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "10px 14px",
-  background: "#fff",
-  border: "none",
-  cursor: "pointer",
-  fontSize: 13,
-  fontWeight: 800,
-  color: "#0F172A",
-};
-
-const archiveLetterRowStyle = {
-  width: "100%",
-  display: "flex",
-  justifyContent: "space-between",
-  padding: "8px 10px",
-  border: "1px solid #E2E8F0",
-  borderRadius: 10,
-  background: "#F8FAFC",
-  marginBottom: 6,
-  cursor: "pointer",
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#334155",
-};
-
-// --- LetterCreationPanel.jsx ---
-const creationToday = new Date().toISOString().slice(0, 10);
-
-const creationStatusConfig = {
-  in_progress: {
-    label: "جاري التنفيذ",
-    icon: "🔵",
-    color: "#2563eb",
-    background: "#eff6ff",
-    border: "#bfdbfe",
-  },
-  completed: {
-    label: "تم التنفيذ",
-    icon: "🟢",
-    color: "#16a34a",
-    background: "#f0fdf4",
-    border: "#bbf7d0",
-  },
-  waiting: {
-    label: "في الانتظار",
-    icon: "⚪",
-    color: "#64748b",
-    background: "#f8fafc",
-    border: "#e2e8f0",
-  },
-};
-
-function LetterCreationPanel() {
-  const [senders, setSenders] = useState([]);
-  const [qrCodes, setQrCodes] = useState([]);
-  const [departments, setDepartments] = useState([]);
-
-  const [letterNumber, setLetterNumber] = useState("");
-  const [letterDate, setLetterDate] = useState(creationToday);
-  const [senderId, setSenderId] = useState("");
-  const [senderSearch, setSenderSearch] = useState("");
-  const [subject, setSubject] = useState("");
-  const [notes, setNotes] = useState("");
-  const [qrCodeId, setQrCodeId] = useState("");
-
-  const [route, setRoute] = useState([]);
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
-
-  const [showNewSender, setShowNewSender] = useState(false);
-  const [newSenderName, setNewSenderName] = useState("");
-
-  const [loading, setLoading] = useState(true);
-  const [savingLetter, setSavingLetter] = useState(false);
-  const [savingSender, setSavingSender] = useState(false);
-
-  const loadData = async () => {
-    setLoading(true);
-
-    const [sendersResult, qrResult, departmentsResult] =
-      await Promise.all([
-        supabase
-          .from("letter_senders")
-          .select("id,name,is_active")
-          .eq("is_active", true)
-          .order("name"),
-
-        supabase
-          .from("archive_qr_codes")
-          .select("id,code,status,letter_id")
-          .eq("status", "available")
-          .is("letter_id", null)
-          .order("id"),
-
-        supabase
-          .from("letter_departments")
-          .select("id,name,is_active")
-          .eq("is_active", true)
-          .order("name"),
-      ]);
-
-    if (!sendersResult.error) {
-      setSenders(sendersResult.data || []);
-    }
-
-    if (!qrResult.error) {
-      const available = qrResult.data || [];
-      setQrCodes(available);
-
-      if (available.length > 0) {
-        setQrCodeId(String(available[0].id));
-      }
-    }
-
-    if (!departmentsResult.error) {
-      setDepartments(departmentsResult.data || []);
-    } else {
-      console.error(
-        "تعذر تحميل الإدارات:",
-        departmentsResult.error
-      );
-    }
-
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const filteredSenders = useMemo(() => {
-    const term = senderSearch.trim().toLowerCase();
-
-    if (!term) return senders;
-
-    return senders.filter((sender) =>
-      sender.name.toLowerCase().includes(term)
-    );
-  }, [senders, senderSearch]);
-
-  const selectedSender = senders.find(
-    (sender) => String(sender.id) === String(senderId)
-  );
-
-  const availableDepartments = departments.filter(
-    (department) =>
-      !route.some(
-        (item) => String(item.id) === String(department.id)
-      )
-  );
-
-  const addDepartmentToRoute = () => {
-    if (!selectedDepartmentId) return;
-
-    const department = departments.find(
-      (item) => String(item.id) === String(selectedDepartmentId)
-    );
-
-    if (!department) return;
-
-    setRoute((prev) => [
-      ...prev,
-      {
-        id: department.id,
-        name: department.name,
-      },
-    ]);
-
-    setSelectedDepartmentId("");
-  };
-
-  const removeDepartmentFromRoute = (index) => {
-    setRoute((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const moveDepartment = (index, direction) => {
-    setRoute((prev) => {
-      const next = [...prev];
-      const targetIndex = index + direction;
-
-      if (
-        targetIndex < 0 ||
-        targetIndex >= next.length
-      ) {
-        return prev;
-      }
-
-      const temp = next[index];
-      next[index] = next[targetIndex];
-      next[targetIndex] = temp;
-
-      return next;
-    });
-  };
-
-  const handleCreateSender = async () => {
-    const name = newSenderName.trim();
-
-    if (!name) {
-      alert("من فضلك اكتب اسم الجهة");
-      return;
-    }
-
-    setSavingSender(true);
-
-    const { data, error } = await supabase
-      .from("letter_senders")
-      .insert({
-        name,
-        is_active: true,
-      })
-      .select("id,name,is_active")
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        const { data: existing } = await supabase
-          .from("letter_senders")
-          .select("id,name,is_active")
-          .eq("name", name)
-          .maybeSingle();
-
-        if (existing) {
-          setSenders((prev) => {
-            const exists = prev.some(
-              (item) => item.id === existing.id
-            );
-
-            return exists
-              ? prev
-              : [...prev, existing].sort((a, b) =>
-                  a.name.localeCompare(b.name, "ar")
-                );
-          });
-
-          setSenderId(String(existing.id));
-          setSenderSearch(existing.name);
-          setNewSenderName("");
-          setShowNewSender(false);
-        } else {
-          alert("حدث خطأ أثناء إنشاء الجهة");
-        }
-      } else {
-        alert("تعذر إنشاء الجهة: " + error.message);
-      }
-
-      setSavingSender(false);
-      return;
-    }
-
-    setSenders((prev) =>
-      [...prev, data].sort((a, b) =>
-        a.name.localeCompare(b.name, "ar")
-      )
-    );
-
-    setSenderId(String(data.id));
-    setSenderSearch(data.name);
-    setNewSenderName("");
-    setShowNewSender(false);
-    setSavingSender(false);
-  };
-
-  const handleSaveLetter = async () => {
-    if (!qrCodeId) {
-      alert("لا يوجد كود QR متاح حاليًا");
-      return;
-    }
-
-    if (!letterNumber.trim()) {
-      alert("من فضلك أدخل رقم الخطاب");
-      return;
-    }
-
-    if (!letterDate) {
-      alert("من فضلك اختر تاريخ الخطاب");
-      return;
-    }
-
-    if (!senderId) {
-      alert("من فضلك اختر الجهة المرسلة");
-      return;
-    }
-
-    if (!subject.trim()) {
-      alert("من فضلك أدخل موضوع الخطاب");
-      return;
-    }
-
-    if (route.length === 0) {
-      alert("من فضلك أضف إدارة واحدة على الأقل إلى مسار الخطاب");
-      return;
-    }
-
-    setSavingLetter(true);
-
-    const selectedQr = qrCodes.find(
-      (qr) => String(qr.id) === String(qrCodeId)
-    );
-
-    const { data: letter, error: letterError } =
-      await supabase
-        .from("letters")
-        .insert({
-          qr_code_id: Number(qrCodeId),
-          letter_number: letterNumber.trim(),
-          letter_date: letterDate,
-          sender_id: Number(senderId),
-          subject: subject.trim(),
-          status: "in_progress",
-          notes: notes.trim() || null,
-        })
-        .select("id")
-        .single();
-
-    if (letterError) {
-      alert("تعذر حفظ الخطاب: " + letterError.message);
-      setSavingLetter(false);
-      return;
-    }
-
-    const movementRows = route.map((department, index) => ({
-      letter_id: letter.id,
-      department_id: Number(department.id),
-      step_order: index + 1,
-      received_at:
-        index === 0
-          ? new Date().toISOString()
-          : new Date().toISOString(),
-      sent_at: null,
-      action: null,
-      notes: null,
-      status: index === 0 ? "in_progress" : "waiting",
-    }));
-
-    const { error: movementError } = await supabase
-      .from("letter_movements")
-      .insert(movementRows);
-
-    if (movementError) {
-      alert(
-        "تم إنشاء الخطاب، ولكن حدث خطأ أثناء حفظ مسار الخطاب:\n" +
-          movementError.message
-      );
-      setSavingLetter(false);
-      return;
-    }
-
-    const usedAt = new Date().toISOString();
-
-    const { error: qrError } = await supabase
-      .from("archive_qr_codes")
-      .update({
-        status: "used",
-        letter_id: letter.id,
-        used_at: usedAt,
-      })
-      .eq("id", Number(qrCodeId));
-
-    if (qrError) {
-      alert(
-        "تم حفظ الخطاب ومساره، ولكن حدث خطأ أثناء ربط كود QR:\n" +
-          qrError.message
-      );
-      setSavingLetter(false);
-      return;
-    }
-
-    alert(
-      "تم حفظ الخطاب بنجاح ✅\n\n" +
-        "رقم الخطاب: " +
-        letterNumber.trim() +
-        "\n" +
-        "كود QR: " +
-        (selectedQr?.code || "") +
-        "\n" +
-        "عدد محطات المسار: " +
-        route.length
-    );
-
-    setLetterNumber("");
-    setLetterDate(creationToday);
-    setSenderId("");
-    setSenderSearch("");
-    setSubject("");
-    setNotes("");
-    setQrCodeId("");
-    setRoute([]);
-    setSelectedDepartmentId("");
-
-    window.location.reload();
-  };
-
-  return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 18,
-        padding: 24,
-        marginBottom: 24,
-        border: "1px solid #e5e7eb",
-        boxShadow: "0 8px 30px rgba(15,23,42,.06)",
-        direction: "rtl",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 16,
-          marginBottom: 22,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 21,
-              fontWeight: 800,
-              color: "#0f172a",
-            }}
-          >
-            ✉️ إنشاء خطاب جديد
-          </h2>
-
-          <div
-            style={{
-              marginTop: 7,
-              color: "#64748b",
-              fontSize: 14,
-            }}
-          >
-            إنشاء الخطاب وربطه بكود QR ثابت لمتابعة حركته بين الإدارات
-          </div>
-        </div>
-
-        <div
-          style={{
-            padding: "9px 14px",
-            borderRadius: 12,
-            background: "#f1f5f9",
-            color: "#334155",
-            fontSize: 13,
-            fontWeight: 700,
-          }}
-        >
-          {loading
-            ? "جاري التحميل..."
-            : `${qrCodes.length} كود QR متاح`}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit,minmax(240px,1fr))",
-          gap: 16,
-        }}
-      >
-        <CreationPanelField label="رقم الخطاب">
-          <input
-            value={letterNumber}
-            onChange={(e) => setLetterNumber(e.target.value)}
-            placeholder="مثال: 1254"
-            style={creationPanelInputStyle}
-          />
-        </CreationPanelField>
-
-        <CreationPanelField label="تاريخ الخطاب">
-          <input
-            type="date"
-            value={letterDate}
-            onChange={(e) => setLetterDate(e.target.value)}
-            style={creationPanelInputStyle}
-          />
-        </CreationPanelField>
-
-        <CreationPanelField label="كود QR">
-          <select
-            value={qrCodeId}
-            onChange={(e) => setQrCodeId(e.target.value)}
-            style={creationPanelInputStyle}
-            disabled={loading || qrCodes.length === 0}
-          >
-            {qrCodes.length === 0 ? (
-              <option value="">
-                لا توجد أكواد متاحة
-              </option>
-            ) : (
-              qrCodes.map((qr) => (
-                <option key={qr.id} value={qr.id}>
-                  {qr.code}
-                </option>
-              ))
-            )}
-          </select>
-        </CreationPanelField>
-
-        <CreationPanelField label="الجهة المرسلة">
-          <div style={{ display: "flex", gap: 8 }}>
-            <div
-              style={{
-                position: "relative",
-                flex: 1,
-              }}
-            >
-              <input
-                value={
-                  selectedSender?.name ||
-                  senderSearch
-                }
-                onChange={(e) => {
-                  setSenderSearch(e.target.value);
-                  setSenderId("");
-                }}
-                placeholder="ابحث عن الجهة..."
-                style={creationPanelInputStyle}
-              />
-
-              {senderSearch &&
-                !senderId &&
-                filteredSenders.length > 0 && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "calc(100% + 5px)",
-                      right: 0,
-                      left: 0,
-                      background: "#fff",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 12,
-                      boxShadow:
-                        "0 12px 30px rgba(15,23,42,.12)",
-                      zIndex: 20,
-                      maxHeight: 220,
-                      overflowY: "auto",
-                    }}
-                  >
-                    {filteredSenders.map((sender) => (
-                      <button
-                        key={sender.id}
-                        type="button"
-                        onClick={() => {
-                          setSenderId(String(sender.id));
-                          setSenderSearch(sender.name);
-                        }}
-                        style={{
-                          width: "100%",
-                          border: 0,
-                          background: "#fff",
-                          padding: "11px 13px",
-                          textAlign: "right",
-                          cursor: "pointer",
-                          fontSize: 14,
-                          color: "#334155",
-                        }}
-                      >
-                        {sender.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowNewSender(true)}
-              style={creationPanelNewButtonStyle}
-              title="إنشاء جهة جديدة"
-            >
-              +
-            </button>
-          </div>
-
-          {selectedSender && (
-            <div
-              style={{
-                marginTop: 7,
-                fontSize: 12,
-                color: "#15803d",
-                fontWeight: 700,
-              }}
-            >
-              ✓ تم اختيار: {selectedSender.name}
-            </div>
-          )}
-        </CreationPanelField>
-
-        <div style={{ gridColumn: "1 / -1" }}>
-          <CreationPanelField label="موضوع الخطاب">
-            <input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="اكتب موضوع الخطاب..."
-              style={creationPanelInputStyle}
-            />
-          </CreationPanelField>
-        </div>
-
-        <div style={{ gridColumn: "1 / -1" }}>
-          <CreationPanelField label="ملاحظات">
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="أي ملاحظات إضافية..."
-              rows={3}
-              style={{
-                ...creationPanelInputStyle,
-                resize: "vertical",
-                minHeight: 80,
-              }}
-            />
-          </CreationPanelField>
-        </div>
-      </div>
-
-      <div
-        style={{
-          marginTop: 28,
-          padding: 20,
-          borderRadius: 16,
-          background:
-            "linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%)",
-          border: "1px solid #dbeafe",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 16,
-          }}
-        >
-          <div>
-            <h3
-              style={{
-                margin: 0,
-                color: "#0f172a",
-                fontSize: 18,
-                fontWeight: 800,
-              }}
-            >
-              🧭 مسار الخطاب
-            </h3>
-
-            <div
-              style={{
-                marginTop: 5,
-                color: "#64748b",
-                fontSize: 13,
-              }}
-            >
-              أضف الإدارات بالترتيب الذي سيتحرك من خلاله الخطاب
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "#fff",
-              border: "1px solid #dbeafe",
-              color: "#1e40af",
-              fontSize: 13,
-              fontWeight: 800,
-            }}
-          >
-            {route.length} محطة
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "stretch",
-            marginBottom: 20,
-          }}
-        >
-          <select
-            value={selectedDepartmentId}
-            onChange={(e) =>
-              setSelectedDepartmentId(e.target.value)
-            }
-            disabled={loading || availableDepartments.length === 0}
-            style={{
-              ...creationPanelInputStyle,
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            <option value="">
-              {availableDepartments.length === 0
-                ? "تمت إضافة كل الإدارات"
-                : "اختر الإدارة لإضافتها إلى المسار..."}
-            </option>
-
-            {availableDepartments.map((department) => (
-              <option
-                key={department.id}
-                value={department.id}
-              >
-                {department.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={addDepartmentToRoute}
-            disabled={!selectedDepartmentId}
-            style={{
-              border: 0,
-              borderRadius: 11,
-              padding: "0 20px",
-              background: selectedDepartmentId
-                ? "#2563eb"
-                : "#cbd5e1",
-              color: "#fff",
-              fontWeight: 800,
-              cursor: selectedDepartmentId
-                ? "pointer"
-                : "not-allowed",
-              whiteSpace: "nowrap",
-            }}
-          >
-            + إضافة
-          </button>
-        </div>
-
-        {route.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "28px 16px",
-              borderRadius: 14,
-              border: "1px dashed #cbd5e1",
-              background: "#fff",
-              color: "#64748b",
-              fontSize: 14,
-            }}
-          >
-            لم تتم إضافة أي إدارة بعد.
-            <br />
-            اختر الإدارات من القائمة بالأعلى لبناء مسار الخطاب.
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 0,
-            }}
-          >
-            {route.map((department, index) => {
-              const isFirst = index === 0;
-              const config = isFirst
-                ? creationStatusConfig.in_progress
-                : creationStatusConfig.waiting;
-
-              return (
-                <div
-                  key={`${department.id}-${index}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "stretch",
-                    minHeight: 92,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 52,
-                      minWidth: 52,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: "50%",
-                        background: config.background,
-                        border: `3px solid ${config.color}`,
-                        color: config.color,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontWeight: 900,
-                        fontSize: 15,
-                        boxSizing: "border-box",
-                        zIndex: 2,
-                      }}
-                    >
-                      {isFirst ? "▶" : index + 1}
-                    </div>
-
-                    {index < route.length - 1 && (
-                      <div
-                        style={{
-                          width: 3,
-                          flex: 1,
-                          minHeight: 42,
-                          background:
-                            "linear-gradient(#2563eb,#cbd5e1)",
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      flex: 1,
-                      marginBottom:
-                        index < route.length - 1 ? 10 : 0,
-                      marginRight: 10,
-                      background: "#fff",
-                      border:
-                        `1px solid ${config.border}`,
-                      borderRadius: 14,
-                      padding: "12px 14px",
-                      boxShadow:
-                        "0 4px 14px rgba(15,23,42,.05)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#94a3b8",
-                          fontWeight: 800,
-                          marginBottom: 3,
-                        }}
-                      >
-                        المحطة {index + 1}
-                      </div>
-
-                      <div
-                        style={{
-                          color: "#0f172a",
-                          fontSize: 15,
-                          fontWeight: 900,
-                        }}
-                      >
-                        {department.name}
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 5,
-                          color: config.color,
-                          fontSize: 12,
-                          fontWeight: 800,
-                        }}
-                      >
-                        {config.icon} {config.label}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 5,
-                        flexWrap: "wrap",
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          moveDepartment(index, -1)
-                        }
-                        disabled={index === 0}
-                        title="تحريك لأعلى"
-                        style={creationPanelRouteActionStyle(
-                          index !== 0
-                        )}
-                      >
-                        ↑
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          moveDepartment(index, 1)
-                        }
-                        disabled={
-                          index === route.length - 1
-                        }
-                        title="تحريك لأسفل"
-                        style={creationPanelRouteActionStyle(
-                          index !== route.length - 1
-                        )}
-                      >
-                        ↓
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeDepartmentFromRoute(index)
-                        }
-                        title="حذف من المسار"
-                        style={{
-                          ...creationPanelRouteActionStyle(true),
-                          color: "#dc2626",
-                          borderColor: "#fecaca",
-                          background: "#fff",
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {route.length > 0 && (
-          <div
-            style={{
-              marginTop: 18,
-              padding: 12,
-              borderRadius: 12,
-              background: "#fff",
-              border: "1px solid #e2e8f0",
-              display: "flex",
-              gap: 18,
-              flexWrap: "wrap",
-              fontSize: 12,
-              fontWeight: 800,
-            }}
-          >
-            <span style={{ color: "#16a34a" }}>
-              🟢 تم التنفيذ
-            </span>
-
-            <span style={{ color: "#2563eb" }}>
-              🔵 جاري التنفيذ
-            </span>
-
-            <span style={{ color: "#64748b" }}>
-              ⚪ في الانتظار
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-start",
-          marginTop: 22,
-        }}
-      >
-        <button
-          type="button"
-          onClick={handleSaveLetter}
-          disabled={savingLetter || loading}
-          style={{
-            border: 0,
-            borderRadius: 12,
-            padding: "12px 24px",
-            background:
-              savingLetter || loading
-                ? "#94a3b8"
-                : "#0f172a",
-            color: "#fff",
-            fontSize: 15,
-            fontWeight: 800,
-            cursor:
-              savingLetter || loading
-                ? "not-allowed"
-                : "pointer",
-            boxShadow:
-              "0 7px 18px rgba(15,23,42,.16)",
-          }}
-        >
-          {savingLetter
-            ? "جاري حفظ الخطاب..."
-            : "💾 حفظ الخطاب"}
-        </button>
-      </div>
-
-      {showNewSender && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            padding: 20,
-          }}
-        >
-          <div
-            style={{
-              width: "min(500px,100%)",
-              background: "#fff",
-              borderRadius: 20,
-              padding: 24,
-              boxShadow:
-                "0 25px 70px rgba(0,0,0,.2)",
-            }}
-          >
-            <h3
-              style={{
-                margin: "0 0 8px",
-                color: "#0f172a",
-                fontSize: 20,
-              }}
-            >
-              + إنشاء جهة جديدة
-            </h3>
-
-            <p
-              style={{
-                margin: "0 0 18px",
-                color: "#64748b",
-                fontSize: 13,
-              }}
-            >
-              اكتب اسم الجهة وسيتم حفظها لتظهر مع الخطابات القادمة.
-            </p>
-
-            <input
-              autoFocus
-              value={newSenderName}
-              onChange={(e) =>
-                setNewSenderName(e.target.value)
-              }
-              placeholder="اسم الجهة"
-              style={creationPanelInputStyle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleCreateSender();
-                }
-              }}
-            />
-
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                justifyContent: "flex-start",
-                marginTop: 18,
-              }}
-            >
-              <button
-                type="button"
-                onClick={handleCreateSender}
-                disabled={savingSender}
-                style={{
-                  border: 0,
-                  borderRadius: 11,
-                  padding: "11px 20px",
-                  background: "#0f172a",
-                  color: "#fff",
-                  fontWeight: 800,
-                  cursor: savingSender
-                    ? "not-allowed"
-                    : "pointer",
-                }}
-              >
-                {savingSender
-                  ? "جاري الحفظ..."
-                  : "حفظ الجهة"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowNewSender(false);
-                  setNewSenderName("");
-                }}
-                style={{
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 11,
-                  padding: "11px 20px",
-                  background: "#fff",
-                  color: "#475569",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CreationPanelField({ label, children }) {
-  return (
-    <div>
-      <label
-        style={{
-          display: "block",
-          marginBottom: 7,
-          color: "#334155",
-          fontSize: 13,
-          fontWeight: 800,
-        }}
-      >
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function creationPanelRouteActionStyle(enabled) {
-  return {
-    width: 32,
-    height: 32,
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: enabled ? "#f8fafc" : "#f1f5f9",
-    color: enabled ? "#334155" : "#cbd5e1",
-    fontWeight: 900,
-    cursor: enabled ? "pointer" : "not-allowed",
-  };
-}
-
-const creationPanelInputStyle = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: "1px solid #cbd5e1",
-  borderRadius: 11,
-  padding: "11px 13px",
-  background: "#fff",
-  color: "#0f172a",
-  fontSize: 14,
-  outline: "none",
-};
-
-const creationPanelNewButtonStyle = {
-  width: 44,
-  minWidth: 44,
-  border: 0,
-  borderRadius: 11,
-  background: "#0f172a",
-  color: "#fff",
-  fontSize: 24,
-  fontWeight: 700,
-  cursor: "pointer",
-};
+import LetterCreationPanel from "./LetterCreationPanel";
 
 const PUBLIC_APP_URL = "https://insurance-system-9et.pages.dev/";
 
-export default function LettersTrackingPage({ qrCode = "" }) {
+export default function LettersTrackingPage() {
   const [qrCodes, setQrCodes] = useState([]);
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2003,8 +17,6 @@ export default function LettersTrackingPage({ qrCode = "" }) {
 
   const [quantity, setQuantity] = useState(40);
   const [search, setSearch] = useState("");
-  const [letterFilters, setLetterFilters] = useState({});
-  const [departments, setDepartments] = useState([]);
 
   const [printCodes, setPrintCodes] = useState([]);
   const [selectedLetter, setSelectedLetter] = useState(null);
@@ -2015,256 +27,225 @@ export default function LettersTrackingPage({ qrCode = "" }) {
   const [scannedLetter, setScannedLetter] = useState(null);
   const [receivedNotes, setReceivedNotes] = useState("");
   const [receiving, setReceiving] = useState(false);
-const [delivering, setDelivering] = useState(false);
-const [scanError, setScanError] = useState("");
-
-const scannerRef = useRef(null);
-const scanHandledRef = useRef(false);
+  const [scanError, setScanError] = useState("");
 
 
-  const stopQrScanner = async () => {
-  const scanner = scannerRef.current;
-  scannerRef.current = null;
+  const startQrScanner = async () => {
+    setScanError("");
+    setScannedLetter(null);
+    setReceivedNotes("");
+    setScannerOpen(true);
+    setScannerLoading(true);
 
-  if (!scanner) return;
+    const scanner = new Html5Qrcode("letter-qr-reader");
 
-  try {
-    await scanner.stop();
-  } catch (error) {
-    console.warn("Scanner stop warning:", error);
-  }
-
-  try {
-    await scanner.clear();
-  } catch (error) {
-    console.warn("Scanner clear warning:", error);
-  }
-};
-
-const loadScannedLetter = async (code) => {
-  const { data: qrData, error: qrError } = await supabase
-    .from("archive_qr_codes")
-    .select("id, code, status, letter_id")
-    .eq("code", code)
-    .maybeSingle();
-
-  if (qrError) {
-    console.error("QR lookup error:", qrError);
-    throw new Error("حدث خطأ أثناء البحث عن كود QR.");
-  }
-
-  if (!qrData) {
-    throw new Error("كود QR غير موجود في النظام.");
-  }
-
-  const { data: letterData, error: letterError } = await supabase
-    .from("letters")
-    .select(
-      "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
-    )
-    .eq("qr_code_id", qrData.id)
-    .maybeSingle();
-
-  if (letterError) {
-    console.error("Letter lookup error:", letterError);
-    throw new Error("حدث خطأ أثناء تحميل بيانات الخطاب.");
-  }
-
-  if (!letterData) {
-    throw new Error("هذا QR غير مرتبط بخطاب حتى الآن.");
-  }
-
-  const { data: movementsData, error: movementsError } =
-    await supabase
-      .from("letter_movements")
-      .select(
-        "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status"
-      )
-      .eq("letter_id", letterData.id)
-      .order("step_order", { ascending: true });
-
-  if (movementsError) {
-    console.error("Movements lookup error:", movementsError);
-    throw new Error("حدث خطأ أثناء تحميل حركة الخطاب.");
-  }
-
-  const departmentIds = [
-    ...new Set(
-      (movementsData || [])
-        .map((item) => item.department_id)
-        .filter(
-          (id) => id !== null && id !== undefined
-        )
-    ),
-  ];
-
-  let departments = [];
-
-  if (departmentIds.length > 0) {
-    const {
-      data: departmentData,
-      error: departmentError,
-    } = await supabase
-      .from("letter_departments")
-      .select("id, name")
-      .in("id", departmentIds);
-
-    if (departmentError) {
-      console.error(
-        "Departments lookup error:",
-        departmentError
-      );
-    } else {
-      departments = departmentData || [];
-    }
-  }
-
-  let senderData = null;
-
-  if (letterData.sender_id) {
-    const { data } = await supabase
-      .from("letter_senders")
-      .select("id, name")
-      .eq("id", letterData.sender_id)
-      .maybeSingle();
-
-    senderData = data || null;
-  }
-
-  const enrichedMovements = (movementsData || []).map(
-    (movement) => ({
-      ...movement,
-      department:
-        departments.find(
-          (department) =>
-            department.id === movement.department_id
-        ) || null,
-    })
-  );
-
-  return {
-    ...letterData,
-    qr: qrData,
-    sender: senderData,
-    movements: enrichedMovements,
-  };
-};
-
-const startQrScanner = async () => {
-  setScanError("");
-  setScannedLetter(null);
-  setReceivedNotes("");
-  setScannerOpen(true);
-  setScannerLoading(true);
-  scanHandledRef.current = false;
-
-  await new Promise((resolve) =>
-    setTimeout(resolve, 150)
-  );
-
-  try {
-    await stopQrScanner();
-
-    const scanner = new Html5Qrcode(
-      "letter-qr-reader"
-    );
-
-    scannerRef.current = scanner;
-
-    await scanner.start(
-      { facingMode: "environment" },
-      {
-        fps: 10,
-        qrbox: {
-          width: 220,
-          height: 220,
+    try {
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 220, height: 220 },
         },
-      },
-      async (decodedText) => {
-        if (scanHandledRef.current) return;
+        async (decodedText) => {
+          let code = decodedText.trim();
 
-        scanHandledRef.current = true;
+try {
+  const parsedUrl = new URL(code);
+  const qrParam = parsedUrl.searchParams.get("qr");
 
-        let code = decodedText.trim();
+  if (qrParam) {
+    code = qrParam.trim();
+  }
+} catch {
+  // الكود QR قد يكون قيمة مباشرة مثل QR-000001
+}
 
-        try {
-          const parsedUrl = new URL(code);
-          const qrParam =
-            parsedUrl.searchParams.get("qr");
-
-          if (qrParam) {
-            code = qrParam.trim();
+          try {
+            await scanner.stop();
+            await scanner.clear();
+          } catch (stopError) {
+            console.warn("Scanner stop warning:", stopError);
           }
-        } catch {
-          // QR مباشر مثل QR-000001
-        }
 
-        await stopQrScanner();
+          const { data: qrData, error: qrError } = await supabase
+            .from("archive_qr_codes")
+            .select("id, code, status, letter_id")
+            .eq("code", code)
+            .maybeSingle();
 
-        try {
-          const enrichedLetter =
-            await loadScannedLetter(code);
+          if (qrError) {
+            console.error("QR lookup error:", qrError);
+            setScanError("حدث خطأ أثناء البحث عن كود QR.");
+            setScannerLoading(false);
+            return;
+          }
+
+          if (!qrData) {
+            setScanError("كود QR غير موجود في النظام.");
+            setScannerLoading(false);
+            return;
+          }
+
+          const { data: letterData, error: letterError } = await supabase
+            .from("letters")
+            .select(
+              "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+            )
+            .eq("qr_code_id", qrData.id)
+            .maybeSingle();
+
+          if (letterError) {
+            console.error("Letter lookup error:", letterError);
+            setScanError("حدث خطأ أثناء تحميل بيانات الخطاب.");
+            setScannerLoading(false);
+            return;
+          }
+
+          if (!letterData) {
+            setScanError("هذا QR غير مرتبط بخطاب حتى الآن.");
+            setScannerLoading(false);
+            return;
+          }
+
+          const { data: movementsData, error: movementsError } = await supabase
+            .from("letter_movements")
+            .select("id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status")
+            .eq("letter_id", letterData.id)
+            .order("step_order", { ascending: true });
+
+          if (movementsError) {
+            console.error("Movements lookup error:", movementsError);
+            setScanError("حدث خطأ أثناء تحميل حركة الخطاب.");
+            setScannerLoading(false);
+            return;
+          }
+
+          const departmentIds = [...new Set((movementsData || []).map((item) => item.department_id))];
+
+          let departments = [];
+
+          if (departmentIds.length > 0) {
+            const { data: departmentData, error: departmentError } = await supabase
+              .from("letter_departments")
+              .select("id, name")
+              .in("id", departmentIds);
+
+            if (departmentError) {
+              console.error("Departments lookup error:", departmentError);
+            } else {
+              departments = departmentData || [];
+            }
+          }
+
+          const senderData = letterData.sender_id
+            ? (await supabase
+                .from("letter_senders")
+                .select("id, name")
+                .eq("id", letterData.sender_id)
+                .maybeSingle()).data
+            : null;
+
+          const enrichedMovements = (movementsData || []).map((movement) => ({
+            ...movement,
+            department: departments.find((department) => department.id === movement.department_id) || null,
+          }));
+
+          const enrichedLetter = {
+            ...letterData,
+            qr: qrData,
+            sender: senderData,
+            movements: enrichedMovements,
+          };
 
           setScannedLetter(enrichedLetter);
-
-          const activeMovement =
-            enrichedLetter.movements?.find(
-              (movement) =>
-                movement.status === "in_progress"
-            );
-
-          const waitingMovement =
-            enrichedLetter.movements?.find(
-              (movement) =>
-                movement.status === "waiting"
-            );
-
           setReceivedNotes(
-            activeMovement?.notes ||
-              waitingMovement?.notes ||
-              ""
+            enrichedMovements.find((movement) => movement.status === "in_progress")?.notes || ""
           );
-
           setScannerLoading(false);
-        } catch (error) {
-          console.error(
-            "Scanned letter error:",
-            error
-          );
-
-          setScanError(
-            error.message ||
-              "حدث خطأ أثناء تحميل بيانات الخطاب."
-          );
-
-          setScannerLoading(false);
-        }
-      },
-      () => {}
-    );
-
-    setScannerLoading(false);
-  } catch (error) {
-    console.error(
-      "QR scanner error:",
-      error
-    );
-
-    setScanError(
-      "تعذر تشغيل الكاميرا. تأكدي من السماح باستخدام الكاميرا."
-    );
-
-    setScannerLoading(false);
-  }
-};
- useEffect(() => {
-  loadQRCodes();
-  loadLetters();
-
-  return () => {
-    stopQrScanner();
+        },
+        () => {}
+      );
+    } catch (error) {
+      console.error("QR scanner error:", error);
+      setScanError("تعذر تشغيل الكاميرا. تأكدي من السماح باستخدام الكاميرا.");
+      setScannerLoading(false);
+    }
   };
-}, []);
+
+  const moveLetterToNextStation = async (letter) => {
+    if (!letter || !letter.movements?.length) return;
+
+    const movements = letter.movements;
+    const currentIndex = movements.findIndex(
+      (movement) => movement.status === "in_progress"
+    );
+
+    if (currentIndex < 0) {
+      alert("لا توجد محطة قيد التنفيذ حاليًا.");
+      return;
+    }
+
+    const currentMovement = movements[currentIndex];
+    const nextMovement = movements[currentIndex + 1];
+    const now = new Date().toISOString();
+
+    try {
+      const { error: currentError } = await supabase
+        .from("letter_movements")
+        .update({
+          status: "completed",
+          sent_at: now,
+        })
+        .eq("id", currentMovement.id);
+
+      if (currentError) throw currentError;
+
+      if (nextMovement) {
+        const { error: nextError } = await supabase
+          .from("letter_movements")
+          .update({
+            status: "in_progress",
+            received_at: now,
+          })
+          .eq("id", nextMovement.id);
+
+        if (nextError) throw nextError;
+
+        await supabase
+          .from("letters")
+          .update({
+            status: "in_progress",
+            updated_at: now,
+          })
+          .eq("id", letter.id);
+      } else {
+        await supabase
+          .from("letters")
+          .update({
+            status: "completed",
+            updated_at: now,
+          })
+          .eq("id", letter.id);
+      }
+
+      await loadLetters();
+      setSelectedLetter(null);
+
+      alert(
+        nextMovement
+          ? "تم تنفيذ المحطة والانتقال للمحطة التالية."
+          : "تم تنفيذ آخر محطة وإغلاق حركة الخطاب."
+      );
+    } catch (error) {
+      console.error("Error moving letter:", error);
+      alert("حدث خطأ أثناء تحديث حركة الخطاب.");
+    }
+  };
+  useEffect(() => {
+    loadQRCodes();
+    loadLetters();
+  }, []);
+
   const loadQRCodes = async () => {
     setLoading(true);
 
@@ -2283,20 +264,6 @@ const startQrScanner = async () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    if (!qrCode || !letters.length) return;
-
-    const normalizedQr = qrCode.trim().toLowerCase();
-
-    const matchingLetter = letters.find(
-      (letter) =>
-        letter.qr?.code?.trim().toLowerCase() === normalizedQr
-    );
-
-    if (matchingLetter) {
-      setSelectedLetter(matchingLetter);
-    }
-  }, [qrCode, letters]);
   const loadLetters = async () => {
     setLoadingLetters(true);
 
@@ -2416,8 +383,6 @@ const startQrScanner = async () => {
           departments = data || [];
         }
       }
-
-      setDepartments(departments);
 
       const enrichedLetters = safeLetters.map(
         (letter) => {
@@ -2821,73 +786,51 @@ const startQrScanner = async () => {
   const confirmLetterReceived = async () => {
     if (!scannedLetter?.movements?.length) return;
 
-    const targetMovement = scannedLetter.movements.find(
-      (movement) => movement.status === "waiting"
+    const currentMovement = scannedLetter.movements.find(
+      (movement) => movement.status === "in_progress"
     );
 
-    if (!targetMovement) {
-      alert("لا توجد محطة تنتظر استلام الخطاب.");
+    if (!currentMovement) {
+      alert("لا توجد محطة حالية قيد التنفيذ.");
       return;
     }
 
     setReceiving(true);
-
     const now = new Date().toISOString();
-    const notes = receivedNotes.trim() || null;
 
     try {
-      const { error: movementError } = await supabase
+      const { error } = await supabase
         .from("letter_movements")
         .update({
           received_at: now,
           status: "in_progress",
           action: "تم الاستلام",
-          notes,
+          notes: receivedNotes.trim() || null,
         })
-        .eq("id", targetMovement.id);
+        .eq("id", currentMovement.id);
 
-      if (movementError) throw movementError;
+      if (error) throw error;
 
-      const { error: letterError } = await supabase
-        .from("letters")
-        .update({
-          status: "in_progress",
-          updated_at: now,
-        })
-        .eq("id", scannedLetter.id);
-
-      if (letterError) throw letterError;
-
-      const updatedMovements = scannedLetter.movements.map(
-        (movement) =>
-          movement.id === targetMovement.id
-            ? {
-                ...movement,
-                received_at: now,
-                status: "in_progress",
-                action: "تم الاستلام",
-                notes,
-              }
-            : movement
+      const updatedMovements = scannedLetter.movements.map((movement) =>
+        movement.id === currentMovement.id
+          ? {
+              ...movement,
+              received_at: now,
+              status: "in_progress",
+              action: "تم الاستلام",
+              notes: receivedNotes.trim() || null,
+            }
+          : movement
       );
 
       setScannedLetter({
         ...scannedLetter,
         movements: updatedMovements,
-        status: "in_progress",
-        updated_at: now,
       });
 
-      await Promise.all([
-        loadLetters(),
-        loadQRCodes(),
-      ]);
+      await loadLetters();
 
-      alert(
-        `تم استلام الخطاب بنجاح من محطة ${
-          targetMovement.department?.name || "المحطة الحالية"
-        }.`
-      );
+      alert("تم تسجيل استلام الخطاب بنجاح.");
     } catch (error) {
       console.error("Error receiving letter:", error);
       alert("حدث خطأ أثناء تسجيل استلام الخطاب.");
@@ -2896,105 +839,12 @@ const startQrScanner = async () => {
     }
   };
 
-  const confirmLetterDelivered = async () => {
-    if (!scannedLetter?.movements?.length) return;
-
-    const currentMovement = scannedLetter.movements.find(
-      (movement) => movement.status === "in_progress"
-    );
-
-    if (!currentMovement) {
-      alert("لا توجد محطة حالية لتسليم الخطاب.");
-      return;
-    }
-
-    if (!currentMovement.received_at) {
-      alert("يجب تسجيل استلام الخطاب أولًا.");
-      return;
-    }
-
-    setDelivering(true);
-
-    const now = new Date().toISOString();
-
-    try {
-      const nextMovement = scannedLetter.movements.find(
-        (movement) =>
-          movement.step_order > currentMovement.step_order &&
-          movement.status === "waiting"
-      );
-
-      const { error: currentError } = await supabase
-        .from("letter_movements")
-        .update({
-          status: "completed",
-          sent_at: now,
-          action: "تم التسليم",
-        })
-        .eq("id", currentMovement.id);
-
-      if (currentError) throw currentError;
-
-      const { error: letterError } = await supabase
-        .from("letters")
-        .update({
-          status: nextMovement ? "in_progress" : "completed",
-          updated_at: now,
-        })
-        .eq("id", scannedLetter.id);
-
-      if (letterError) throw letterError;
-
-      const updatedMovements = scannedLetter.movements.map(
-        (movement) =>
-          movement.id === currentMovement.id
-            ? {
-                ...movement,
-                status: "completed",
-                sent_at: now,
-                action: "تم التسليم",
-              }
-            : movement
-      );
-
-      setScannedLetter({
-        ...scannedLetter,
-        status: nextMovement ? "in_progress" : "completed",
-        updated_at: now,
-        movements: updatedMovements,
-      });
-
-      await Promise.all([
-        loadLetters(),
-        loadQRCodes(),
-      ]);
-
-      if (nextMovement) {
-        alert(
-          `تم تسليم الخطاب بنجاح.\n\nالمحطة التالية:\n${
-            nextMovement.department?.name || "المحطة التالية"
-          }\n\nالخطاب الآن في انتظار الاستلام هناك.\n\nنفس QR سيستمر مع الخطاب.`
-        );
-      } else {
-        alert("تم تسليم الخطاب وإغلاق حركته بالكامل بنجاح.");
-      }
-    } catch (error) {
-      console.error("Error delivering letter:", error);
-      alert("حدث خطأ أثناء تسجيل تسليم الخطاب.");
-    } finally {
-      setDelivering(false);
-    }
+  const closeQrScanner = async () => {
+    setScannerOpen(false);
+    setScannerLoading(false);
+    setScanError("");
   };
 
-  const closeQrScanner = async () => {
-  await stopQrScanner();
-
-  setScannerOpen(false);
-  setScannerLoading(false);
-  setScanError("");
-  setScannedLetter(null);
-  setReceivedNotes("");
-};
   return (
     <>
       <div
@@ -3004,112 +854,24 @@ const startQrScanner = async () => {
           marginBottom: "18px",
         }}
       >
-        {(() => {
-  if (!scannedLetter) return null;
-
-  const currentMovement =
-    scannedLetter.movements?.find(
-      (movement) =>
-        movement.status === "in_progress"
-    );
-
-  const waitingMovement =
-    scannedLetter.movements?.find(
-      (movement) =>
-        movement.status === "waiting"
-    );
-
-  const canReceive =
-    !currentMovement &&
-    Boolean(waitingMovement);
-
-  const canDeliver =
-    Boolean(
-      currentMovement &&
-      currentMovement.received_at
-    );
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gap: "10px",
-        marginTop: "14px",
-      }}
-    >
-      {canReceive && (
         <button
           type="button"
-          onClick={confirmLetterReceived}
-          disabled={receiving}
+          onClick={startQrScanner}
           style={{
-            width: "100%",
             border: "none",
-            borderRadius: "14px",
-            padding: "14px",
-            background: receiving
-              ? "#94A3B8"
-              : "linear-gradient(135deg,#0F766E,#14B8A6)",
+            borderRadius: "16px",
+            padding: "14px 28px",
+            background: "linear-gradient(135deg,#0F3D66,#1976A8)",
             color: "#fff",
-            fontWeight: "900",
+            fontWeight: "800",
             fontSize: "15px",
-            cursor: receiving
-              ? "not-allowed"
-              : "pointer",
+            cursor: "pointer",
+            boxShadow: "0 8px 22px rgba(15,61,102,0.22)",
           }}
         >
-          {receiving
-            ? "⏳ جاري تسجيل الاستلام..."
-            : "📥 استلام الخطاب"}
+          {"📱 مسح QR للخطاب"}
         </button>
-      )}
-
-      {canDeliver && (
-        <button
-          type="button"
-          onClick={confirmLetterDelivered}
-          disabled={delivering}
-          style={{
-            width: "100%",
-            border: "none",
-            borderRadius: "14px",
-            padding: "14px",
-            background: delivering
-              ? "#94A3B8"
-              : "linear-gradient(135deg,#2563EB,#1976A8)",
-            color: "#fff",
-            fontWeight: "900",
-            fontSize: "15px",
-            cursor: delivering
-              ? "not-allowed"
-              : "pointer",
-          }}
-        >
-          {delivering
-            ? "⏳ جاري تسجيل التسليم..."
-            : "📤 تسليم وتحويل للمحطة التالية"}
-        </button>
-      )}
-
-      {!canReceive &&
-        !canDeliver &&
-        scannedLetter.status === "completed" && (
-          <div
-            style={{
-              padding: "13px",
-              borderRadius: "14px",
-              background: "#ECFDF5",
-              color: "#047857",
-              textAlign: "center",
-              fontWeight: "800",
-            }}
-          >
-            ✅ تم إغلاق حركة الخطاب بالكامل
-          </div>
-        )}
-    </div>
-  );
-})()}
+      </div>
 
       {scannerOpen && (
         <div
@@ -3319,12 +1081,33 @@ const startQrScanner = async () => {
                     }}
                   />
                 </div>
+
+                <button
+                  type="button"
+                  onClick={confirmLetterReceived}
+                  disabled={receiving}
+                  style={{
+                    width: "100%",
+                    marginTop: "14px",
+                    border: "none",
+                    borderRadius: "14px",
+                    padding: "14px",
+                    background: receiving
+                      ? "#94A3B8"
+                      : "linear-gradient(135deg,#0F766E,#14B8A6)",
+                    color: "#fff",
+                    fontWeight: "900",
+                    fontSize: "15px",
+                    cursor: receiving ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {receiving ? "جاري تسجيل الاستلام..." : "✅ تم الاستلام"}
+                </button>
               </div>
             )}
           </div>
         </div>
       )}
-      </div>
 
       <div
         className="letters-tracking-page"
@@ -3546,33 +1329,7 @@ const startQrScanner = async () => {
                   color: "#64748B",
                 }}
               >
-                <div style={{
-  padding: "14px 20px 0",
-}}>
-  <input
-    type="text"
-    value={search}
-    onChange={(e) => setSearch(e.target.value)}
-    placeholder="🔎 ابحث في الخطابات المسجلة برقم الخطاب أو الموضوع أو الجهة أو QR..."
-    style={{
-      width: "92%",
-      boxSizing: "border-box",
-      padding: "12px 14px",
-      border: "1px solid #CBD5E1",
-      borderRadius: "10px",
-      fontSize: "14px",
-      outline: "none",
-      direction: "rtl",
-      background: "#F8FAFC",
-    }}
-  />
-</div>
-
-<p style={{
-  margin: 0,
-}}>
-  ✨ الخطابات المسجلة ومسار حركتها بين الإدارات
-</p>
+                ✨ الخطابات المسجلة ومسار حركتها بين الإدارات
               </p>
             </div>
 
@@ -3888,6 +1645,7 @@ const startQrScanner = async () => {
             onClose={() =>
               setSelectedLetter(null)
             }
+            onMoveNext={moveLetterToNextStation}
           />
         )}
 
@@ -4589,7 +2347,7 @@ const startQrScanner = async () => {
    تفاصيل الخطاب - التصميم المميز
    ========================================================= */
 
-function LetterDetails({ letter, onClose }) {
+function LetterDetails({ letter, onClose, onMoveNext }) {
   const movements = letter.movements || [];
 
   const completedCount = movements.filter(
@@ -5678,6 +3436,7 @@ function LetterDetails({ letter, onClose }) {
           >
             <button
               type="button"
+              onClick={() => onMoveNext(letter)}
               style={{
                 border: "none",
                 borderRadius: "14px",
@@ -6222,17 +3981,3 @@ const tdStyle = {
   whiteSpace:
     "nowrap",
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
