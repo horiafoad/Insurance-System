@@ -150,13 +150,30 @@ const qrHasPreviousCompletedStation = useMemo(
 
         /* ================= LETTER ================= */
 
-        const { data: letterData, error: letterError } = await supabase
+        let { data: letterData, error: letterError } = await supabase
           .from("letters")
           .select(
-            "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+            "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at, letter_type, template_id, template_name, letter_title, variable_data, final_text"
           )
           .eq("qr_code_id", qrData.id)
           .maybeSingle();
+
+        // لو أعمدة القوالب غير مفعّلة (مigration غير مشغّل) نعيد المحاولة بالأعمدة
+        // الأساسية حتى لا يفشل عرض بيانات الخطاب المرتبط بكود QR.
+        if (letterError) {
+          const fallback = await supabase
+            .from("letters")
+            .select(
+              "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at, letter_type"
+            )
+            .eq("qr_code_id", qrData.id)
+            .maybeSingle();
+
+          if (!fallback.error) {
+            letterData = fallback.data;
+            letterError = null;
+          }
+        }
 
         if (letterError) throw letterError;
 
@@ -1928,7 +1945,103 @@ const updatedMovements = qrLetter.movements.map((movement) =>
                       {qrLetter.subject ||
                         "غير محدد"}
                     </div>
+
+                    {(qrLetter.letter_type ||
+                      qrLetter.template_name) && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "6px",
+                          flexWrap: "wrap",
+                          marginTop: "10px",
+                        }}
+                      >
+                        {qrLetter.letter_type && (
+                          <span
+                            style={{
+                              padding:
+                                "3px 10px",
+                              borderRadius:
+                                "999px",
+                              background:
+                                "#EFF6FF",
+                              border:
+                                "1px solid #BFDBFE",
+                              color:
+                                "#1D4ED8",
+                              fontSize:
+                                "11px",
+                              fontWeight:
+                                "800",
+                            }}
+                          >
+                            {qrLetter.letter_type}
+                          </span>
+                        )}
+
+                        {qrLetter.template_name && (
+                          <span
+                            style={{
+                              padding:
+                                "3px 10px",
+                              borderRadius:
+                                "999px",
+                              background:
+                                "#FAF5FF",
+                              border:
+                                "1px solid #E9D5FF",
+                              color:
+                                "#7C3AED",
+                              fontSize:
+                                "11px",
+                              fontWeight:
+                                "800",
+                            }}
+                          >
+                            📄 {qrLetter.template_name}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
+
+                  {qrLetter.final_text && (
+                    <div
+                      style={{
+                        background:
+                          "linear-gradient(135deg,#FAF5FF,#F3E8FF)",
+                        borderRadius: "16px",
+                        padding: "18px",
+                        marginBottom: "28px",
+                        border:
+                          "1px solid #E9D5FF",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#7C3AED",
+                          marginBottom: "9px",
+                          fontWeight: "800",
+                        }}
+                      >
+                        📜 نص الخطاب
+                      </div>
+
+                      <div
+                        style={{
+                          whiteSpace: "pre-wrap",
+                          direction: "rtl",
+                          textAlign: "right",
+                          color: "#0F172A",
+                          fontSize: "14px",
+                          lineHeight: 1.9,
+                        }}
+                      >
+                        {qrLetter.final_text}
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <h2

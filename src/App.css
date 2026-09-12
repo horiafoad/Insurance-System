@@ -175,6 +175,34 @@ textarea.form-control {
   box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
 }
 
+/* إدارة قوالب الخطابات - زر رئيسي */
+.letter-template-manager-btn {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.letter-template-manager-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(124, 58, 237, 0.38) !important;
+}
+
+.letter-template-manager-btn:active {
+  transform: translateY(0px);
+}
+
+/* زر إدارة الخطابات الثابت أعلى الصفحة */
+.letters-qa-admin-btn {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.letters-qa-admin-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(18, 61, 120, 0.38) !important;
+}
+
+.letters-qa-admin-btn:active {
+  transform: translateY(0px);
+}
+
 /* Toast Messages */
 .toast-msg {
   background: #065f46;

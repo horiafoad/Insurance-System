@@ -1,9 +1,13 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
+import {
+  buildFinalText,
+  resolveNextLetterNumber,
+} from "../utils/letterTemplateHelpers";
 
-const today = new Date().toISOString().slice(0, 10);
+const creationToday = new Date().toISOString().slice(0, 10);
 
-const statusConfig = {
+const creationStatusConfig = {
   in_progress: {
     label: "جاري التنفيذ",
     icon: "🔵",
@@ -27,18 +31,77 @@ const statusConfig = {
   },
 };
 
+function CreationPanelField({ label, children }) {
+  return (
+    <div>
+      <label
+        style={{
+          display: "block",
+          marginBottom: 7,
+          color: "#334155",
+          fontSize: 13,
+          fontWeight: 800,
+        }}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function creationPanelRouteActionStyle(enabled) {
+  return {
+    width: 32,
+    height: 32,
+    border: "1px solid #cbd5e1",
+    borderRadius: 8,
+    background: enabled ? "#f8fafc" : "#f1f5f9",
+    color: enabled ? "#334155" : "#cbd5e1",
+    fontWeight: 900,
+    cursor: enabled ? "pointer" : "not-allowed",
+  };
+}
+
+const creationPanelInputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  border: "1px solid #cbd5e1",
+  borderRadius: 11,
+  padding: "11px 13px",
+  background: "#fff",
+  color: "#0f172a",
+  fontSize: 14,
+  outline: "none",
+};
+
+const creationPanelNewButtonStyle = {
+  width: 44,
+  minWidth: 44,
+  border: 0,
+  borderRadius: 11,
+  background: "#0f172a",
+  color: "#fff",
+  fontSize: 24,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 export default function LetterCreationPanel() {
   const [senders, setSenders] = useState([]);
   const [qrCodes, setQrCodes] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [templates, setTemplates] = useState([]);
 
-  const [letterNumber, setLetterNumber] = useState("");
-  const [letterDate, setLetterDate] = useState(today);
+  const [letterDate, setLetterDate] = useState(creationToday);
   const [senderId, setSenderId] = useState("");
   const [senderSearch, setSenderSearch] = useState("");
   const [subject, setSubject] = useState("");
   const [notes, setNotes] = useState("");
   const [qrCodeId, setQrCodeId] = useState("");
+
+  const [templateId, setTemplateId] = useState("");
+  const [variableValues, setVariableValues] = useState({});
 
   const [route, setRoute] = useState([]);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
@@ -50,10 +113,12 @@ export default function LetterCreationPanel() {
   const [savingLetter, setSavingLetter] = useState(false);
   const [savingSender, setSavingSender] = useState(false);
 
+  const templatesLoadedRef = useRef(false);
+
   const loadData = async () => {
     setLoading(true);
 
-    const [sendersResult, qrResult, departmentsResult] =
+    const [sendersResult, qrResult, departmentsResult, templatesResult] =
       await Promise.all([
         supabase
           .from("letter_senders")
@@ -71,6 +136,12 @@ export default function LetterCreationPanel() {
         supabase
           .from("letter_departments")
           .select("id,name,is_active")
+          .eq("is_active", true)
+          .order("name"),
+
+        supabase
+          .from("letter_templates")
+          .select("id, name, letter_type, department_name, title, fixed_text, variable_fields, is_active, default_route")
           .eq("is_active", true)
           .order("name"),
       ]);
@@ -91,10 +162,15 @@ export default function LetterCreationPanel() {
     if (!departmentsResult.error) {
       setDepartments(departmentsResult.data || []);
     } else {
-      console.error(
-        "تعذر تحميل الإدارات:",
-        departmentsResult.error
-      );
+      console.error("تعذر تحميل الإدارات:", departmentsResult.error);
+    }
+
+    // القوالب لم تُهاجر بعد؟ نكمل عمل النظام القديم بالكامل
+    if (!templatesResult.error) {
+      setTemplates(templatesResult.data || []);
+      templatesLoadedRef.current = true;
+    } else if (!templatesLoadedRef.current) {
+      console.warn("تعذر تحميل القوالب (قد لا يزال الجدول غير مفعّل):", templatesResult.error);
     }
 
     setLoading(false);
@@ -106,9 +182,7 @@ export default function LetterCreationPanel() {
 
   const filteredSenders = useMemo(() => {
     const term = senderSearch.trim().toLowerCase();
-
     if (!term) return senders;
-
     return senders.filter((sender) =>
       sender.name.toLowerCase().includes(term)
     );
@@ -117,6 +191,61 @@ export default function LetterCreationPanel() {
   const selectedSender = senders.find(
     (sender) => String(sender.id) === String(senderId)
   );
+
+  const selectedTemplate = templates.find(
+    (template) => String(template.id) === String(templateId)
+  );
+
+  const templateKeys = useMemo(() => {
+    if (!selectedTemplate) return [];
+    const raw = selectedTemplate.variable_fields || [];
+    if (Array.isArray(raw)) return raw.map((field) => String(field.key));
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed) ? parsed.map((field) => String(field.key)) : [];
+    } catch {
+      return [];
+    }
+  }, [selectedTemplate]);
+
+  const finalPreview = useMemo(() => {
+    if (!selectedTemplate) return "";
+    return buildFinalText(selectedTemplate, variableValues);
+  }, [selectedTemplate, variableValues]);
+
+  const normalizeRoute = (raw) => {
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((item) => item && (item.name || "").trim())
+        .map((item) => ({
+          id: item.id ?? item.department_id ?? "",
+          name: (item.name || "").trim(),
+        }));
+    }
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed) ? normalizeRoute(parsed) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const handleTemplateChange = (value) => {
+    setTemplateId(value);
+    setVariableValues({});
+
+    const template = templates.find(
+      (item) => String(item.id) === String(value)
+    );
+
+    if (template) {
+      setSubject(template.title || template.name || "");
+      setRoute(normalizeRoute(template.default_route));
+    } else {
+      setSubject("");
+      setRoute([]);
+    }
+  };
 
   const availableDepartments = departments.filter(
     (department) =>
@@ -154,10 +283,7 @@ export default function LetterCreationPanel() {
       const next = [...prev];
       const targetIndex = index + direction;
 
-      if (
-        targetIndex < 0 ||
-        targetIndex >= next.length
-      ) {
+      if (targetIndex < 0 || targetIndex >= next.length) {
         return prev;
       }
 
@@ -201,7 +327,6 @@ export default function LetterCreationPanel() {
             const exists = prev.some(
               (item) => item.id === existing.id
             );
-
             return exists
               ? prev
               : [...prev, existing].sort((a, b) =>
@@ -243,11 +368,6 @@ export default function LetterCreationPanel() {
       return;
     }
 
-    if (!letterNumber.trim()) {
-      alert("من فضلك أدخل رقم الخطاب");
-      return;
-    }
-
     if (!letterDate) {
       alert("من فضلك اختر تاريخ الخطاب");
       return;
@@ -258,7 +378,17 @@ export default function LetterCreationPanel() {
       return;
     }
 
-    if (!subject.trim()) {
+    if (selectedTemplate) {
+      const missingKeys = templateKeys.filter((key) => {
+        const value = variableValues[key];
+        return !value || !String(value).trim();
+      });
+
+      if (missingKeys.length > 0) {
+        alert("من فضلك أكمل الحقول المتغيرة للقالب");
+        return;
+      }
+    } else if (!subject.trim()) {
       alert("من فضلك أدخل موضوع الخطاب");
       return;
     }
@@ -274,20 +404,74 @@ export default function LetterCreationPanel() {
       (qr) => String(qr.id) === String(qrCodeId)
     );
 
-    const { data: letter, error: letterError } =
-      await supabase
+    // الترقيم التلقائي: من العدّاد في قاعدة البيانات (فريد ولا يُعاد استخدامه)
+    let letterNumber = "";
+
+    try {
+      letterNumber = await resolveNextLetterNumber(supabase);
+    } catch (error) {
+      console.error("Auto letter number error:", error);
+      alert("تعذر توليد رقم الخطاب التلقائي: " + error.message);
+      setSavingLetter(false);
+      return;
+    }
+
+    const finalText = selectedTemplate
+      ? buildFinalText(selectedTemplate, variableValues)
+      : null;
+
+    const payload = {
+      qr_code_id: Number(qrCodeId),
+      letter_number: letterNumber,
+      letter_date: letterDate,
+      sender_id: Number(senderId),
+      subject: subject.trim() || (selectedTemplate?.title || "").trim(),
+      status: "in_progress",
+      notes: notes.trim() || null,
+    };
+
+    if (selectedTemplate) {
+      payload.letter_type = selectedTemplate.letter_type || null;
+
+      // أعمدة القوالب الجديدة تُرسل فقط إذا كان جدول letter_templates موجودًا
+      // (أي تم تشغيل create_letter_templates_and_numbering.sql).
+      if (templatesLoadedRef.current) {
+        payload.template_id = selectedTemplate.id;
+        payload.template_name = selectedTemplate.name || null;
+        payload.letter_title = selectedTemplate.title || null;
+        payload.variable_data = variableValues;
+        payload.final_text = finalText;
+      }
+    }
+
+    let { data: letter, error: letterError } = await supabase
+      .from("letters")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    // لو فشل الـ insert فقط بسبب عدم وجود أعمدة القوالب (migration غير مفعّل)،
+    // نعيد المحاولة بالأعمدة الأساسية حتى يُحفظ الخطاب بنجاح.
+    if (
+      letterError &&
+      (letterError.code === "42703" ||
+        /column .*does not exist/i.test(letterError.message || ""))
+    ) {
+      delete payload.template_id;
+      delete payload.template_name;
+      delete payload.letter_title;
+      delete payload.variable_data;
+      delete payload.final_text;
+
+      const retry = await supabase
         .from("letters")
-        .insert({
-          qr_code_id: Number(qrCodeId),
-          letter_number: letterNumber.trim(),
-          letter_date: letterDate,
-          sender_id: Number(senderId),
-          subject: subject.trim(),
-          status: "in_progress",
-          notes: notes.trim() || null,
-        })
+        .insert(payload)
         .select("id")
         .single();
+
+      letter = retry.data;
+      letterError = retry.error;
+    }
 
     if (letterError) {
       alert("تعذر حفظ الخطاب: " + letterError.message);
@@ -342,7 +526,7 @@ export default function LetterCreationPanel() {
     alert(
       "تم حفظ الخطاب بنجاح ✅\n\n" +
         "رقم الخطاب: " +
-        letterNumber.trim() +
+        letterNumber +
         "\n" +
         "كود QR: " +
         (selectedQr?.code || "") +
@@ -351,8 +535,7 @@ export default function LetterCreationPanel() {
         route.length
     );
 
-    setLetterNumber("");
-    setLetterDate(today);
+    setLetterDate(creationToday);
     setSenderId("");
     setSenderSearch("");
     setSubject("");
@@ -360,8 +543,22 @@ export default function LetterCreationPanel() {
     setQrCodeId("");
     setRoute([]);
     setSelectedDepartmentId("");
+    setTemplateId("");
+    setVariableValues({});
 
     window.location.reload();
+  };
+
+  const getVariableFields = () => {
+    if (!selectedTemplate) return [];
+    const raw = selectedTemplate.variable_fields || [];
+    if (Array.isArray(raw)) return raw;
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   };
 
   return (
@@ -425,6 +622,209 @@ export default function LetterCreationPanel() {
         </div>
       </div>
 
+      {/* اختيار القالب */}
+      <div
+        style={{
+          marginBottom: 18,
+          padding: 16,
+          borderRadius: 14,
+          border: "1px solid #e2e8f0",
+          background: "#f8fafc",
+        }}
+      >
+        <CreationPanelField label="قالب الخطاب">
+          <select
+            value={templateId}
+            onChange={(e) => handleTemplateChange(e.target.value)}
+            style={creationPanelInputStyle}
+          >
+            <option value="">
+              بدون قالب — إدخال يدوي
+            </option>
+
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+                {template.letter_type ? ` — ${template.letter_type}` : ""}
+              </option>
+            ))}
+          </select>
+        </CreationPanelField>
+
+        {selectedTemplate && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 14,
+              borderRadius: 12,
+              background: "#fff",
+              border: "1px solid #dbeafe",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "8px 18px",
+                marginBottom: 12,
+                fontSize: 13,
+              }}
+            >
+              {selectedTemplate.letter_type && (
+                <span style={{ fontWeight: 800, color: "#1d4ed8" }}>
+                  🏷️ النوع: {selectedTemplate.letter_type}
+                </span>
+              )}
+
+              {selectedTemplate.department_name && (
+                <span style={{ fontWeight: 800, color: "#0f172a" }}>
+                  🏢 الجهة/القسم: {selectedTemplate.department_name}
+                </span>
+              )}
+            </div>
+
+            <div
+              style={{
+                whiteSpace: "pre-wrap",
+                color: "#334155",
+                fontSize: 14,
+                lineHeight: 1.8,
+                maxHeight: 220,
+                overflowY: "auto",
+                background: "#f8fafc",
+                border: "1px dashed #cbd5e1",
+                borderRadius: 10,
+                padding: "12px 14px",
+              }}
+            >
+              {selectedTemplate.fixed_text ||
+                "(لم يُكتب نص ثابت للقالب)"}
+            </div>
+          </div>
+        )}
+
+        {selectedTemplate && getVariableFields().length === 0 && (
+          <div
+            style={{
+              marginTop: 10,
+              fontSize: 12,
+              color: "#b45309",
+              fontWeight: 700,
+            }}
+          >
+            ⚠️ هذا القالب لا يحتوي على حقول متغيرة.
+          </div>
+        )}
+      </div>
+
+      {/* الحقول المتغيرة للقالب */}
+      {selectedTemplate && getVariableFields().length > 0 && (
+        <div
+          style={{
+            marginBottom: 18,
+            padding: 16,
+            borderRadius: 14,
+            border: "1px solid #bfdbfe",
+            background: "#eff6ff",
+          }}
+        >
+          <h3
+            style={{
+              margin: "0 0 12px",
+              color: "#0f172a",
+              fontSize: 15,
+              fontWeight: 800,
+            }}
+          >
+            🧩 الحقول المتغيرة للقالب
+          </h3>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit,minmax(240px,1fr))",
+              gap: 14,
+            }}
+          >
+            {getVariableFields().map((field) => {
+              const key = String(field.key);
+              const isTextarea = field.type === "textarea";
+
+              return (
+                <div key={key} style={{ gridColumn: isTextarea ? "1 / -1" : undefined }}>
+                  <CreationPanelField label={field.label || key}>
+                    {isTextarea ? (
+                      <textarea
+                        rows={3}
+                        value={variableValues[key] || ""}
+                        onChange={(e) =>
+                          setVariableValues((prev) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                        placeholder={field.placeholder || ""}
+                        style={{
+                          ...creationPanelInputStyle,
+                          resize: "vertical",
+                        }}
+                      />
+                    ) : (
+                      <input
+                        value={variableValues[key] || ""}
+                        onChange={(e) =>
+                          setVariableValues((prev) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                        placeholder={field.placeholder || ""}
+                        style={creationPanelInputStyle}
+                      />
+                    )}
+                  </CreationPanelField>
+                </div>
+              );
+            })}
+          </div>
+
+          {finalPreview && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 14,
+                borderRadius: 12,
+                background: "#fff",
+                border: "1px solid #bbf7d0",
+              }}
+            >
+              <div
+                style={{
+                  marginBottom: 6,
+                  fontSize: 12,
+                  color: "#15803d",
+                  fontWeight: 800,
+                }}
+              >
+                👁️ معاينة النص النهائي
+              </div>
+
+              <div
+                style={{
+                  whiteSpace: "pre-wrap",
+                  color: "#0f172a",
+                  fontSize: 14,
+                  lineHeight: 1.8,
+                }}
+              >
+                {finalPreview}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div
         style={{
           display: "grid",
@@ -433,35 +833,38 @@ export default function LetterCreationPanel() {
           gap: 16,
         }}
       >
-        <Field label="رقم الخطاب">
+        <CreationPanelField label="رقم الخطاب">
           <input
-            value={letterNumber}
-            onChange={(e) => setLetterNumber(e.target.value)}
-            placeholder="مثال: 1254"
-            style={inputStyle}
+            value="يُولَّد تلقائيًا عند الحفظ"
+            readOnly
+            disabled={loading}
+            style={{
+              ...creationPanelInputStyle,
+              background: "#f1f5f9",
+              color: "#64748b",
+              cursor: "not-allowed",
+            }}
           />
-        </Field>
+        </CreationPanelField>
 
-        <Field label="تاريخ الخطاب">
+        <CreationPanelField label="تاريخ الخطاب">
           <input
             type="date"
             value={letterDate}
             onChange={(e) => setLetterDate(e.target.value)}
-            style={inputStyle}
+            style={creationPanelInputStyle}
           />
-        </Field>
+        </CreationPanelField>
 
-        <Field label="كود QR">
+        <CreationPanelField label="كود QR">
           <select
             value={qrCodeId}
             onChange={(e) => setQrCodeId(e.target.value)}
-            style={inputStyle}
+            style={creationPanelInputStyle}
             disabled={loading || qrCodes.length === 0}
           >
             {qrCodes.length === 0 ? (
-              <option value="">
-                لا توجد أكواد متاحة
-              </option>
+              <option value="">لا توجد أكواد متاحة</option>
             ) : (
               qrCodes.map((qr) => (
                 <option key={qr.id} value={qr.id}>
@@ -470,27 +873,19 @@ export default function LetterCreationPanel() {
               ))
             )}
           </select>
-        </Field>
+        </CreationPanelField>
 
-        <Field label="الجهة المرسلة">
+        <CreationPanelField label="الجهة المرسلة">
           <div style={{ display: "flex", gap: 8 }}>
-            <div
-              style={{
-                position: "relative",
-                flex: 1,
-              }}
-            >
+            <div style={{ position: "relative", flex: 1 }}>
               <input
-                value={
-                  selectedSender?.name ||
-                  senderSearch
-                }
+                value={selectedSender?.name || senderSearch}
                 onChange={(e) => {
                   setSenderSearch(e.target.value);
                   setSenderId("");
                 }}
                 placeholder="ابحث عن الجهة..."
-                style={inputStyle}
+                style={creationPanelInputStyle}
               />
 
               {senderSearch &&
@@ -505,8 +900,7 @@ export default function LetterCreationPanel() {
                       background: "#fff",
                       border: "1px solid #e2e8f0",
                       borderRadius: 12,
-                      boxShadow:
-                        "0 12px 30px rgba(15,23,42,.12)",
+                      boxShadow: "0 12px 30px rgba(15,23,42,.12)",
                       zIndex: 20,
                       maxHeight: 220,
                       overflowY: "auto",
@@ -541,7 +935,7 @@ export default function LetterCreationPanel() {
             <button
               type="button"
               onClick={() => setShowNewSender(true)}
-              style={newButtonStyle}
+              style={creationPanelNewButtonStyle}
               title="إنشاء جهة جديدة"
             >
               +
@@ -560,33 +954,37 @@ export default function LetterCreationPanel() {
               ✓ تم اختيار: {selectedSender.name}
             </div>
           )}
-        </Field>
+        </CreationPanelField>
 
         <div style={{ gridColumn: "1 / -1" }}>
-          <Field label="موضوع الخطاب">
+          <CreationPanelField label="موضوع الخطاب">
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="اكتب موضوع الخطاب..."
-              style={inputStyle}
+              placeholder={
+                selectedTemplate
+                  ? "يُؤخذ عنوان القالب تلقائيًا (يمكن تعديله)"
+                  : "اكتب موضوع الخطاب..."
+              }
+              style={creationPanelInputStyle}
             />
-          </Field>
+          </CreationPanelField>
         </div>
 
         <div style={{ gridColumn: "1 / -1" }}>
-          <Field label="ملاحظات">
+          <CreationPanelField label="ملاحظات">
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="أي ملاحظات إضافية..."
               rows={3}
               style={{
-                ...inputStyle,
+                ...creationPanelInputStyle,
                 resize: "vertical",
                 minHeight: 80,
               }}
             />
-          </Field>
+          </CreationPanelField>
         </div>
       </div>
 
@@ -658,12 +1056,10 @@ export default function LetterCreationPanel() {
         >
           <select
             value={selectedDepartmentId}
-            onChange={(e) =>
-              setSelectedDepartmentId(e.target.value)
-            }
+            onChange={(e) => setSelectedDepartmentId(e.target.value)}
             disabled={loading || availableDepartments.length === 0}
             style={{
-              ...inputStyle,
+              ...creationPanelInputStyle,
               flex: 1,
               minWidth: 0,
             }}
@@ -675,10 +1071,7 @@ export default function LetterCreationPanel() {
             </option>
 
             {availableDepartments.map((department) => (
-              <option
-                key={department.id}
-                value={department.id}
-              >
+              <option key={department.id} value={department.id}>
                 {department.name}
               </option>
             ))}
@@ -734,8 +1127,8 @@ export default function LetterCreationPanel() {
             {route.map((department, index) => {
               const isFirst = index === 0;
               const config = isFirst
-                ? statusConfig.in_progress
-                : statusConfig.waiting;
+                ? creationStatusConfig.in_progress
+                : creationStatusConfig.waiting;
 
               return (
                 <div
@@ -795,12 +1188,10 @@ export default function LetterCreationPanel() {
                         index < route.length - 1 ? 10 : 0,
                       marginRight: 10,
                       background: "#fff",
-                      border:
-                        `1px solid ${config.border}`,
+                      border: `1px solid ${config.border}`,
                       borderRadius: 14,
                       padding: "12px 14px",
-                      boxShadow:
-                        "0 4px 14px rgba(15,23,42,.05)",
+                      boxShadow: "0 4px 14px rgba(15,23,42,.05)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
@@ -851,28 +1242,20 @@ export default function LetterCreationPanel() {
                     >
                       <button
                         type="button"
-                        onClick={() =>
-                          moveDepartment(index, -1)
-                        }
+                        onClick={() => moveDepartment(index, -1)}
                         disabled={index === 0}
                         title="تحريك لأعلى"
-                        style={routeActionStyle(
-                          index !== 0
-                        )}
+                        style={creationPanelRouteActionStyle(index !== 0)}
                       >
                         ↑
                       </button>
 
                       <button
                         type="button"
-                        onClick={() =>
-                          moveDepartment(index, 1)
-                        }
-                        disabled={
-                          index === route.length - 1
-                        }
+                        onClick={() => moveDepartment(index, 1)}
+                        disabled={index === route.length - 1}
                         title="تحريك لأسفل"
-                        style={routeActionStyle(
+                        style={creationPanelRouteActionStyle(
                           index !== route.length - 1
                         )}
                       >
@@ -881,12 +1264,10 @@ export default function LetterCreationPanel() {
 
                       <button
                         type="button"
-                        onClick={() =>
-                          removeDepartmentFromRoute(index)
-                        }
+                        onClick={() => removeDepartmentFromRoute(index)}
                         title="حذف من المسار"
                         style={{
-                          ...routeActionStyle(true),
+                          ...creationPanelRouteActionStyle(true),
                           color: "#dc2626",
                           borderColor: "#fecaca",
                           background: "#fff",
@@ -917,17 +1298,9 @@ export default function LetterCreationPanel() {
               fontWeight: 800,
             }}
           >
-            <span style={{ color: "#16a34a" }}>
-              🟢 تم التنفيذ
-            </span>
-
-            <span style={{ color: "#2563eb" }}>
-              🔵 جاري التنفيذ
-            </span>
-
-            <span style={{ color: "#64748b" }}>
-              ⚪ في الانتظار
-            </span>
+            <span style={{ color: "#16a34a" }}>🟢 تم التنفيذ</span>
+            <span style={{ color: "#2563eb" }}>🔵 جاري التنفيذ</span>
+            <span style={{ color: "#64748b" }}>⚪ في الانتظار</span>
           </div>
         )}
       </div>
@@ -948,18 +1321,12 @@ export default function LetterCreationPanel() {
             borderRadius: 12,
             padding: "12px 24px",
             background:
-              savingLetter || loading
-                ? "#94a3b8"
-                : "#0f172a",
+              savingLetter || loading ? "#94a3b8" : "#0f172a",
             color: "#fff",
             fontSize: 15,
             fontWeight: 800,
-            cursor:
-              savingLetter || loading
-                ? "not-allowed"
-                : "pointer",
-            boxShadow:
-              "0 7px 18px rgba(15,23,42,.16)",
+            cursor: savingLetter || loading ? "not-allowed" : "pointer",
+            boxShadow: "0 7px 18px rgba(15,23,42,.16)",
           }}
         >
           {savingLetter
@@ -987,8 +1354,7 @@ export default function LetterCreationPanel() {
               background: "#fff",
               borderRadius: 20,
               padding: 24,
-              boxShadow:
-                "0 25px 70px rgba(0,0,0,.2)",
+              boxShadow: "0 25px 70px rgba(0,0,0,.2)",
             }}
           >
             <h3
@@ -1014,11 +1380,9 @@ export default function LetterCreationPanel() {
             <input
               autoFocus
               value={newSenderName}
-              onChange={(e) =>
-                setNewSenderName(e.target.value)
-              }
+              onChange={(e) => setNewSenderName(e.target.value)}
               placeholder="اسم الجهة"
-              style={inputStyle}
+              style={creationPanelInputStyle}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   handleCreateSender();
@@ -1045,14 +1409,10 @@ export default function LetterCreationPanel() {
                   background: "#0f172a",
                   color: "#fff",
                   fontWeight: 800,
-                  cursor: savingSender
-                    ? "not-allowed"
-                    : "pointer",
+                  cursor: savingSender ? "not-allowed" : "pointer",
                 }}
               >
-                {savingSender
-                  ? "جاري الحفظ..."
-                  : "حفظ الجهة"}
+                {savingSender ? "جاري الحفظ..." : "حفظ الجهة"}
               </button>
 
               <button
@@ -1080,59 +1440,3 @@ export default function LetterCreationPanel() {
     </div>
   );
 }
-
-function Field({ label, children }) {
-  return (
-    <div>
-      <label
-        style={{
-          display: "block",
-          marginBottom: 7,
-          color: "#334155",
-          fontSize: 13,
-          fontWeight: 800,
-        }}
-      >
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function routeActionStyle(enabled) {
-  return {
-    width: 32,
-    height: 32,
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: enabled ? "#f8fafc" : "#f1f5f9",
-    color: enabled ? "#334155" : "#cbd5e1",
-    fontWeight: 900,
-    cursor: enabled ? "pointer" : "not-allowed",
-  };
-}
-
-const inputStyle = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: "1px solid #cbd5e1",
-  borderRadius: 11,
-  padding: "11px 13px",
-  background: "#fff",
-  color: "#0f172a",
-  fontSize: 14,
-  outline: "none",
-};
-
-const newButtonStyle = {
-  width: 44,
-  minWidth: 44,
-  border: 0,
-  borderRadius: 11,
-  background: "#0f172a",
-  color: "#fff",
-  fontSize: 24,
-  fontWeight: 700,
-  cursor: "pointer",
-};

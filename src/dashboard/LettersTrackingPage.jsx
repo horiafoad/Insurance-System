@@ -2,6 +2,8 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../supabaseClient";
+import LetterCreationPanel from "./LetterCreationPanel";
+import LetterTemplatesManager from "./LetterTemplatesManager";
 
 
 // --- letterHelpers.js ---
@@ -890,7 +892,7 @@ const creationStatusConfig = {
   },
 };
 
-function LetterCreationPanel() {
+function LegacyInactiveLetterCreationPanel() {
   const [senders, setSenders] = useState([]);
   const [qrCodes, setQrCodes] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -2003,6 +2005,9 @@ const creationPanelNewButtonStyle = {
 const PUBLIC_APP_URL = "https://insurance-system-9et.pages.dev/";
 
 export default function LettersTrackingPage({ qrCode = "", currentUser = null }) {
+  // إدارة أكواد QR متاحة للأدمن فقط (منشئ البرنامج / مدير عام / مدير)
+  const isAdmin = ["creator", "super_admin", "admin"].includes(currentUser?.role);
+
   const [qrCodes, setQrCodes] = useState([]);
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2018,6 +2023,14 @@ export default function LettersTrackingPage({ qrCode = "", currentUser = null })
   const [printCodes, setPrintCodes] = useState([]);
   const [selectedLetter, setSelectedLetter] = useState(null);
   const [refreshingLetters, setRefreshingLetters] = useState(false);
+
+  // لوحة إدارة أكواد QR الجانبية (للأدمن فقط)
+  const [qrPanelOpen, setQrPanelOpen] = useState(false);
+  const [qrSearch, setQrSearch] = useState("");
+
+  // قوالب الخطابات (للأدمن فقط: الإدارة — للجميع: الاستخدام)
+  const [letterTemplates, setLetterTemplates] = useState([]);
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
 
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerLoading, setScannerLoading] = useState(false);
@@ -2066,13 +2079,30 @@ const loadScannedLetter = async (code) => {
     throw new Error("كود QR غير موجود في النظام.");
   }
 
-  const { data: letterData, error: letterError } = await supabase
+  let { data: letterData, error: letterError } = await supabase
     .from("letters")
     .select(
-      "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+      "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at, letter_type, template_id, template_name, letter_title, variable_data, final_text"
     )
     .eq("qr_code_id", qrData.id)
     .maybeSingle();
+
+  // لو أعمدة القوالب غير مفعّلة (migration غير مشغّل) نعيد المحاولة بالأعمدة
+  // الأساسية حتى لا يفشل مسح QR المتعلق بالخطاب.
+  if (letterError) {
+    const fallback = await supabase
+      .from("letters")
+      .select(
+        "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at, letter_type"
+      )
+      .eq("qr_code_id", qrData.id)
+      .maybeSingle();
+
+    if (!fallback.error) {
+      letterData = fallback.data;
+      letterError = null;
+    }
+  }
 
   if (letterError) {
     console.error("Letter lookup error:", letterError);
@@ -2285,6 +2315,26 @@ const startQrScanner = async () => {
     setLoading(false);
   };
 
+  const loadLetterTemplates = async () => {
+    const { data, error } = await supabase
+      .from("letter_templates")
+      .select(
+        "id, name, letter_type, department_name, title, fixed_text, variable_fields, is_active, default_route"
+      )
+      .order("name");
+
+    if (error) {
+      console.warn(
+        "تعذر تحميل قوالب الخطابات (قد لا يكون الجدول مفعّلًا بعد):",
+        error
+      );
+      setLetterTemplates([]);
+      return;
+    }
+
+    setLetterTemplates(data || []);
+  };
+
   useEffect(() => {
     if (!qrCode || !letters.length) return;
 
@@ -2303,13 +2353,29 @@ const startQrScanner = async () => {
     setLoadingLetters(true);
 
     try {
-      const { data: lettersData, error: lettersError } =
+      let { data: lettersData, error: lettersError } =
         await supabase
           .from("letters")
           .select(
-            "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+            "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at, letter_type, template_id, template_name, letter_title, variable_data, final_text"
           )
           .order("id", { ascending: false });
+
+      // لو أعمدة القوالب غير مفعّلة (create_letter_templates_and_numbering.sql لم
+      // يُشغَّل بعد) نعيد المحاولة بالأعمدة الأساسية حتى لا يختفي سجل الخطابات.
+      if (lettersError) {
+        const fallback = await supabase
+          .from("letters")
+          .select(
+            "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at, letter_type"
+          )
+          .order("id", { ascending: false });
+
+        if (!fallback.error) {
+          lettersData = fallback.data || [];
+          lettersError = null;
+        }
+      }
 
       if (lettersError) {
         console.error("Error loading letters:", lettersError);
@@ -2486,6 +2552,7 @@ const startQrScanner = async () => {
   useEffect(() => {
     loadQRCodes();
     loadLetters();
+    loadLetterTemplates();
 
     return () => {
       stopQrScanner();
@@ -2498,6 +2565,7 @@ const startQrScanner = async () => {
     await Promise.all([
       loadQRCodes(),
       loadLetters(),
+      loadLetterTemplates(),
     ]);
 
     setRefreshingLetters(false);
@@ -2765,7 +2833,7 @@ const startQrScanner = async () => {
   const filteredCodes = qrCodes.filter(
     (item) => {
       const value =
-        search.trim().toLowerCase();
+        qrSearch.trim().toLowerCase();
 
       if (!value) {
         return true;
@@ -2824,6 +2892,15 @@ const startQrScanner = async () => {
           .toLowerCase()
           .includes(value) ||
         String(letter.qr?.code || "")
+          .toLowerCase()
+          .includes(value) ||
+        String(letter.letter_type || "")
+          .toLowerCase()
+          .includes(value) ||
+        String(letter.template_name || "")
+          .toLowerCase()
+          .includes(value) ||
+        String(letter.final_text || "")
           .toLowerCase()
           .includes(value)
       );
@@ -3153,6 +3230,74 @@ const startQrScanner = async () => {
     } catch (error) {
       console.error(
         "Reprint letter QR error:",
+        error
+      );
+      alert("حدث خطأ أثناء تجهيز QR للطباعة.");
+    } finally {
+      setPrintLoading(false);
+    }
+  };
+
+  // إعادة طباعة QR موجود بنفس الكود القديم من لوحة إدارة أكواد QR
+  // (بدون إنشاء كود جديد للخطاب) — استرجاع من جدول archive_qr_codes نفسه.
+  const handleReprintQrCode = async (qrItem) => {
+    const code = qrItem?.code;
+
+    if (!code) {
+      alert("لا يوجد كود QR مرتبط.");
+      return;
+    }
+
+    const linkedLetter = letters.find(
+      (letter) => letter.qr_code_id === qrItem?.id
+    );
+
+    setPrintLoading(true);
+
+    try {
+      const trackingUrl =
+        PUBLIC_APP_URL +
+        "?qr=" +
+        encodeURIComponent(code);
+
+      const dataUrl = await QRCode.toDataURL(
+        trackingUrl,
+        {
+          width: 600,
+          margin: 2,
+          errorCorrectionLevel: "H",
+          color: {
+            dark: "#000000",
+            light: "#ffffff",
+          },
+        }
+      );
+
+      setPrintCodes([
+        {
+          id: qrItem.id,
+          code,
+          dataUrl,
+          trackingUrl,
+        },
+      ]);
+
+      alert(
+        "تم تجهيز QR بنفس الكود القديم للطباعة.\n" +
+          "كود QR: " +
+          code +
+          (linkedLetter
+            ? "\nرقم الخطاب: " +
+              (linkedLetter.letter_number || "—")
+            : "")
+      );
+
+      setTimeout(() => {
+        window.print();
+      }, 700);
+    } catch (error) {
+      console.error(
+        "Reprint QR code error:",
         error
       );
       alert("حدث خطأ أثناء تجهيز QR للطباعة.");
@@ -3521,6 +3666,48 @@ const startQrScanner = async () => {
         }}
       >
         {/* =========================
+            زر إدارة الخطابات الثابت أعلى الصفحة (للأدمن فقط)
+           ========================= */}
+        {isAdmin && (
+          <div
+            style={{
+              position: "sticky",
+              top: "10px",
+              zIndex: 99975,
+              display: "flex",
+              justifyContent: "flex-end",
+              marginBottom: "14px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setQrPanelOpen(true)}
+              title="إدارة الخطابات"
+              className="letters-qa-admin-btn"
+              style={{
+                border: "1px solid #1E40AF",
+                borderRadius: "13px",
+                padding: "11px 18px",
+                background:
+                  "linear-gradient(135deg,#071A3A,#123D78)",
+                color: "#fff",
+                fontSize: "13px",
+                fontWeight: "800",
+                cursor: "pointer",
+                boxShadow:
+                  "0 10px 28px rgba(15,23,42,0.28)",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>⚙️</span>
+              <span>إدارة الخطابات</span>
+            </button>
+          </div>
+        )}
+
+        {/* =========================
             Header
            ========================= */}
         <div
@@ -3620,19 +3807,6 @@ const startQrScanner = async () => {
                 flexWrap: "wrap",
               }}
             >
-              {printCodes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handlePrint}
-                  style={headerButtonStyle(
-                    "#10B981"
-                  )}
-                >
-                  🖨️ طباعة الدفعة الحالية (
-                  {printCodes.length})
-                </button>
-              )}
-
               <button
                 type="button"
                 onClick={refreshLetters}
@@ -3659,27 +3833,6 @@ const startQrScanner = async () => {
                 )}
               >
                 📷 مسح QR للخطاب
-              </button>
-
-              <button
-                type="button"
-                onClick={
-                  handlePrintExisting
-                }
-                disabled={
-                  printLoading ||
-                  availableCount === 0
-                }
-                style={headerButtonStyle(
-                  printLoading ||
-                    availableCount === 0
-                    ? "#64748B"
-                    : "#2563EB"
-                )}
-              >
-                {printLoading
-                  ? "⏳ تجهيز الطباعة..."
-                  : "🖨️ طباعة الأكواد المتاحة"}
               </button>
             </div>
           </div>
@@ -3986,9 +4139,76 @@ const startQrScanner = async () => {
                               "260px",
                           }}
                         >
-                          📝{" "}
-                          {letter.subject ||
-                            "—"}
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "5px",
+                            }}
+                          >
+                            <span>
+                              📝{" "}
+                              {letter.subject ||
+                                "—"}
+                            </span>
+
+                            {(letter.letter_type ||
+                              letter.template_name) && (
+                              <span
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: "4px",
+                                }}
+                              >
+                                {letter.letter_type && (
+                                  <span
+                                    style={{
+                                      padding:
+                                        "2px 8px",
+                                      borderRadius:
+                                        "999px",
+                                      background:
+                                        "#EFF6FF",
+                                      border:
+                                        "1px solid #BFDBFE",
+                                      color:
+                                        "#1D4ED8",
+                                      fontSize:
+                                        "10px",
+                                      fontWeight:
+                                        "800",
+                                    }}
+                                  >
+                                    {letter.letter_type}
+                                  </span>
+                                )}
+
+                                {letter.template_name && (
+                                  <span
+                                    style={{
+                                      padding:
+                                        "2px 8px",
+                                      borderRadius:
+                                        "999px",
+                                      background:
+                                        "#FAF5FF",
+                                      border:
+                                        "1px solid #E9D5FF",
+                                      color:
+                                        "#7C3AED",
+                                      fontSize:
+                                        "10px",
+                                      fontWeight:
+                                        "800",
+                                    }}
+                                  >
+                                    📄 {letter.template_name}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td
@@ -4020,7 +4240,7 @@ const startQrScanner = async () => {
                                 "—"}
                             </strong>
 
-                            {letter.qr?.code && (
+                            {isAdmin && letter.qr?.code && (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -4222,8 +4442,253 @@ const startQrScanner = async () => {
               setSelectedLetter(null)
             }
             onReprintQr={handleReprintLetterQr}
+            isAdmin={isAdmin}
           />
         )}
+
+        {/* =========================
+            لوحة إدارة أكواد QR الجانبية (للأدمن فقط)
+           ========================= */}
+        {isAdmin && qrPanelOpen && (
+          <>
+            <div
+              onClick={() => setQrPanelOpen(false)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(15,23,42,0.55)",
+                zIndex: 99990,
+              }}
+            />
+
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                bottom: 0,
+                right: 0,
+                width: "min(500px,100vw)",
+                boxSizing: "border-box",
+                background: "#F8FAFC",
+                zIndex: 99991,
+                overflowY: "auto",
+                padding: "18px",
+                direction: "rtl",
+                borderLeft: "1px solid #E2E8F0",
+                boxShadow:
+                  "-14px 0 45px rgba(15,23,42,0.25)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent:
+                    "space-between",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginBottom: "16px",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+fontSize: "20px",
+                    fontWeight: "900",
+                    color: "#0F172A",
+                  }}
+                >
+                  ⚙️ إدارة الخطابات
+                </div>
+
+                <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#64748B",
+                      marginTop: "3px",
+                    }}
+                  >
+                    أدوات الإدارة الكاملة للخطابات (للأدمن فقط): القوالب وأكواد QR
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQrPanelOpen(false)
+                  }
+                  style={{
+                    border: "none",
+                    width: "38px",
+                    height: "38px",
+                    minWidth: "38px",
+                    borderRadius: "50%",
+                    background: "#F1F5F9",
+                    color: "#334155",
+                    fontSize: "20px",
+                    cursor: "pointer",
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* ============ قسم 1: قوالب الخطابات ============ */}
+              <AdminSectionTitle
+                index="١"
+                icon="📄"
+                title="قوالب الخطابات"
+              />
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  background: "#fff",
+                  borderRadius: "18px",
+                  padding: "15px 17px",
+                  marginBottom: "20px",
+                  boxShadow:
+                    "0 7px 22px rgba(15,23,42,0.05)",
+                  border:
+                    "1px solid #E9D5FF",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "46px",
+                      height: "46px",
+                      borderRadius: "14px",
+                      background:
+                        "linear-gradient(135deg,#F5F3FF,#EDE9FE)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "23px",
+                    }}
+                  >
+                    🗂️
+                  </div>
+
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: "900",
+                        color: "#0F172A",
+                      }}
+                    >
+                      قوالب الخطابات والبيانات الثابتة
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#64748B",
+                        marginTop: "4px",
+                      }}
+                    >
+                      إضافة وتعديل القوالب والحقول الثابتة للخطابات
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQrPanelOpen(false);
+                    setTemplateManagerOpen(true);
+                  }}
+                  style={{
+                    border: "1px solid #C4B5FD",
+                    borderRadius: "11px",
+                    padding: "9px 15px",
+                    background: "#7C3AED",
+                    color: "#fff",
+                    fontSize: "13px",
+                    fontWeight: "800",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    boxShadow:
+                      "0 5px 14px rgba(124,58,237,0.25)",
+                  }}
+                >
+                  📄 فتح الإدارة
+                </button>
+              </div>
+
+              {/* ============ قسم 2: أكواد QR ============ */}
+              <AdminSectionTitle
+                index="٢"
+                icon="🏷️"
+                title="إنشاء وطباعة أكواد QR"
+              />
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                  marginBottom: "14px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handlePrintExisting}
+                  disabled={
+                    printLoading || availableCount === 0
+                  }
+                  style={{
+                    border: "none",
+                    borderRadius: "11px",
+                    padding: "10px 16px",
+                    background:
+                      printLoading || availableCount === 0
+                        ? "#94A3B8"
+                        : "#2563EB",
+                    color: "#fff",
+                    fontSize: "13px",
+                    fontWeight: "800",
+                    cursor:
+                      printLoading || availableCount === 0
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {printLoading
+                    ? "⏳ جاري التجهيز..."
+                    : "🖨️ طباعة كل الأكواد المتاحة"}
+                </button>
+
+                {printCodes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    style={{
+                      border: "none",
+                      borderRadius: "11px",
+                      padding: "10px 16px",
+                      background: "#10B981",
+                      color: "#fff",
+                      fontSize: "13px",
+                      fontWeight: "800",
+                      cursor: "pointer",
+                    }}
+                  >
+                    🖨️ طباعة الدفعة الحالية (
+                    {printCodes.length})
+                  </button>
+                )}
+              </div>
 
         {/* =========================
             إنشاء دفعة QR
@@ -4400,6 +4865,12 @@ const startQrScanner = async () => {
         {/* =========================
             الإحصائيات
            ========================= */}
+        <AdminSectionTitle
+          index="٣"
+          icon="📊"
+          title="إحصائيات الأكواد (المتاحة والمستخدمة والمؤرشفة)"
+        />
+
         <div
           style={{
             display: "grid",
@@ -4437,6 +4908,12 @@ const startQrScanner = async () => {
         {/* =========================
             البحث
            ========================= */}
+        <AdminSectionTitle
+          index="٤"
+          icon="🔎"
+          title="البحث عن كود QR"
+        />
+
         <div
           style={{
             background: "#fff",
@@ -4469,13 +4946,13 @@ const startQrScanner = async () => {
 
             <input
               type="text"
-              value={search}
+              value={qrSearch}
               onChange={(e) =>
-                setSearch(
+                setQrSearch(
                   e.target.value
                 )
               }
-              placeholder="بحث برقم QR أو رقم الخطاب أو الموضوع..."
+              placeholder="🔎 البحث عن QR برقم الكود أو الحالة..."
               style={{
                 width: "100%",
                 boxSizing:
@@ -4497,6 +4974,12 @@ const startQrScanner = async () => {
         {/* =========================
             سجل أكواد QR
            ========================= */}
+        <AdminSectionTitle
+          index="٥"
+          icon="📋"
+          title="سجل الأكواد وإعادة الطباعة"
+        />
+
         <div
           style={{
             background: "#fff",
@@ -4662,6 +5145,12 @@ const startQrScanner = async () => {
                     >
                       📅 تاريخ الإنشاء
                     </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      👁️ الإجراء
+                    </th>
                   </tr>
                 </thead>
 
@@ -4705,8 +5194,14 @@ const startQrScanner = async () => {
                             tdStyle
                           }
                         >
-                          {item.letter_id ||
-                            "—"}
+                          {item.letter_id
+                            ? letters.find(
+                                (l) =>
+                                  l.qr_code_id ===
+                                  item.id
+                              )?.letter_number ||
+                              item.letter_id
+                            : "—"}
                         </td>
 
                         <td
@@ -4718,6 +5213,49 @@ const startQrScanner = async () => {
                             item.created_at
                           )}
                         </td>
+
+                        <td
+                          style={tdStyle}
+                        >
+                          {item.status ===
+                            "used" && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleReprintQrCode(
+                                  item
+                                )
+                              }
+                              disabled={
+                                printLoading
+                              }
+                              style={{
+                                border:
+                                  "1px solid #BFDBFE",
+                                borderRadius:
+                                  "9px",
+                                padding:
+                                  "6px 11px",
+                                background:
+                                  "#EFF6FF",
+                                color:
+                                  "#1D4ED8",
+                                fontSize:
+                                  "11px",
+                                fontWeight:
+                                  "800",
+                                cursor:
+                                  printLoading
+                                    ? "not-allowed"
+                                    : "pointer",
+                                whiteSpace:
+                                  "nowrap",
+                              }}
+                            >
+                              🖨️ إعادة طباعة
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     )
                   )}
@@ -4726,7 +5264,18 @@ const startQrScanner = async () => {
             </div>
           )}
         </div>
+        </div>
+            </>
+          )}
       </div>
+
+      {isAdmin && templateManagerOpen && (
+        <LetterTemplatesManager
+          templates={letterTemplates}
+          onClose={() => setTemplateManagerOpen(false)}
+          onRefresh={loadLetterTemplates}
+        />
+      )}
 
       {/* =========================
           منطقة الطباعة
@@ -4923,7 +5472,7 @@ const startQrScanner = async () => {
    تفاصيل الخطاب - التصميم المميز
    ========================================================= */
 
-function LetterDetails({ letter, onClose, onReprintQr }) {
+function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
   const movements = letter.movements || [];
 
   const completedCount = movements.filter(
@@ -5138,7 +5687,7 @@ function LetterDetails({ letter, onClose, onReprintQr }) {
               flexWrap: "wrap",
             }}
           >
-            {letter.qr?.code && (
+            {isAdmin && letter.qr?.code && (
               <button
                 type="button"
                 onClick={() => onReprintQr?.(letter)}
@@ -5442,7 +5991,103 @@ function LetterDetails({ letter, onClose, onReprintQr }) {
             )}`}
             highlight
           />
+
+          {letter.letter_type && (
+            <InfoBox
+              label="نوع الخطاب"
+              value={`🏷️ ${letter.letter_type}`}
+            />
+          )}
+
+          {letter.template_name && (
+            <InfoBox
+              label="القالب المستخدم"
+              value={`📄 ${letter.template_name}`}
+            />
+          )}
         </div>
+
+        {letter.final_text && (
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg,#FAF5FF,#F3E8FF)",
+              border:
+                "1px solid #E9D5FF",
+              borderRadius: "16px",
+              padding:
+                "17px 18px",
+              marginBottom: "28px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems:
+                  "flex-start",
+                gap: "12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "25px",
+                }}
+              >
+                📜
+              </div>
+
+              <div
+                style={{
+                  width: "100%",
+                  minWidth: 0,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "#7C3AED",
+                    marginBottom:
+                      "6px",
+                    fontWeight:
+                      "800",
+                  }}
+                >
+                  نص الخطاب النهائي
+                </div>
+
+                <div
+                  style={{
+                    whiteSpace:
+                      "pre-wrap",
+                    direction: "rtl",
+                    textAlign:
+                      "right",
+                    color: "#0F172A",
+                    fontSize: "14px",
+                    lineHeight: 1.9,
+                    maxHeight: 320,
+                    overflowY: "auto",
+                  }}
+                >
+                  {letter.final_text}
+                </div>
+
+                {letter.template_name && (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontSize: "11px",
+                      color: "#6B7280",
+                    }}
+                  >
+                    نص ثابت من قالب «{letter.template_name}» —
+                    لا يتغير بعد الآن حتى لو عُدِّل القالب.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* الملاحظات */}
         {letter.notes && (
@@ -6400,6 +7045,60 @@ function StatCard({
           {icon}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   عنوان قسم داخل لوحة الإدارة الجانبية
+   ========================================================= */
+
+function AdminSectionTitle({ index, icon, title }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "9px",
+        margin: "4px 0 12px",
+      }}
+    >
+      <span
+        style={{
+          width: "30px",
+          height: "30px",
+          minWidth: "30px",
+          borderRadius: "10px",
+          background: "#1E40AF",
+          color: "#fff",
+          fontSize: "13px",
+          fontWeight: "900",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 4px 10px rgba(30,64,175,0.25)",
+        }}
+      >
+        {index}
+      </span>
+
+      <span
+        style={{
+          fontSize: "15px",
+          fontWeight: "900",
+          color: "#0F172A",
+        }}
+      >
+        {icon} {title}
+      </span>
+
+      <span
+        style={{
+          flex: 1,
+          height: "1px",
+          background: "#E2E8F0",
+        }}
+      />
     </div>
   );
 }
