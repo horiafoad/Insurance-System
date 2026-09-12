@@ -1,9 +1,10 @@
-
-import { Html5Qrcode } from "html5-qrcode";
+﻿import { Html5Qrcode } from "html5-qrcode";
 import React, { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../supabaseClient";
 import LetterCreationPanel from "./LetterCreationPanel";
+import LetterSearchFilters from "./LetterSearchFilters";
+import { searchLetters, filterLetters } from "../utils/letterHelpers";
 
 const PUBLIC_APP_URL = "https://insurance-system-9et.pages.dev/";
 
@@ -17,6 +18,8 @@ export default function LettersTrackingPage({ qrCode = "" }) {
 
   const [quantity, setQuantity] = useState(40);
   const [search, setSearch] = useState("");
+  const [letterFilters, setLetterFilters] = useState({});
+  const [departments, setDepartments] = useState([]);
 
   const [printCodes, setPrintCodes] = useState([]);
   const [selectedLetter, setSelectedLetter] = useState(null);
@@ -270,138 +273,6 @@ const startQrScanner = async () => {
   }
 };
 
-    try {
-      await scanner.start(
-        { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 220, height: 220 },
-        },
-        async (decodedText) => {
-          let code = decodedText.trim();
-
-try {
-  const parsedUrl = new URL(code);
-  const qrParam = parsedUrl.searchParams.get("qr");
-
-  if (qrParam) {
-    code = qrParam.trim();
-  }
-} catch {
-  // الكود QR قد يكون قيمة مباشرة مثل QR-000001
-}
-
-          try {
-            await scanner.stop();
-            await scanner.clear();
-          } catch (stopError) {
-            console.warn("Scanner stop warning:", stopError);
-          }
-
-          const { data: qrData, error: qrError } = await supabase
-            .from("archive_qr_codes")
-            .select("id, code, status, letter_id")
-            .eq("code", code)
-            .maybeSingle();
-
-          if (qrError) {
-            console.error("QR lookup error:", qrError);
-            setScanError("حدث خطأ أثناء البحث عن كود QR.");
-            setScannerLoading(false);
-            return;
-          }
-
-          if (!qrData) {
-            setScanError("كود QR غير موجود في النظام.");
-            setScannerLoading(false);
-            return;
-          }
-
-          const { data: letterData, error: letterError } = await supabase
-            .from("letters")
-            .select(
-              "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
-            )
-            .eq("qr_code_id", qrData.id)
-            .maybeSingle();
-
-          if (letterError) {
-            console.error("Letter lookup error:", letterError);
-            setScanError("حدث خطأ أثناء تحميل بيانات الخطاب.");
-            setScannerLoading(false);
-            return;
-          }
-
-          if (!letterData) {
-            setScanError("هذا QR غير مرتبط بخطاب حتى الآن.");
-            setScannerLoading(false);
-            return;
-          }
-
-          const { data: movementsData, error: movementsError } = await supabase
-            .from("letter_movements")
-            .select("id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status")
-            .eq("letter_id", letterData.id)
-            .order("step_order", { ascending: true });
-
-          if (movementsError) {
-            console.error("Movements lookup error:", movementsError);
-            setScanError("حدث خطأ أثناء تحميل حركة الخطاب.");
-            setScannerLoading(false);
-            return;
-          }
-
-          const departmentIds = [...new Set((movementsData || []).map((item) => item.department_id))];
-
-          let departments = [];
-
-          if (departmentIds.length > 0) {
-            const { data: departmentData, error: departmentError } = await supabase
-              .from("letter_departments")
-              .select("id, name")
-              .in("id", departmentIds);
-
-            if (departmentError) {
-              console.error("Departments lookup error:", departmentError);
-            } else {
-              departments = departmentData || [];
-            }
-          }
-
-          const senderData = letterData.sender_id
-            ? (await supabase
-                .from("letter_senders")
-                .select("id, name")
-                .eq("id", letterData.sender_id)
-                .maybeSingle()).data
-            : null;
-
-          const enrichedMovements = (movementsData || []).map((movement) => ({
-            ...movement,
-            department: departments.find((department) => department.id === movement.department_id) || null,
-          }));
-
-          const enrichedLetter = {
-            ...letterData,
-            qr: qrData,
-            sender: senderData,
-            movements: enrichedMovements,
-          };
-
-          setScannedLetter(enrichedLetter);
-          setReceivedNotes(
-            enrichedMovements.find((movement) => movement.status === "in_progress")?.notes || ""
-          );
-          setScannerLoading(false);
-        },
-        () => {}
-      );
-    } catch (error) {
-      console.error("QR scanner error:", error);
-      setScanError("تعذر تشغيل الكاميرا. تأكدي من السماح باستخدام الكاميرا.");
-      setScannerLoading(false);
-    }
-  };
 
   const moveLetterToNextStation = async (letter) => {
   if (!letter || !letter.movements?.length) return;
@@ -478,67 +349,6 @@ try {
     );
   }
 };
-    if (currentIndex < 0) {
-      alert("لا توجد محطة قيد التنفيذ حاليًا.");
-      return;
-    }
-
-    const currentMovement = movements[currentIndex];
-    const nextMovement = movements[currentIndex + 1];
-    const now = new Date().toISOString();
-
-    try {
-      const { error: currentError } = await supabase
-        .from("letter_movements")
-        .update({
-          status: "completed",
-          sent_at: now,
-        })
-        .eq("id", currentMovement.id);
-
-      if (currentError) throw currentError;
-
-      if (nextMovement) {
-        const { error: nextError } = await supabase
-          .from("letter_movements")
-          .update({
-            status: "in_progress",
-            received_at: now,
-          })
-          .eq("id", nextMovement.id);
-
-        if (nextError) throw nextError;
-
-        await supabase
-          .from("letters")
-          .update({
-            status: "in_progress",
-            updated_at: now,
-          })
-          .eq("id", letter.id);
-      } else {
-        await supabase
-          .from("letters")
-          .update({
-            status: "completed",
-            updated_at: now,
-          })
-          .eq("id", letter.id);
-      }
-
-      await loadLetters();
-      setSelectedLetter(null);
-
-      alert(
-        nextMovement
-          ? "تم تنفيذ المحطة والانتقال للمحطة التالية."
-          : "تم تنفيذ آخر محطة وإغلاق حركة الخطاب."
-      );
-    } catch (error) {
-      console.error("Error moving letter:", error);
-      alert("حدث خطأ أثناء تحديث حركة الخطاب.");
-    }
-  };
  useEffect(() => {
   loadQRCodes();
   loadLetters();
@@ -698,6 +508,8 @@ try {
           departments = data || [];
         }
       }
+
+      setDepartments(departments);
 
       const enrichedLetters = safeLetters.map(
         (letter) => {
@@ -1101,61 +913,55 @@ try {
   const confirmLetterReceived = async () => {
   if (!scannedLetter?.movements?.length) return;
 
-  let targetMovement =
-    scannedLetter.movements.find(
-      (movement) =>
-        movement.status === "in_progress" &&
-        !movement.received_at
-    );
+  const targetMovement = scannedLetter.movements.find(
+    (movement) => movement.status === "waiting"
+  );
 
   if (!targetMovement) {
-    targetMovement =
-      scannedLetter.movements.find(
-        (movement) =>
-          movement.status === "waiting"
-      );
-  }
-
-  if (!targetMovement) {
-    alert(
-      "لا توجد محطة تنتظر استلام الخطاب."
-    );
+    alert("لا توجد محطة تنتظر استلام الخطاب.");
     return;
   }
 
   setReceiving(true);
 
   const now = new Date().toISOString();
+  const notes = receivedNotes.trim() || null;
 
   try {
-    const { error } = await supabase
+    const { error: movementError } = await supabase
       .from("letter_movements")
       .update({
         received_at: now,
         status: "in_progress",
         action: "تم الاستلام",
-        notes:
-          receivedNotes.trim() || null,
+        notes,
       })
       .eq("id", targetMovement.id);
 
-    if (error) throw error;
+    if (movementError) throw movementError;
 
-    const updatedMovements =
-      scannedLetter.movements.map(
-        (movement) =>
-          movement.id === targetMovement.id
-            ? {
-                ...movement,
-                received_at: now,
-                status: "in_progress",
-                action: "تم الاستلام",
-                notes:
-                  receivedNotes.trim() ||
-                  null,
-              }
-            : movement
-      );
+    const { error: letterError } = await supabase
+      .from("letters")
+      .update({
+        status: "in_progress",
+        updated_at: now,
+      })
+      .eq("id", scannedLetter.id);
+
+    if (letterError) throw letterError;
+
+    const updatedMovements = scannedLetter.movements.map(
+      (movement) =>
+        movement.id === targetMovement.id
+          ? {
+              ...movement,
+              received_at: now,
+              status: "in_progress",
+              action: "تم الاستلام",
+              notes,
+            }
+          : movement
+    );
 
     const updatedLetter = {
       ...scannedLetter,
@@ -1166,44 +972,39 @@ try {
 
     setScannedLetter(updatedLetter);
 
-    await loadLetters();
+    await Promise.all([
+      loadLetters(),
+      loadQRCodes(),
+    ]);
 
     alert(
-      "تم تسجيل استلام الخطاب بنجاح."
+      `تم استلام الخطاب بنجاح من محطة ${
+        targetMovement.department?.name || "المحطة الحالية"
+      }.`
     );
   } catch (error) {
-    console.error(
-      "Error receiving letter:",
-      error
-    );
+    console.error("Error receiving letter:", error);
 
-    alert(
-      "حدث خطأ أثناء تسجيل استلام الخطاب."
-    );
+    alert("حدث خطأ أثناء تسجيل استلام الخطاب.");
   } finally {
     setReceiving(false);
   }
 };
+
 const confirmLetterDelivered = async () => {
   if (!scannedLetter?.movements?.length) return;
 
-  const currentMovement =
-    scannedLetter.movements.find(
-      (movement) =>
-        movement.status === "in_progress"
-    );
+  const currentMovement = scannedLetter.movements.find(
+    (movement) => movement.status === "in_progress"
+  );
 
   if (!currentMovement) {
-    alert(
-      "لا توجد محطة حالية لتسليم الخطاب."
-    );
+    alert("لا توجد محطة حالية لتسليم الخطاب.");
     return;
   }
 
   if (!currentMovement.received_at) {
-    alert(
-      "يجب تسجيل استلام الخطاب أولًا."
-    );
+    alert("يجب تسجيل استلام الخطاب أولًا.");
     return;
   }
 
@@ -1212,7 +1013,13 @@ const confirmLetterDelivered = async () => {
   const now = new Date().toISOString();
 
   try {
-    const { error } = await supabase
+    const nextMovement = scannedLetter.movements.find(
+      (movement) =>
+        movement.step_order > currentMovement.step_order &&
+        movement.status === "waiting"
+    );
+
+    const { error: currentError } = await supabase
       .from("letter_movements")
       .update({
         status: "completed",
@@ -1221,122 +1028,88 @@ const confirmLetterDelivered = async () => {
       })
       .eq("id", currentMovement.id);
 
-    if (error) throw error;
+    if (currentError) throw currentError;
 
-    const nextMovement =
-      scannedLetter.movements.find(
-        (movement) =>
-          movement.step_order >
-            currentMovement.step_order &&
-          movement.status === "waiting"
-      );
-
-    const { error: letterError } =
-      await supabase
-        .from("letters")
+    if (nextMovement) {
+      const { error: nextError } = await supabase
+        .from("letter_movements")
         .update({
-          status: nextMovement
-            ? "in_progress"
-            : "completed",
-          updated_at: now,
+          status: "in_progress",
+          action: "في انتظار الاستلام",
         })
-        .eq("id", scannedLetter.id);
+        .eq("id", nextMovement.id);
 
-    if (letterError) {
-      throw letterError;
+      if (nextError) throw nextError;
     }
 
-    const updatedMovements =
-      scannedLetter.movements.map(
-        (movement) =>
-          movement.id === currentMovement.id
-            ? {
-                ...movement,
-                status: "completed",
-                sent_at: now,
-                action: "تم التسليم",
-              }
-            : movement
-      );
+    const { error: letterError } = await supabase
+      .from("letters")
+      .update({
+        status: nextMovement ? "in_progress" : "completed",
+        updated_at: now,
+      })
+      .eq("id", scannedLetter.id);
 
-    setScannedLetter({
+    if (letterError) throw letterError;
+
+    const updatedMovements = scannedLetter.movements.map(
+      (movement) => {
+        if (movement.id === currentMovement.id) {
+          return {
+            ...movement,
+            status: "completed",
+            sent_at: now,
+            action: "تم التسليم",
+          };
+        }
+
+        if (
+          nextMovement &&
+          movement.id === nextMovement.id
+        ) {
+          return {
+            ...movement,
+            status: "in_progress",
+            action: "في انتظار الاستلام",
+          };
+        }
+
+        return movement;
+      }
+    );
+
+    const updatedLetter = {
       ...scannedLetter,
-      status: nextMovement
-        ? "in_progress"
-        : "completed",
+      status: nextMovement ? "in_progress" : "completed",
       updated_at: now,
       movements: updatedMovements,
-    });
+    };
 
-    await loadLetters();
+    setScannedLetter(updatedLetter);
 
-    alert(
-      nextMovement
-        ? "تم تسليم الخطاب. المحطة التالية في انتظار الاستلام."
-        : "تم تسليم الخطاب وإغلاق حركته بنجاح."
-    );
+    await Promise.all([
+      loadLetters(),
+      loadQRCodes(),
+    ]);
+
+    if (nextMovement) {
+      alert(
+        `تم التسليم بنجاح.\n\nتم تحويل الخطاب إلى:\n${
+          nextMovement.department?.name || "المحطة التالية"
+        }\n\nنفس QR ما زال مرتبطًا بالخطاب.`
+      );
+    } else {
+      alert("تم تسليم الخطاب وإغلاق حركته بالكامل بنجاح.");
+    }
   } catch (error) {
-    console.error(
-      "Error delivering letter:",
-      error
-    );
+    console.error("Error delivering letter:", error);
 
-    alert(
-      "حدث خطأ أثناء تسجيل تسليم الخطاب."
-    );
+    alert("حدث خطأ أثناء تسجيل تسليم الخطاب.");
   } finally {
     setDelivering(false);
   }
 };
 
-    if (!currentMovement) {
-      alert("لا توجد محطة حالية قيد التنفيذ.");
-      return;
-    }
-
-    setReceiving(true);
-    const now = new Date().toISOString();
-
-    try {
-      const { error } = await supabase
-        .from("letter_movements")
-        .update({
-          received_at: now,
-          status: "in_progress",
-          action: "تم الاستلام",
-          notes: receivedNotes.trim() || null,
-        })
-        .eq("id", currentMovement.id);
-
-      if (error) throw error;
-
-      const updatedMovements = scannedLetter.movements.map((movement) =>
-        movement.id === currentMovement.id
-          ? {
-              ...movement,
-              received_at: now,
-              status: "in_progress",
-              action: "تم الاستلام",
-              notes: receivedNotes.trim() || null,
-            }
-          : movement
-      );
-
-      setScannedLetter({
-        ...scannedLetter,
-        movements: updatedMovements,
-      });
-
-      await loadLetters();
-
-      alert("تم تسجيل استلام الخطاب بنجاح.");
-    } catch (error) {
-      console.error("Error receiving letter:", error);
-      alert("حدث خطأ أثناء تسجيل استلام الخطاب.");
-    } finally {
-      setReceiving(false);
-    }
-  };
 
   const closeQrScanner = async () => {
   await stopQrScanner();
@@ -1356,7 +1129,9 @@ const confirmLetterDelivered = async () => {
           marginBottom: "18px",
         }}
       >
-        <{(() => {
+        {(() => {
+  if (!scannedLetter) return null;
+
   const currentMovement =
     scannedLetter.movements?.find(
       (movement) =>
@@ -1459,10 +1234,6 @@ const confirmLetterDelivered = async () => {
     </div>
   );
 })()}
-        >
-          {"📱 مسح QR للخطاب"}
-        </button>
-      </div>
 
       {scannerOpen && (
         <div
@@ -1699,6 +1470,7 @@ const confirmLetterDelivered = async () => {
           </div>
         </div>
       )}
+      </div>
 
       <div
         className="letters-tracking-page"
@@ -1920,7 +1692,33 @@ const confirmLetterDelivered = async () => {
                   color: "#64748B",
                 }}
               >
-                ✨ الخطابات المسجلة ومسار حركتها بين الإدارات
+                <div style={{
+  padding: "14px 20px 0",
+}}>
+  <input
+    type="text"
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+    placeholder="🔎 ابحث في الخطابات المسجلة برقم الخطاب أو الموضوع أو الجهة أو QR..."
+    style={{
+      width: "92%",
+      boxSizing: "border-box",
+      padding: "12px 14px",
+      border: "1px solid #CBD5E1",
+      borderRadius: "10px",
+      fontSize: "14px",
+      outline: "none",
+      direction: "rtl",
+      background: "#F8FAFC",
+    }}
+  />
+</div>
+
+<p style={{
+  margin: 0,
+}}>
+  ✨ الخطابات المسجلة ومسار حركتها بين الإدارات
+</p>
               </p>
             </div>
 
@@ -4572,3 +4370,13 @@ const tdStyle = {
   whiteSpace:
     "nowrap",
 };
+
+
+
+
+
+
+
+
+
+

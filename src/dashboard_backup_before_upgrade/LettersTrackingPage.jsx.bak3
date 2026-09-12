@@ -1,4 +1,4 @@
-
+﻿
 import { Html5Qrcode } from "html5-qrcode";
 import React, { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
@@ -62,11 +62,11 @@ const loadScannedLetter = async (code) => {
 
   if (qrError) {
     console.error("QR lookup error:", qrError);
-    throw new Error("حدث خطأ أثناء البحث عن كود QR.");
+    throw new Error("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„Ø¨Ø­Ø« Ø¹Ù† ÙƒÙˆØ¯ QR.");
   }
 
   if (!qrData) {
-    throw new Error("كود QR غير موجود في النظام.");
+    throw new Error("ÙƒÙˆØ¯ QR ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù†Ø¸Ø§Ù….");
   }
 
   const { data: letterData, error: letterError } = await supabase
@@ -79,11 +79,11 @@ const loadScannedLetter = async (code) => {
 
   if (letterError) {
     console.error("Letter lookup error:", letterError);
-    throw new Error("حدث خطأ أثناء تحميل بيانات الخطاب.");
+    throw new Error("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨.");
   }
 
   if (!letterData) {
-    throw new Error("هذا QR غير مرتبط بخطاب حتى الآن.");
+    throw new Error("Ù‡Ø°Ø§ QR ØºÙŠØ± Ù…Ø±ØªØ¨Ø· Ø¨Ø®Ø·Ø§Ø¨ Ø­ØªÙ‰ Ø§Ù„Ø¢Ù†.");
   }
 
   const { data: movementsData, error: movementsError } =
@@ -97,7 +97,7 @@ const loadScannedLetter = async (code) => {
 
   if (movementsError) {
     console.error("Movements lookup error:", movementsError);
-    throw new Error("حدث خطأ أثناء تحميل حركة الخطاب.");
+    throw new Error("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨.");
   }
 
   const departmentIds = [
@@ -208,7 +208,7 @@ const startQrScanner = async () => {
             code = qrParam.trim();
           }
         } catch {
-          // QR مباشر مثل QR-000001
+          // QR Ù…Ø¨Ø§Ø´Ø± Ù…Ø«Ù„ QR-000001
         }
 
         await stopQrScanner();
@@ -246,7 +246,7 @@ const startQrScanner = async () => {
 
           setScanError(
             error.message ||
-              "حدث خطأ أثناء تحميل بيانات الخطاب."
+              "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨."
           );
 
           setScannerLoading(false);
@@ -263,145 +263,13 @@ const startQrScanner = async () => {
     );
 
     setScanError(
-      "تعذر تشغيل الكاميرا. تأكدي من السماح باستخدام الكاميرا."
+      "ØªØ¹Ø°Ø± ØªØ´ØºÙŠÙ„ Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§. ØªØ£ÙƒØ¯ÙŠ Ù…Ù† Ø§Ù„Ø³Ù…Ø§Ø­ Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§."
     );
 
     setScannerLoading(false);
   }
 };
 
-    try {
-      await scanner.start(
-        { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 220, height: 220 },
-        },
-        async (decodedText) => {
-          let code = decodedText.trim();
-
-try {
-  const parsedUrl = new URL(code);
-  const qrParam = parsedUrl.searchParams.get("qr");
-
-  if (qrParam) {
-    code = qrParam.trim();
-  }
-} catch {
-  // الكود QR قد يكون قيمة مباشرة مثل QR-000001
-}
-
-          try {
-            await scanner.stop();
-            await scanner.clear();
-          } catch (stopError) {
-            console.warn("Scanner stop warning:", stopError);
-          }
-
-          const { data: qrData, error: qrError } = await supabase
-            .from("archive_qr_codes")
-            .select("id, code, status, letter_id")
-            .eq("code", code)
-            .maybeSingle();
-
-          if (qrError) {
-            console.error("QR lookup error:", qrError);
-            setScanError("حدث خطأ أثناء البحث عن كود QR.");
-            setScannerLoading(false);
-            return;
-          }
-
-          if (!qrData) {
-            setScanError("كود QR غير موجود في النظام.");
-            setScannerLoading(false);
-            return;
-          }
-
-          const { data: letterData, error: letterError } = await supabase
-            .from("letters")
-            .select(
-              "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
-            )
-            .eq("qr_code_id", qrData.id)
-            .maybeSingle();
-
-          if (letterError) {
-            console.error("Letter lookup error:", letterError);
-            setScanError("حدث خطأ أثناء تحميل بيانات الخطاب.");
-            setScannerLoading(false);
-            return;
-          }
-
-          if (!letterData) {
-            setScanError("هذا QR غير مرتبط بخطاب حتى الآن.");
-            setScannerLoading(false);
-            return;
-          }
-
-          const { data: movementsData, error: movementsError } = await supabase
-            .from("letter_movements")
-            .select("id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status")
-            .eq("letter_id", letterData.id)
-            .order("step_order", { ascending: true });
-
-          if (movementsError) {
-            console.error("Movements lookup error:", movementsError);
-            setScanError("حدث خطأ أثناء تحميل حركة الخطاب.");
-            setScannerLoading(false);
-            return;
-          }
-
-          const departmentIds = [...new Set((movementsData || []).map((item) => item.department_id))];
-
-          let departments = [];
-
-          if (departmentIds.length > 0) {
-            const { data: departmentData, error: departmentError } = await supabase
-              .from("letter_departments")
-              .select("id, name")
-              .in("id", departmentIds);
-
-            if (departmentError) {
-              console.error("Departments lookup error:", departmentError);
-            } else {
-              departments = departmentData || [];
-            }
-          }
-
-          const senderData = letterData.sender_id
-            ? (await supabase
-                .from("letter_senders")
-                .select("id, name")
-                .eq("id", letterData.sender_id)
-                .maybeSingle()).data
-            : null;
-
-          const enrichedMovements = (movementsData || []).map((movement) => ({
-            ...movement,
-            department: departments.find((department) => department.id === movement.department_id) || null,
-          }));
-
-          const enrichedLetter = {
-            ...letterData,
-            qr: qrData,
-            sender: senderData,
-            movements: enrichedMovements,
-          };
-
-          setScannedLetter(enrichedLetter);
-          setReceivedNotes(
-            enrichedMovements.find((movement) => movement.status === "in_progress")?.notes || ""
-          );
-          setScannerLoading(false);
-        },
-        () => {}
-      );
-    } catch (error) {
-      console.error("QR scanner error:", error);
-      setScanError("تعذر تشغيل الكاميرا. تأكدي من السماح باستخدام الكاميرا.");
-      setScannerLoading(false);
-    }
-  };
 
   const moveLetterToNextStation = async (letter) => {
   if (!letter || !letter.movements?.length) return;
@@ -412,13 +280,13 @@ try {
   );
 
   if (!currentMovement) {
-    alert("لا توجد محطة قيد التنفيذ حاليًا.");
+    alert("Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© Ù‚ÙŠØ¯ Ø§Ù„ØªÙ†ÙÙŠØ° Ø­Ø§Ù„ÙŠÙ‹Ø§.");
     return;
   }
 
   if (!currentMovement.received_at) {
     alert(
-      "يجب تسجيل استلام الخطاب أولًا قبل تسليمه."
+      "ÙŠØ¬Ø¨ ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø£ÙˆÙ„Ù‹Ø§ Ù‚Ø¨Ù„ ØªØ³Ù„ÙŠÙ…Ù‡."
     );
     return;
   }
@@ -439,7 +307,7 @@ try {
         .update({
           status: "completed",
           sent_at: now,
-          action: "تم التسليم",
+          action: "ØªÙ… Ø§Ù„ØªØ³Ù„ÙŠÙ…",
         })
         .eq("id", currentMovement.id);
 
@@ -464,8 +332,8 @@ try {
 
     alert(
       nextMovement
-        ? "تم تسليم الخطاب. المحطة التالية في انتظار الاستلام."
-        : "تم تسليم الخطاب وإغلاق حركته بنجاح."
+        ? "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨. Ø§Ù„Ù…Ø­Ø·Ø© Ø§Ù„ØªØ§Ù„ÙŠØ© ÙÙŠ Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…."
+        : "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨ ÙˆØ¥ØºÙ„Ø§Ù‚ Ø­Ø±ÙƒØªÙ‡ Ø¨Ù†Ø¬Ø§Ø­."
     );
   } catch (error) {
     console.error(
@@ -474,71 +342,10 @@ try {
     );
 
     alert(
-      "حدث خطأ أثناء تسجيل تسليم الخطاب."
+      "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨."
     );
   }
 };
-    if (currentIndex < 0) {
-      alert("لا توجد محطة قيد التنفيذ حاليًا.");
-      return;
-    }
-
-    const currentMovement = movements[currentIndex];
-    const nextMovement = movements[currentIndex + 1];
-    const now = new Date().toISOString();
-
-    try {
-      const { error: currentError } = await supabase
-        .from("letter_movements")
-        .update({
-          status: "completed",
-          sent_at: now,
-        })
-        .eq("id", currentMovement.id);
-
-      if (currentError) throw currentError;
-
-      if (nextMovement) {
-        const { error: nextError } = await supabase
-          .from("letter_movements")
-          .update({
-            status: "in_progress",
-            received_at: now,
-          })
-          .eq("id", nextMovement.id);
-
-        if (nextError) throw nextError;
-
-        await supabase
-          .from("letters")
-          .update({
-            status: "in_progress",
-            updated_at: now,
-          })
-          .eq("id", letter.id);
-      } else {
-        await supabase
-          .from("letters")
-          .update({
-            status: "completed",
-            updated_at: now,
-          })
-          .eq("id", letter.id);
-      }
-
-      await loadLetters();
-      setSelectedLetter(null);
-
-      alert(
-        nextMovement
-          ? "تم تنفيذ المحطة والانتقال للمحطة التالية."
-          : "تم تنفيذ آخر محطة وإغلاق حركة الخطاب."
-      );
-    } catch (error) {
-      console.error("Error moving letter:", error);
-      alert("حدث خطأ أثناء تحديث حركة الخطاب.");
-    }
-  };
  useEffect(() => {
   loadQRCodes();
   loadLetters();
@@ -557,7 +364,7 @@ try {
 
     if (error) {
       console.error("Error loading QR codes:", error);
-      alert("حدث خطأ أثناء تحميل أكواد QR.");
+      alert("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø£ÙƒÙˆØ§Ø¯ QR.");
     } else {
       setQrCodes(data || []);
     }
@@ -812,7 +619,7 @@ try {
       count > 200
     ) {
       alert(
-        "من فضلك اختاري عددًا من 1 إلى 200 كود."
+        "Ù…Ù† ÙØ¶Ù„Ùƒ Ø§Ø®ØªØ§Ø±ÙŠ Ø¹Ø¯Ø¯Ù‹Ø§ Ù…Ù† 1 Ø¥Ù„Ù‰ 200 ÙƒÙˆØ¯."
       );
       return;
     }
@@ -851,11 +658,11 @@ try {
 
         if (error.code === "23505") {
           alert(
-            "حدث تعارض أثناء إنشاء الأكواد. اضغطي مرة أخرى وسيتم إنشاء دفعة جديدة."
+            "Ø­Ø¯Ø« ØªØ¹Ø§Ø±Ø¶ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯. Ø§Ø¶ØºØ·ÙŠ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ ÙˆØ³ÙŠØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø¯ÙØ¹Ø© Ø¬Ø¯ÙŠØ¯Ø©."
           );
         } else {
           alert(
-            "حدث خطأ أثناء إنشاء أكواد QR."
+            "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø£ÙƒÙˆØ§Ø¯ QR."
           );
         }
 
@@ -878,9 +685,9 @@ try {
       );
 
       alert(
-        "تم إنشاء " +
+        "ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ " +
           createdCodes.length +
-          " كود QR بنجاح."
+          " ÙƒÙˆØ¯ QR Ø¨Ù†Ø¬Ø§Ø­."
       );
     } catch (error) {
       console.error(
@@ -889,7 +696,7 @@ try {
       );
 
       alert(
-        "حدث خطأ غير متوقع أثناء إنشاء الأكواد."
+        "Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…ØªÙˆÙ‚Ø¹ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯."
       );
     } finally {
       setGenerating(false);
@@ -943,7 +750,7 @@ try {
       );
 
       alert(
-        "حدث خطأ أثناء تجهيز أكواد QR للطباعة."
+        "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ¬Ù‡ÙŠØ² Ø£ÙƒÙˆØ§Ø¯ QR Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
       );
 
       return [];
@@ -962,7 +769,7 @@ try {
 
     if (availableCodes.length === 0) {
       alert(
-        "لا توجد أكواد متاحة للطباعة."
+        "Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£ÙƒÙˆØ§Ø¯ Ù…ØªØ§Ø­Ø© Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
       );
       return;
     }
@@ -1011,7 +818,7 @@ try {
       );
 
       alert(
-        "حدث خطأ أثناء تجهيز الأكواد للطباعة."
+        "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ø£ÙƒÙˆØ§Ø¯ Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
       );
     } finally {
       setPrintLoading(false);
@@ -1021,7 +828,7 @@ try {
   const handlePrint = () => {
     if (printCodes.length === 0) {
       alert(
-        "لا توجد أكواد جاهزة للطباعة."
+        "Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£ÙƒÙˆØ§Ø¯ Ø¬Ø§Ù‡Ø²Ø© Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
       );
       return;
     }
@@ -1118,7 +925,7 @@ try {
 
   if (!targetMovement) {
     alert(
-      "لا توجد محطة تنتظر استلام الخطاب."
+      "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© ØªÙ†ØªØ¸Ø± Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨."
     );
     return;
   }
@@ -1133,7 +940,7 @@ try {
       .update({
         received_at: now,
         status: "in_progress",
-        action: "تم الاستلام",
+        action: "ØªÙ… Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…",
         notes:
           receivedNotes.trim() || null,
       })
@@ -1149,7 +956,7 @@ try {
                 ...movement,
                 received_at: now,
                 status: "in_progress",
-                action: "تم الاستلام",
+                action: "ØªÙ… Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…",
                 notes:
                   receivedNotes.trim() ||
                   null,
@@ -1169,7 +976,7 @@ try {
     await loadLetters();
 
     alert(
-      "تم تسجيل استلام الخطاب بنجاح."
+      "ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø¨Ù†Ø¬Ø§Ø­."
     );
   } catch (error) {
     console.error(
@@ -1178,7 +985,7 @@ try {
     );
 
     alert(
-      "حدث خطأ أثناء تسجيل استلام الخطاب."
+      "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨."
     );
   } finally {
     setReceiving(false);
@@ -1195,14 +1002,14 @@ const confirmLetterDelivered = async () => {
 
   if (!currentMovement) {
     alert(
-      "لا توجد محطة حالية لتسليم الخطاب."
+      "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© Ø­Ø§Ù„ÙŠØ© Ù„ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨."
     );
     return;
   }
 
   if (!currentMovement.received_at) {
     alert(
-      "يجب تسجيل استلام الخطاب أولًا."
+      "ÙŠØ¬Ø¨ ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø£ÙˆÙ„Ù‹Ø§."
     );
     return;
   }
@@ -1217,7 +1024,7 @@ const confirmLetterDelivered = async () => {
       .update({
         status: "completed",
         sent_at: now,
-        action: "تم التسليم",
+        action: "ØªÙ… Ø§Ù„ØªØ³Ù„ÙŠÙ…",
       })
       .eq("id", currentMovement.id);
 
@@ -1254,7 +1061,7 @@ const confirmLetterDelivered = async () => {
                 ...movement,
                 status: "completed",
                 sent_at: now,
-                action: "تم التسليم",
+                action: "ØªÙ… Ø§Ù„ØªØ³Ù„ÙŠÙ…",
               }
             : movement
       );
@@ -1272,8 +1079,8 @@ const confirmLetterDelivered = async () => {
 
     alert(
       nextMovement
-        ? "تم تسليم الخطاب. المحطة التالية في انتظار الاستلام."
-        : "تم تسليم الخطاب وإغلاق حركته بنجاح."
+        ? "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨. Ø§Ù„Ù…Ø­Ø·Ø© Ø§Ù„ØªØ§Ù„ÙŠØ© ÙÙŠ Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…."
+        : "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨ ÙˆØ¥ØºÙ„Ø§Ù‚ Ø­Ø±ÙƒØªÙ‡ Ø¨Ù†Ø¬Ø§Ø­."
     );
   } catch (error) {
     console.error(
@@ -1282,61 +1089,13 @@ const confirmLetterDelivered = async () => {
     );
 
     alert(
-      "حدث خطأ أثناء تسجيل تسليم الخطاب."
+      "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨."
     );
   } finally {
     setDelivering(false);
   }
 };
 
-    if (!currentMovement) {
-      alert("لا توجد محطة حالية قيد التنفيذ.");
-      return;
-    }
-
-    setReceiving(true);
-    const now = new Date().toISOString();
-
-    try {
-      const { error } = await supabase
-        .from("letter_movements")
-        .update({
-          received_at: now,
-          status: "in_progress",
-          action: "تم الاستلام",
-          notes: receivedNotes.trim() || null,
-        })
-        .eq("id", currentMovement.id);
-
-      if (error) throw error;
-
-      const updatedMovements = scannedLetter.movements.map((movement) =>
-        movement.id === currentMovement.id
-          ? {
-              ...movement,
-              received_at: now,
-              status: "in_progress",
-              action: "تم الاستلام",
-              notes: receivedNotes.trim() || null,
-            }
-          : movement
-      );
-
-      setScannedLetter({
-        ...scannedLetter,
-        movements: updatedMovements,
-      });
-
-      await loadLetters();
-
-      alert("تم تسجيل استلام الخطاب بنجاح.");
-    } catch (error) {
-      console.error("Error receiving letter:", error);
-      alert("حدث خطأ أثناء تسجيل استلام الخطاب.");
-    } finally {
-      setReceiving(false);
-    }
-  };
 
   const closeQrScanner = async () => {
   await stopQrScanner();
@@ -1356,7 +1115,7 @@ const confirmLetterDelivered = async () => {
           marginBottom: "18px",
         }}
       >
-        <{(() => {
+        {(() => {
   const currentMovement =
     scannedLetter.movements?.find(
       (movement) =>
@@ -1408,8 +1167,8 @@ const confirmLetterDelivered = async () => {
           }}
         >
           {receiving
-            ? "⏳ جاري تسجيل الاستلام..."
-            : "📥 استلام الخطاب"}
+            ? "â³ Ø¬Ø§Ø±ÙŠ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…..."
+            : "ðŸ“¥ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨"}
         </button>
       )}
 
@@ -1435,8 +1194,8 @@ const confirmLetterDelivered = async () => {
           }}
         >
           {delivering
-            ? "⏳ جاري تسجيل التسليم..."
-            : "📤 تسليم وتحويل للمحطة التالية"}
+            ? "â³ Ø¬Ø§Ø±ÙŠ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„ØªØ³Ù„ÙŠÙ…..."
+            : "ðŸ“¤ ØªØ³Ù„ÙŠÙ… ÙˆØªØ­ÙˆÙŠÙ„ Ù„Ù„Ù…Ø­Ø·Ø© Ø§Ù„ØªØ§Ù„ÙŠØ©"}
         </button>
       )}
 
@@ -1453,16 +1212,12 @@ const confirmLetterDelivered = async () => {
               fontWeight: "800",
             }}
           >
-            ✅ تم إغلاق حركة الخطاب بالكامل
+            âœ… ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„
           </div>
         )}
     </div>
   );
 })()}
-        >
-          {"📱 مسح QR للخطاب"}
-        </button>
-      </div>
 
       {scannerOpen && (
         <div
@@ -1500,7 +1255,7 @@ const confirmLetterDelivered = async () => {
             >
               <div>
                 <div style={{ fontSize: "20px", fontWeight: "900" }}>
-                  {"📷 مسح خطاب"}
+                  {"ðŸ“· Ù…Ø³Ø­ Ø®Ø·Ø§Ø¨"}
                 </div>
                 <div
                   style={{
@@ -1509,7 +1264,7 @@ const confirmLetterDelivered = async () => {
                     color: "#64748B",
                   }}
                 >
-                  {"وجهي الكاميرا إلى QR الموجود على الخطاب"}
+                  {"ÙˆØ¬Ù‡ÙŠ Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§ Ø¥Ù„Ù‰ QR Ø§Ù„Ù…ÙˆØ¬ÙˆØ¯ Ø¹Ù„Ù‰ Ø§Ù„Ø®Ø·Ø§Ø¨"}
                 </div>
               </div>
 
@@ -1527,7 +1282,7 @@ const confirmLetterDelivered = async () => {
                   cursor: "pointer",
                 }}
               >
-                {"×"}
+                {"Ã—"}
               </button>
             </div>
 
@@ -1552,7 +1307,7 @@ const confirmLetterDelivered = async () => {
                   fontWeight: "700",
                 }}
               >
-                {"جاري تشغيل الكاميرا..."}
+                {"Ø¬Ø§Ø±ÙŠ ØªØ´ØºÙŠÙ„ Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§..."}
               </div>
             )}
 
@@ -1594,41 +1349,41 @@ const confirmLetterDelivered = async () => {
                     {"QR"}
                   </div>
                   <div style={{ fontSize: "21px", fontWeight: "900" }}>
-                    {scannedLetter.qr?.code || "—"}
+                    {scannedLetter.qr?.code || "â€”"}
                   </div>
                 </div>
 
                 <div style={{ display: "grid", gap: "10px" }}>
                   <div>
                     <div style={{ fontSize: "11px", color: "#64748B" }}>
-                      {"رقم الخطاب"}
+                      {"Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨"}
                     </div>
                     <div style={{ fontWeight: "800" }}>
-                      {scannedLetter.letter_number || "بدون رقم"}
+                      {scannedLetter.letter_number || "Ø¨Ø¯ÙˆÙ† Ø±Ù‚Ù…"}
                     </div>
                   </div>
 
                   <div>
                     <div style={{ fontSize: "11px", color: "#64748B" }}>
-                      {"الجهة المرسلة"}
+                      {"Ø§Ù„Ø¬Ù‡Ø© Ø§Ù„Ù…Ø±Ø³Ù„Ø©"}
                     </div>
                     <div style={{ fontWeight: "800" }}>
-                      {scannedLetter.sender?.name || "—"}
+                      {scannedLetter.sender?.name || "â€”"}
                     </div>
                   </div>
 
                   <div>
                     <div style={{ fontSize: "11px", color: "#64748B" }}>
-                      {"الموضوع"}
+                      {"Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹"}
                     </div>
                     <div style={{ fontWeight: "800" }}>
-                      {scannedLetter.subject || "—"}
+                      {scannedLetter.subject || "â€”"}
                     </div>
                   </div>
 
                   <div>
                     <div style={{ fontSize: "11px", color: "#64748B" }}>
-                      {"المحطة الحالية"}
+                      {"Ø§Ù„Ù…Ø­Ø·Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©"}
                     </div>
                     <div
                       style={{
@@ -1639,7 +1394,7 @@ const confirmLetterDelivered = async () => {
                     >
                       {scannedLetter.movements?.find(
                         (movement) => movement.status === "in_progress"
-                      )?.department?.name || "لا توجد محطة حالية"}
+                      )?.department?.name || "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© Ø­Ø§Ù„ÙŠØ©"}
                     </div>
                   </div>
                 </div>
@@ -1653,12 +1408,12 @@ const confirmLetterDelivered = async () => {
                       color: "#334155",
                     }}
                   >
-                    {"📝 ملاحظات الاستلام"}
+                    {"ðŸ“ Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…"}
                   </label>
                   <textarea
                     value={receivedNotes}
                     onChange={(event) => setReceivedNotes(event.target.value)}
-                    placeholder="اكتبي ملاحظات الاستلام إن وجدت..."
+                    placeholder="Ø§ÙƒØªØ¨ÙŠ Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù… Ø¥Ù† ÙˆØ¬Ø¯Øª..."
                     rows={3}
                     style={{
                       width: "100%",
@@ -1692,7 +1447,7 @@ const confirmLetterDelivered = async () => {
                     cursor: receiving ? "not-allowed" : "pointer",
                   }}
                 >
-                  {receiving ? "جاري تسجيل الاستلام..." : "✅ تم الاستلام"}
+                  {receiving ? "Ø¬Ø§Ø±ÙŠ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…..." : "âœ… ØªÙ… Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…"}
                 </button>
               </div>
             )}
@@ -1773,7 +1528,7 @@ const confirmLetterDelivered = async () => {
                   fontSize: "29px",
                 }}
               >
-                ✉️
+                âœ‰ï¸
               </div>
 
               <div>
@@ -1784,7 +1539,7 @@ const confirmLetterDelivered = async () => {
                     fontWeight: "800",
                   }}
                 >
-                  متابعة الخطابات
+                  Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
                 </h2>
 
                 <p
@@ -1796,8 +1551,8 @@ const confirmLetterDelivered = async () => {
                       "rgba(255,255,255,0.72)",
                   }}
                 >
-                  🧭 متابعة رحلة الخطابات
-                  وحركة المراسلات بين الإدارات
+                  ðŸ§­ Ù…ØªØ§Ø¨Ø¹Ø© Ø±Ø­Ù„Ø© Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
+                  ÙˆØ­Ø±ÙƒØ© Ø§Ù„Ù…Ø±Ø§Ø³Ù„Ø§Øª Ø¨ÙŠÙ† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
                 </p>
               </div>
             </div>
@@ -1817,7 +1572,7 @@ const confirmLetterDelivered = async () => {
                     "#10B981"
                   )}
                 >
-                  🖨️ طباعة الدفعة الحالية (
+                  ðŸ–¨ï¸ Ø·Ø¨Ø§Ø¹Ø© Ø§Ù„Ø¯ÙØ¹Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ© (
                   {printCodes.length})
                 </button>
               )}
@@ -1833,8 +1588,8 @@ const confirmLetterDelivered = async () => {
                 )}
               >
                 {refreshingLetters
-                  ? "⏳ جاري التحديث..."
-                  : "🔄 تحديث"}
+                  ? "â³ Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ø¯ÙŠØ«..."
+                  : "ðŸ”„ ØªØ­Ø¯ÙŠØ«"}
               </button>
 
               <button
@@ -1854,15 +1609,15 @@ const confirmLetterDelivered = async () => {
                 )}
               >
                 {printLoading
-                  ? "⏳ تجهيز الطباعة..."
-                  : "🖨️ طباعة الأكواد المتاحة"}
+                  ? "â³ ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ø·Ø¨Ø§Ø¹Ø©..."
+                  : "ðŸ–¨ï¸ Ø·Ø¨Ø§Ø¹Ø© Ø§Ù„Ø£ÙƒÙˆØ§Ø¯ Ø§Ù„Ù…ØªØ§Ø­Ø©"}
               </button>
             </div>
           </div>
         </div>
 
         {/* =========================
-            إنشاء الخطاب
+            Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø®Ø·Ø§Ø¨
            ========================= */}
         <div
           style={{
@@ -1873,7 +1628,7 @@ const confirmLetterDelivered = async () => {
         </div>
 
         {/* =========================
-            سجل الخطابات
+            Ø³Ø¬Ù„ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
            ========================= */}
         <div
           style={{
@@ -1909,7 +1664,7 @@ const confirmLetterDelivered = async () => {
                   color: "#0F172A",
                 }}
               >
-                📋 سجل الخطابات
+                ðŸ“‹ Ø³Ø¬Ù„ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
               </h3>
 
               <p
@@ -1920,7 +1675,7 @@ const confirmLetterDelivered = async () => {
                   color: "#64748B",
                 }}
               >
-                ✨ الخطابات المسجلة ومسار حركتها بين الإدارات
+                âœ¨ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ø³Ø¬Ù„Ø© ÙˆÙ…Ø³Ø§Ø± Ø­Ø±ÙƒØªÙ‡Ø§ Ø¨ÙŠÙ† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
               </p>
             </div>
 
@@ -1934,7 +1689,7 @@ const confirmLetterDelivered = async () => {
                 fontWeight: "800",
               }}
             >
-              ✉️ {letters.length} خطاب
+              âœ‰ï¸ {letters.length} Ø®Ø·Ø§Ø¨
             </span>
           </div>
 
@@ -1952,10 +1707,10 @@ const confirmLetterDelivered = async () => {
                   marginBottom: "10px",
                 }}
               >
-                ⏳
+                â³
               </div>
 
-              جاري تحميل الخطابات...
+              Ø¬Ø§Ø±ÙŠ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª...
             </div>
           ) : filteredLetters.length ===
             0 ? (
@@ -1972,7 +1727,7 @@ const confirmLetterDelivered = async () => {
                   marginBottom: "12px",
                 }}
               >
-                📭
+                ðŸ“­
               </div>
 
               <div
@@ -1983,7 +1738,7 @@ const confirmLetterDelivered = async () => {
                   marginBottom: "6px",
                 }}
               >
-                لا توجد خطابات مسجلة
+                Ù„Ø§ ØªÙˆØ¬Ø¯ Ø®Ø·Ø§Ø¨Ø§Øª Ù…Ø³Ø¬Ù„Ø©
               </div>
 
               <div
@@ -1991,7 +1746,7 @@ const confirmLetterDelivered = async () => {
                   fontSize: "13px",
                 }}
               >
-                عند حفظ خطاب جديد سيظهر هنا مع رحلة حركته 🧭
+                Ø¹Ù†Ø¯ Ø­ÙØ¸ Ø®Ø·Ø§Ø¨ Ø¬Ø¯ÙŠØ¯ Ø³ÙŠØ¸Ù‡Ø± Ù‡Ù†Ø§ Ù…Ø¹ Ø±Ø­Ù„Ø© Ø­Ø±ÙƒØªÙ‡ ðŸ§­
               </div>
             </div>
           ) : (
@@ -2018,43 +1773,43 @@ const confirmLetterDelivered = async () => {
                     <th
                       style={thStyle}
                     >
-                      📄 رقم الخطاب
+                      ðŸ“„ Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      📅 التاريخ
+                      ðŸ“… Ø§Ù„ØªØ§Ø±ÙŠØ®
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      🏢 الجهة المرسلة
+                      ðŸ¢ Ø§Ù„Ø¬Ù‡Ø© Ø§Ù„Ù…Ø±Ø³Ù„Ø©
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      📝 الموضوع
+                      ðŸ“ Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      🏷️ QR
+                      ðŸ·ï¸ QR
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      🧭 المسار
+                      ðŸ§­ Ø§Ù„Ù…Ø³Ø§Ø±
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      👁️ الإجراء
+                      ðŸ‘ï¸ Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡
                     </th>
                   </tr>
                 </thead>
@@ -2080,9 +1835,9 @@ const confirmLetterDelivered = async () => {
                                 "#0F172A",
                             }}
                           >
-                            📄{" "}
+                            ðŸ“„{" "}
                             {letter.letter_number ||
-                              "—"}
+                              "â€”"}
                           </strong>
                         </td>
 
@@ -2101,10 +1856,10 @@ const confirmLetterDelivered = async () => {
                             tdStyle
                           }
                         >
-                          🏢{" "}
+                          ðŸ¢{" "}
                           {letter.sender
                             ?.name ||
-                            "—"}
+                            "â€”"}
                         </td>
 
                         <td
@@ -2118,9 +1873,9 @@ const confirmLetterDelivered = async () => {
                               "260px",
                           }}
                         >
-                          📝{" "}
+                          ðŸ“{" "}
                           {letter.subject ||
-                            "—"}
+                            "â€”"}
                         </td>
 
                         <td
@@ -2138,10 +1893,10 @@ const confirmLetterDelivered = async () => {
                                 "inline-block",
                             }}
                           >
-                            🏷️{" "}
+                            ðŸ·ï¸{" "}
                             {letter.qr
                               ?.code ||
-                              "—"}
+                              "â€”"}
                           </strong>
                         </td>
 
@@ -2173,12 +1928,12 @@ const confirmLetterDelivered = async () => {
                                 "800",
                             }}
                           >
-                            🧭{" "}
+                            ðŸ§­{" "}
                             {letter
                               .movements
                               ?.length ||
                               0}{" "}
-                            محطة
+                            Ù…Ø­Ø·Ø©
                           </span>
                         </td>
 
@@ -2215,7 +1970,7 @@ const confirmLetterDelivered = async () => {
                                 "nowrap",
                             }}
                           >
-                            🧭 عرض الرحلة
+                            ðŸ§­ Ø¹Ø±Ø¶ Ø§Ù„Ø±Ø­Ù„Ø©
                           </button>
                         </td>
                       </tr>
@@ -2228,7 +1983,7 @@ const confirmLetterDelivered = async () => {
         </div>
 
         {/* =========================
-            تفاصيل الخطاب
+            ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø®Ø·Ø§Ø¨
            ========================= */}
         {selectedLetter && (
           <LetterDetails
@@ -2241,7 +1996,7 @@ const confirmLetterDelivered = async () => {
         )}
 
         {/* =========================
-            إنشاء دفعة QR
+            Ø¥Ù†Ø´Ø§Ø¡ Ø¯ÙØ¹Ø© QR
            ========================= */}
         <div
           style={{
@@ -2285,7 +2040,7 @@ const confirmLetterDelivered = async () => {
                   fontSize: "24px",
                 }}
               >
-                🏷️
+                ðŸ·ï¸
               </div>
 
               <div>
@@ -2297,7 +2052,7 @@ const confirmLetterDelivered = async () => {
                     color: "#0F172A",
                   }}
                 >
-                  إنشاء دفعة QR جديدة
+                  Ø¥Ù†Ø´Ø§Ø¡ Ø¯ÙØ¹Ø© QR Ø¬Ø¯ÙŠØ¯Ø©
                 </h3>
 
                 <p
@@ -2308,7 +2063,7 @@ const confirmLetterDelivered = async () => {
                     color: "#64748B",
                   }}
                 >
-                  أكواد مختلفة وجاهزة للطباعة والاستخدام في الأرشيف
+                  Ø£ÙƒÙˆØ§Ø¯ Ù…Ø®ØªÙ„ÙØ© ÙˆØ¬Ø§Ù‡Ø²Ø© Ù„Ù„Ø·Ø¨Ø§Ø¹Ø© ÙˆØ§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù… ÙÙŠ Ø§Ù„Ø£Ø±Ø´ÙŠÙ
                 </p>
               </div>
             </div>
@@ -2328,7 +2083,7 @@ const confirmLetterDelivered = async () => {
                   color: "#334155",
                 }}
               >
-                عدد الأكواد
+                Ø¹Ø¯Ø¯ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯
               </label>
 
               <select
@@ -2405,15 +2160,15 @@ const confirmLetterDelivered = async () => {
                 }}
               >
                 {generating
-                  ? "⏳ جاري الإنشاء..."
-                  : "✨ إنشاء الأكواد"}
+                  ? "â³ Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø¥Ù†Ø´Ø§Ø¡..."
+                  : "âœ¨ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯"}
               </button>
             </div>
           </div>
         </div>
 
         {/* =========================
-            الإحصائيات
+            Ø§Ù„Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª
            ========================= */}
         <div
           style={{
@@ -2425,32 +2180,32 @@ const confirmLetterDelivered = async () => {
           }}
         >
           <StatCard
-            title="إجمالي الأكواد"
+            title="Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯"
             value={qrCodes.length}
-            icon="📦"
+            icon="ðŸ“¦"
           />
 
           <StatCard
-            title="متاح للاستخدام"
+            title="Ù…ØªØ§Ø­ Ù„Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…"
             value={availableCount}
-            icon="🟢"
+            icon="ðŸŸ¢"
           />
 
           <StatCard
-            title="مستخدم"
+            title="Ù…Ø³ØªØ®Ø¯Ù…"
             value={usedCount}
-            icon="🔵"
+            icon="ðŸ”µ"
           />
 
           <StatCard
-            title="مؤرشف"
+            title="Ù…Ø¤Ø±Ø´Ù"
             value={archivedCount}
-            icon="🟡"
+            icon="ðŸŸ¡"
           />
         </div>
 
         {/* =========================
-            البحث
+            Ø§Ù„Ø¨Ø­Ø«
            ========================= */}
         <div
           style={{
@@ -2479,7 +2234,7 @@ const confirmLetterDelivered = async () => {
                 fontSize: "18px",
               }}
             >
-              🔎
+              ðŸ”Ž
             </span>
 
             <input
@@ -2490,7 +2245,7 @@ const confirmLetterDelivered = async () => {
                   e.target.value
                 )
               }
-              placeholder="بحث برقم QR أو رقم الخطاب أو الموضوع..."
+              placeholder="Ø¨Ø­Ø« Ø¨Ø±Ù‚Ù… QR Ø£Ùˆ Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø£Ùˆ Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹..."
               style={{
                 width: "100%",
                 boxSizing:
@@ -2510,7 +2265,7 @@ const confirmLetterDelivered = async () => {
         </div>
 
         {/* =========================
-            سجل أكواد QR
+            Ø³Ø¬Ù„ Ø£ÙƒÙˆØ§Ø¯ QR
            ========================= */}
         <div
           style={{
@@ -2548,7 +2303,7 @@ const confirmLetterDelivered = async () => {
                   fontSize: "22px",
                 }}
               >
-                🏷️
+                ðŸ·ï¸
               </span>
 
               <h3
@@ -2559,7 +2314,7 @@ const confirmLetterDelivered = async () => {
                   color: "#0F172A",
                 }}
               >
-                سجل أكواد الأرشيف
+                Ø³Ø¬Ù„ Ø£ÙƒÙˆØ§Ø¯ Ø§Ù„Ø£Ø±Ø´ÙŠÙ
               </h3>
             </div>
 
@@ -2573,7 +2328,7 @@ const confirmLetterDelivered = async () => {
                 fontWeight: "700",
               }}
             >
-              {filteredCodes.length} كود
+              {filteredCodes.length} ÙƒÙˆØ¯
             </span>
           </div>
 
@@ -2591,10 +2346,10 @@ const confirmLetterDelivered = async () => {
                   marginBottom: "10px",
                 }}
               >
-                ⏳
+                â³
               </div>
 
-              جاري تحميل الأكواد...
+              Ø¬Ø§Ø±ÙŠ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯...
             </div>
           ) : filteredCodes.length ===
             0 ? (
@@ -2611,7 +2366,7 @@ const confirmLetterDelivered = async () => {
                   marginBottom: "12px",
                 }}
               >
-                🏷️
+                ðŸ·ï¸
               </div>
 
               <div
@@ -2622,7 +2377,7 @@ const confirmLetterDelivered = async () => {
                   marginBottom: "6px",
                 }}
               >
-                لا توجد أكواد QR حتى الآن
+                Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£ÙƒÙˆØ§Ø¯ QR Ø­ØªÙ‰ Ø§Ù„Ø¢Ù†
               </div>
 
               <div
@@ -2630,7 +2385,7 @@ const confirmLetterDelivered = async () => {
                   fontSize: "13px",
                 }}
               >
-                اختاري عدد الأكواد واضغطي "إنشاء الأكواد"
+                Ø§Ø®ØªØ§Ø±ÙŠ Ø¹Ø¯Ø¯ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯ ÙˆØ§Ø¶ØºØ·ÙŠ "Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯"
               </div>
             </div>
           ) : (
@@ -2657,25 +2412,25 @@ const confirmLetterDelivered = async () => {
                     <th
                       style={thStyle}
                     >
-                      🏷️ رقم QR
+                      ðŸ·ï¸ Ø±Ù‚Ù… QR
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      📌 الحالة
+                      ðŸ“Œ Ø§Ù„Ø­Ø§Ù„Ø©
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      📄 رقم الخطاب
+                      ðŸ“„ Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨
                     </th>
 
                     <th
                       style={thStyle}
                     >
-                      📅 تاريخ الإنشاء
+                      ðŸ“… ØªØ§Ø±ÙŠØ® Ø§Ù„Ø¥Ù†Ø´Ø§Ø¡
                     </th>
                   </tr>
                 </thead>
@@ -2721,7 +2476,7 @@ const confirmLetterDelivered = async () => {
                           }
                         >
                           {item.letter_id ||
-                            "—"}
+                            "â€”"}
                         </td>
 
                         <td
@@ -2744,7 +2499,7 @@ const confirmLetterDelivered = async () => {
       </div>
 
       {/* =========================
-          منطقة الطباعة
+          Ù…Ù†Ø·Ù‚Ø© Ø§Ù„Ø·Ø¨Ø§Ø¹Ø©
          ========================= */}
       {printCodes.length > 0 && (
         <div
@@ -2754,15 +2509,15 @@ const confirmLetterDelivered = async () => {
           <div className="qr-print-header">
             <div>
               <div className="qr-print-title">
-                أكواد QR للأرشيف
+                Ø£ÙƒÙˆØ§Ø¯ QR Ù„Ù„Ø£Ø±Ø´ÙŠÙ
               </div>
 
               <div className="qr-print-subtitle">
-                قسم الاستحقاقات - كلية الهندسة
+                Ù‚Ø³Ù… Ø§Ù„Ø§Ø³ØªØ­Ù‚Ø§Ù‚Ø§Øª - ÙƒÙ„ÙŠØ© Ø§Ù„Ù‡Ù†Ø¯Ø³Ø©
               </div>
 
               <div className="qr-print-count">
-                عدد الأكواد:{" "}
+                Ø¹Ø¯Ø¯ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯:{" "}
                 {printCodes.length}
               </div>
             </div>
@@ -2772,7 +2527,7 @@ const confirmLetterDelivered = async () => {
               className="qr-print-button no-print"
               onClick={handlePrint}
             >
-              🖨️ طباعة
+              ðŸ–¨ï¸ Ø·Ø¨Ø§Ø¹Ø©
             </button>
           </div>
 
@@ -2935,7 +2690,7 @@ const confirmLetterDelivered = async () => {
 }
 
 /* =========================================================
-   تفاصيل الخطاب - التصميم المميز
+   ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø®Ø·Ø§Ø¨ - Ø§Ù„ØªØµÙ…ÙŠÙ… Ø§Ù„Ù…Ù…ÙŠØ²
    ========================================================= */
 
 function LetterDetails({ letter, onClose, onMoveNext }) {
@@ -2984,7 +2739,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
         overflow: "hidden",
       }}
     >
-      {/* الرأس */}
+      {/* Ø§Ù„Ø±Ø£Ø³ */}
       <div
         style={{
           position: "relative",
@@ -3057,7 +2812,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   "0 10px 25px rgba(0,0,0,0.12)",
               }}
             >
-              ✉️
+              âœ‰ï¸
             </div>
 
             <div>
@@ -3070,7 +2825,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   fontWeight: "600",
                 }}
               >
-                🧭 نظام متابعة حركة الخطابات
+                ðŸ§­ Ù†Ø¸Ø§Ù… Ù…ØªØ§Ø¨Ø¹Ø© Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
               </div>
 
               <h3
@@ -3080,9 +2835,9 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   fontWeight: "800",
                 }}
               >
-                خطاب رقم{" "}
+                Ø®Ø·Ø§Ø¨ Ø±Ù‚Ù…{" "}
                 {letter.letter_number ||
-                  "—"}
+                  "â€”"}
               </h3>
 
               <div
@@ -3113,7 +2868,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                       fontWeight: "700",
                     }}
                   >
-                    🏷️{" "}
+                    ðŸ·ï¸{" "}
                     {letter.qr.code}
                   </span>
                 )}
@@ -3137,9 +2892,9 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                     fontWeight: "700",
                   }}
                 >
-                  📝{" "}
+                  ðŸ“{" "}
                   {letter.subject ||
-                    "بدون موضوع"}
+                    "Ø¨Ø¯ÙˆÙ† Ù…ÙˆØ¶ÙˆØ¹"}
                 </span>
               </div>
             </div>
@@ -3164,13 +2919,13 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 "blur(8px)",
             }}
           >
-            إغلاق ✕
+            Ø¥ØºÙ„Ø§Ù‚ âœ•
           </button>
         </div>
       </div>
 
       <div style={{ padding: "24px" }}>
-        {/* الحالة والإحصائيات */}
+        {/* Ø§Ù„Ø­Ø§Ù„Ø© ÙˆØ§Ù„Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª */}
         <div
           style={{
             display: "grid",
@@ -3201,7 +2956,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 bottom: "-15px",
               }}
             >
-              🚀
+              ðŸš€
             </div>
 
             <div
@@ -3212,7 +2967,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 marginBottom: "6px",
               }}
             >
-              🚀 الحالة الحالية
+              ðŸš€ Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©
             </div>
 
             <div
@@ -3263,7 +3018,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 marginBottom: "6px",
               }}
             >
-              🧭 عدد المحطات
+              ðŸ§­ Ø¹Ø¯Ø¯ Ø§Ù„Ù…Ø­Ø·Ø§Øª
             </div>
 
             <div
@@ -3283,7 +3038,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 color: "#64748B",
               }}
             >
-              محطة في رحلة الخطاب
+              Ù…Ø­Ø·Ø© ÙÙŠ Ø±Ø­Ù„Ø© Ø§Ù„Ø®Ø·Ø§Ø¨
             </div>
           </div>
 
@@ -3312,7 +3067,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   fontWeight: "700",
                 }}
               >
-                📊 نسبة الإنجاز
+                ðŸ“Š Ù†Ø³Ø¨Ø© Ø§Ù„Ø¥Ù†Ø¬Ø§Ø²
               </div>
 
               <strong
@@ -3361,13 +3116,13 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 color: "#94A3B8",
               }}
             >
-              {completedCount} من{" "}
-              {movements.length} محطة مكتملة
+              {completedCount} Ù…Ù†{" "}
+              {movements.length} Ù…Ø­Ø·Ø© Ù…ÙƒØªÙ…Ù„Ø©
             </div>
           </div>
         </div>
 
-        {/* معلومات الخطاب */}
+        {/* Ù…Ø¹Ù„ÙˆÙ…Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨ */}
         <div
           style={{
             display: "grid",
@@ -3378,55 +3133,55 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
           }}
         >
           <InfoBox
-            label="رقم الخطاب"
-            value={`📄 ${
+            label="Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨"
+            value={`ðŸ“„ ${
               letter.letter_number ||
-              "—"
+              "â€”"
             }`}
           />
 
           <InfoBox
-            label="تاريخ الخطاب"
-            value={`📅 ${formatDate(
+            label="ØªØ§Ø±ÙŠØ® Ø§Ù„Ø®Ø·Ø§Ø¨"
+            value={`ðŸ“… ${formatDate(
               letter.letter_date
             )}`}
           />
 
           <InfoBox
-            label="الجهة المرسلة"
-            value={`🏢 ${
+            label="Ø§Ù„Ø¬Ù‡Ø© Ø§Ù„Ù…Ø±Ø³Ù„Ø©"
+            value={`ðŸ¢ ${
               letter.sender?.name ||
-              "—"
+              "â€”"
             }`}
           />
 
           <InfoBox
-            label="كود QR"
-            value={`🏷️ ${
+            label="ÙƒÙˆØ¯ QR"
+            value={`ðŸ·ï¸ ${
               letter.qr?.code ||
-              "—"
+              "â€”"
             }`}
             ltr
           />
 
           <InfoBox
-            label="الموضوع"
-            value={`📝 ${
+            label="Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹"
+            value={`ðŸ“ ${
               letter.subject ||
-              "—"
+              "â€”"
             }`}
           />
 
           <InfoBox
-            label="الحالة الحالية"
-            value={`🔵 ${getLetterStatusText(
+            label="Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©"
+            value={`ðŸ”µ ${getLetterStatusText(
               letter.status
             )}`}
             highlight
           />
         </div>
 
-        {/* الملاحظات */}
+        {/* Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø§Øª */}
         {letter.notes && (
           <div
             style={{
@@ -3453,7 +3208,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   fontSize: "25px",
                 }}
               >
-                💡
+                ðŸ’¡
               </div>
 
               <div>
@@ -3467,7 +3222,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                       "800",
                   }}
                 >
-                  ملاحظات الخطاب
+                  Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨
                 </div>
 
                 <div
@@ -3485,7 +3240,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
           </div>
         )}
 
-        {/* عنوان الرحلة */}
+        {/* Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ø±Ø­Ù„Ø© */}
         <div
           style={{
             display: "flex",
@@ -3523,7 +3278,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 fontSize: "25px",
               }}
             >
-              🧭
+              ðŸ§­
             </div>
 
             <div>
@@ -3535,7 +3290,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   color: "#0F172A",
                 }}
               >
-                رحلة حركة الخطاب
+                Ø±Ø­Ù„Ø© Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨
               </h4>
 
               <div
@@ -3546,7 +3301,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   color: "#64748B",
                 }}
               >
-                📨 تتبع انتقال الخطاب بين الإدارات
+                ðŸ“¨ ØªØªØ¨Ø¹ Ø§Ù†ØªÙ‚Ø§Ù„ Ø§Ù„Ø®Ø·Ø§Ø¨ Ø¨ÙŠÙ† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
               </div>
             </div>
           </div>
@@ -3566,11 +3321,11 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
               fontWeight: "700",
             }}
           >
-            🗂️ {movements.length} محطة
+            ðŸ—‚ï¸ {movements.length} Ù…Ø­Ø·Ø©
           </div>
         </div>
 
-        {/* الرحلة */}
+        {/* Ø§Ù„Ø±Ø­Ù„Ø© */}
         {movements.length === 0 ? (
           <div
             style={{
@@ -3594,7 +3349,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   "12px",
               }}
             >
-              🧭
+              ðŸ§­
             </div>
 
             <div
@@ -3606,7 +3361,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                   "6px",
               }}
             >
-              لا توجد محطات مسجلة
+              Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø§Øª Ù…Ø³Ø¬Ù„Ø©
             </div>
 
             <div
@@ -3614,7 +3369,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 fontSize: "13px",
               }}
             >
-              لم يتم إنشاء مسار لهذا الخطاب حتى الآن.
+              Ù„Ù… ÙŠØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ù…Ø³Ø§Ø± Ù„Ù‡Ø°Ø§ Ø§Ù„Ø®Ø·Ø§Ø¨ Ø­ØªÙ‰ Ø§Ù„Ø¢Ù†.
             </div>
           </div>
         ) : (
@@ -3632,7 +3387,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                 "22px 18px",
             }}
           >
-            {/* الخط العمودي */}
+            {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ */}
             <div
               style={{
                 position:
@@ -3690,7 +3445,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                           : "18px",
                     }}
                   >
-                    {/* دائرة المحطة */}
+                    {/* Ø¯Ø§Ø¦Ø±Ø© Ø§Ù„Ù…Ø­Ø·Ø© */}
                     <div
                       style={{
                         width:
@@ -3737,13 +3492,13 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                       }}
                     >
                       {isCompleted
-                        ? "✓"
+                        ? "âœ“"
                         : isCurrent
-                        ? "⚡"
+                        ? "âš¡"
                         : index + 1}
                     </div>
 
-                    {/* بطاقة المحطة */}
+                    {/* Ø¨Ø·Ø§Ù‚Ø© Ø§Ù„Ù…Ø­Ø·Ø© */}
                     <div
                       style={{
                         flex: 1,
@@ -3814,7 +3569,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                                   "3px",
                               }}
                             >
-                              المحطة{" "}
+                              Ø§Ù„Ù…Ø­Ø·Ø©{" "}
                               {index +
                                 1}
                             </div>
@@ -3832,7 +3587,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                               {movement
                                 .department
                                 ?.name ||
-                                "إدارة غير محددة"}
+                                "Ø¥Ø¯Ø§Ø±Ø© ØºÙŠØ± Ù…Ø­Ø¯Ø¯Ø©"}
                             </div>
                           </div>
                         </div>
@@ -3889,7 +3644,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                               "#475569",
                           }}
                         >
-                          🔧{" "}
+                          ðŸ”§{" "}
                           {
                             movement.action
                           }
@@ -3923,9 +3678,9 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                               "#64748B",
                           }}
                         >
-                          📥{" "}
+                          ðŸ“¥{" "}
                           <strong>
-                            الاستلام
+                            Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…
                           </strong>
 
                           <div
@@ -3961,9 +3716,9 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                                 "#64748B",
                             }}
                           >
-                            📤{" "}
+                            ðŸ“¤{" "}
                             <strong>
-                              الإرسال
+                              Ø§Ù„Ø¥Ø±Ø³Ø§Ù„
                             </strong>
 
                             <div
@@ -4001,7 +3756,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
                               "1.8",
                           }}
                         >
-                          💬{" "}
+                          ðŸ’¬{" "}
                           {
                             movement.notes
                           }
@@ -4015,7 +3770,7 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
           </div>
         )}
 
-        {/* مفتاح الحالات */}
+        {/* Ù…ÙØªØ§Ø­ Ø§Ù„Ø­Ø§Ù„Ø§Øª */}
         {currentMovement && currentMovement.status === "in_progress" && (
           <div
             style={{
@@ -4060,18 +3815,18 @@ function LetterDetails({ letter, onClose, onMoveNext }) {
             }}
           >
             <LegendItem
-              icon="🟢"
-              text="تم التنفيذ"
+              icon="ðŸŸ¢"
+              text="ØªÙ… Ø§Ù„ØªÙ†ÙÙŠØ°"
             />
 
             <LegendItem
-              icon="🔵"
-              text="جاري التنفيذ"
+              icon="ðŸ”µ"
+              text="Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªÙ†ÙÙŠØ°"
             />
 
             <LegendItem
-              icon="⚪"
-              text="في الانتظار"
+              icon="âšª"
+              text="ÙÙŠ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±"
             />
           </div>
         )}
@@ -4143,29 +3898,29 @@ function InfoBox({
 }
 
 /* =========================================================
-   حالات حركة الخطاب
+   Ø­Ø§Ù„Ø§Øª Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨
    ========================================================= */
 
 const movementStatusConfig = {
   waiting: {
-    text: "في الانتظار",
-    icon: "⚪",
+    text: "ÙÙŠ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±",
+    icon: "âšª",
     color: "#64748B",
     background: "#F8FAFC",
     border: "#CBD5E1",
   },
 
   in_progress: {
-    text: "جاري التنفيذ",
-    icon: "🔵",
+    text: "Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªÙ†ÙÙŠØ°",
+    icon: "ðŸ”µ",
     color: "#1D4ED8",
     background: "#EFF6FF",
     border: "#BFDBFE",
   },
 
   completed: {
-    text: "تم التنفيذ",
-    icon: "🟢",
+    text: "ØªÙ… Ø§Ù„ØªÙ†ÙÙŠØ°",
+    icon: "ðŸŸ¢",
     color: "#047857",
     background: "#ECFDF5",
     border: "#A7F3D0",
@@ -4180,11 +3935,11 @@ function getMovementStatusText(
 
   return config
     ? config.text
-    : status || "غير محدد";
+    : status || "ØºÙŠØ± Ù…Ø­Ø¯Ø¯";
 }
 
 /* =========================================================
-   Emoji للإدارات
+   Emoji Ù„Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
    ========================================================= */
 
 function getDepartmentEmoji(name) {
@@ -4192,40 +3947,40 @@ function getDepartmentEmoji(name) {
     name || ""
   );
 
-  if (value.includes("أمين")) {
-    return "👨‍💼";
+  if (value.includes("Ø£Ù…ÙŠÙ†")) {
+    return "ðŸ‘¨â€ðŸ’¼";
   }
 
-  if (value.includes("استحقاق")) {
-    return "💰";
+  if (value.includes("Ø§Ø³ØªØ­Ù‚Ø§Ù‚")) {
+    return "ðŸ’°";
   }
 
-  if (value.includes("حساب")) {
-    return "🧮";
-  }
-
-  if (
-    value.includes("قيد") ||
-    value.includes("حفظ")
-  ) {
-    return "🗄️";
-  }
-
-  if (value.includes("ثقاف")) {
-    return "🎓";
+  if (value.includes("Ø­Ø³Ø§Ø¨")) {
+    return "ðŸ§®";
   }
 
   if (
-    value.includes("هيئة التدريس")
+    value.includes("Ù‚ÙŠØ¯") ||
+    value.includes("Ø­ÙØ¸")
   ) {
-    return "👨‍🏫";
+    return "ðŸ—„ï¸";
   }
 
-  if (value.includes("مكتب")) {
-    return "🏢";
+  if (value.includes("Ø«Ù‚Ø§Ù")) {
+    return "ðŸŽ“";
   }
 
-  return "🏛️";
+  if (
+    value.includes("Ù‡ÙŠØ¦Ø© Ø§Ù„ØªØ¯Ø±ÙŠØ³")
+  ) {
+    return "ðŸ‘¨â€ðŸ«";
+  }
+
+  if (value.includes("Ù…ÙƒØªØ¨")) {
+    return "ðŸ¢";
+  }
+
+  return "ðŸ›ï¸";
 }
 
 /* =========================================================
@@ -4266,26 +4021,26 @@ function LegendItem({
 }
 
 /* =========================================================
-   الحالة العامة للخطاب
+   Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø¹Ø§Ù…Ø© Ù„Ù„Ø®Ø·Ø§Ø¨
    ========================================================= */
 
 function getLetterStatusText(
   status
 ) {
   const config = {
-    incoming: "وارد",
+    incoming: "ÙˆØ§Ø±Ø¯",
     in_progress:
-      "جاري التنفيذ",
+      "Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªÙ†ÙÙŠØ°",
     completed:
-      "تم التنفيذ",
+      "ØªÙ… Ø§Ù„ØªÙ†ÙÙŠØ°",
     archived:
-      "مؤرشف",
+      "Ù…Ø¤Ø±Ø´Ù",
   };
 
   return (
     config[status] ||
     status ||
-    "غير محدد"
+    "ØºÙŠØ± Ù…Ø­Ø¯Ø¯"
   );
 }
 
@@ -4396,22 +4151,22 @@ function StatusBadge({
 }) {
   const config = {
     available: {
-      text: "متاح",
-      icon: "🟢",
+      text: "Ù…ØªØ§Ø­",
+      icon: "ðŸŸ¢",
       background: "#ECFDF5",
       color: "#047857",
     },
 
     used: {
-      text: "مستخدم",
-      icon: "🔵",
+      text: "Ù…Ø³ØªØ®Ø¯Ù…",
+      icon: "ðŸ”µ",
       background: "#EFF6FF",
       color: "#1D4ED8",
     },
 
     archived: {
-      text: "مؤرشف",
-      icon: "🟡",
+      text: "Ù…Ø¤Ø±Ø´Ù",
+      icon: "ðŸŸ¡",
       background: "#FFFBEB",
       color: "#B45309",
     },
@@ -4421,8 +4176,8 @@ function StatusBadge({
     config[status] || {
       text:
         status ||
-        "غير محدد",
-      icon: "⚪",
+        "ØºÙŠØ± Ù…Ø­Ø¯Ø¯",
+      icon: "âšª",
       background:
         "#F3F4F6",
       color:
@@ -4495,7 +4250,7 @@ function headerButtonStyle(
 
 function formatDate(value) {
   if (!value) {
-    return "—";
+    return "â€”";
   }
 
   try {
@@ -4508,7 +4263,7 @@ function formatDate(value) {
       }
     ).format(new Date(value));
   } catch {
-    return "—";
+    return "â€”";
   }
 }
 
@@ -4520,7 +4275,7 @@ function formatDateTime(
   value
 ) {
   if (!value) {
-    return "—";
+    return "â€”";
   }
 
   try {
@@ -4535,7 +4290,7 @@ function formatDateTime(
       }
     ).format(new Date(value));
   } catch {
-    return "—";
+    return "â€”";
   }
 }
 
@@ -4572,3 +4327,4 @@ const tdStyle = {
   whiteSpace:
     "nowrap",
 };
+

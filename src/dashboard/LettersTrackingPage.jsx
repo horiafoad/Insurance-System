@@ -2266,14 +2266,7 @@ const startQrScanner = async () => {
     setScannerLoading(false);
   }
 };
- useEffect(() => {
-  loadQRCodes();
-  loadLetters();
 
-  return () => {
-    stopQrScanner();
-  };
-}, []);
   const loadQRCodes = async () => {
     setLoading(true);
 
@@ -2489,6 +2482,15 @@ const startQrScanner = async () => {
       setLoadingLetters(false);
     }
   };
+
+  useEffect(() => {
+    loadQRCodes();
+    loadLetters();
+
+    return () => {
+      stopQrScanner();
+    };
+  }, []);
 
   const refreshLetters = async () => {
     setRefreshingLetters(true);
@@ -3644,6 +3646,19 @@ const startQrScanner = async () => {
                 {refreshingLetters
                   ? "⏳ جاري التحديث..."
                   : "🔄 تحديث"}
+              </button>
+
+              <button
+                type="button"
+                onClick={startQrScanner}
+                disabled={scannerOpen}
+                style={headerButtonStyle(
+                  scannerOpen
+                    ? "#64748B"
+                    : "#0F766E"
+                )}
+              >
+                📷 مسح QR للخطاب
               </button>
 
               <button
