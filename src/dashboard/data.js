@@ -181,6 +181,16 @@ export const MENU_ITEMS = [
     icon: "👤",
   },
   {
+    id: "salary_import",
+    title: "استيراد مفردات",
+    icon: "📥",
+  },
+  {
+    id: "pdf_analyzer",
+    title: "تحليل PDF",
+    icon: "🔍",
+  },
+  {
     id: "connection_test",
     title: "اختبار الاتصال",
     icon: "🔧",

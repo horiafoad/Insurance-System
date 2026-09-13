@@ -12,7 +12,10 @@ const MONTH_NAMES = [
 ];
 
 function normalizeDigits(str) {
+  /* NFKC أولًا: تحويل الأشكال العربية المرئية (Presentation Forms U+FB50–U+FEFF)
+     مثل «رﻗﻢ اﻟﻌﺎﻣﻞ» إلى الحروف القياسية «رقم العامل» — وإلا تفشل كل التطابقات */
   return String(str)
+    .normalize("NFKC")
     .replace(/[یك]/g, (c) => (c === "ی" ? "ي" : "ك"))
     .replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c))
     .replace(/[۰-۹]/g, (c) => "۰۱۲۳۴۵۶۷۸۹".indexOf(c));
@@ -120,10 +123,17 @@ async function renderAllPages(file, onProgress) {
     await pageObj.render({ canvasContext: canvas.getContext("2d", { willReadFrequently: true }), viewport: vp }).promise;
 
     /* النص المطبوع داخل الـ PDF (Text Layer حقيقي) هو المصدر الأساسي — بدون OCR.
-       الـ OCR يستخدم فقط للصفحات التي بلا نص مطبوع. */
+       الـ OCR يستخدم فقط للصفحات التي بلا نص مطبوع.
+       فحص جودة النص: بعض ملفات PDF تكون طباعتها النصية تالفة (الحروف الموصولة
+       مستبدلة بكودات تحكم) — نكتشفها من قلة الحروف العربية الفعلية ونستخدم OCR بدلا. */
     const textContent = await pageObj.getTextContent();
     const lines = textItemsToLines(textContent.items || [], vp);
-    const isTextual = lines.length >= 3;
+    const arabicRich = lines.filter((l) => {
+      const n = normalizeDigits(l.text);
+      const a = (n.match(/[\u0600-\u06FF]/g) || []).length;
+      return n.length > 0 && a / n.length >= 0.4;
+    });
+    const isTextual = lines.length >= 3 && (arabicRich.length / lines.length) >= 0.5;
     const ocrImage = isTextual
       ? canvas.toDataURL("image/jpeg", 0.85)
       : buildBinaryOcrCanvas(canvas).toDataURL("image/jpeg", 0.9);
@@ -356,6 +366,17 @@ const JUNK_WORDS = [
   "كلية","قسم","شهر","سنة","سنوى","دفع","مستحق","تأمين","علاوة","حافز","كادر","درجة","وظيف","مكأفاة",
   "مكافأة","مجموع","اللجنة","النقابات","مستحقات","أجور","اجور","تكليف","حوالة","ملاحظات","ملاحظة",
   "البيانات","عدد","قيمة","صفحة","مرتبات","الشهر",
+  "القومي","الرقم","الكود","اوركال","الاوركال","اوركل","ضريبة","الضرائب","الاستقطاع","استقطاع",
+  "الخصم","الخصومات","التأسيسي","الاساسي","الأساسي","المستندات","التاريخ","الدرجة","الدرجه",
+];
+
+/* سطور التسميات (Labels) التي قد تُتخَطّف كاسم بالخطأ — مثل "الرقم القومي" ثم رقم قومي طويل */
+const LABEL_PREFIX_RE = /^(?:رقم|الرقم|كود|الكود|اوركال|الاوركال|اوركل|القومي|المصرف|البنك|الدرجة|الدرجه|التاريخ|ملاحظات|الأساسي|الاساسي|التأسيسي|اسم|الاسم)\b/;
+
+/* كلمات تُرفض من مرشّح الاسم مهما كان مساره */
+const LABEL_TOKENS = [
+  "القومي", "الرقم", "الكود", "اوركال", "الاوركال", "اوركل", "قومي",
+  "الدرجة", "الدرجه", "التاريخ", "ملاحظات", "الملاحظات", "المصرف",
 ];
 
 /* الاسم: أول سطر عربي نقي خالي من الأرقام والكلمات الدخيلة، أو من جنب ليبلات الاسم المباشرة */
@@ -437,12 +458,17 @@ function cleanNamePart(raw) {
     .trim();
   name = name.replace(/^[\s•،.,،:：-]+/, "").replace(/[\s•،.,،:：-]+$/, "").trim();
   if (name.length < 3 || /^\d/.test(name)) return null;
+  /* قص أي أرقام متبقّية (مثل أسطر الرقم القومي) */
+  name = name.split(/\d/, 1)[0].trim();
+  if (name.length < 3) return null;
   name = name.replace(
     /^(السيد|السيدة|الاستاذ|الأستاذ|الدكتور|الاستاذ الدكتور|الأستاذ الدكتور|أ\.د|د\/|م\/|أ\/|د\.)\s*/,
     ""
   ).trim();
   name = stripTitleTail(name);
   if (name.length < 3) return null;
+  /* رفض أي مرشّح يحمل كلمة تسمية (القومي/الكود/اوركال...) مهما كان مساره */
+  if (LABEL_TOKENS.some((w) => name.includes(w))) return null;
   name = fixNameSpelling(name);
   return name.length >= 3 ? name : null;
 }
@@ -450,10 +476,23 @@ function cleanNamePart(raw) {
 function extractNameFromText(text) {
   const norm = normalizeDigits(text);
 
-  const workerName = norm.match(/رقم\s*(?:ال)?عامل\s*[:：]?\s*[0-9][0-9 -]*\s*([^\n]+)/);
-  if (workerName) {
-    const name = cleanNamePart(workerName[1]);
-    if (name) return name;
+  /* الرقم + الاسم: الاسم يظهر بعد الرقم على نفس السطر أو السطر التالي مباشرة،
+     وقد تلحقه أرقام مبالغ (أعمدة صرف) تُقص عند أول رقم بالاسم. */
+  const labeled = norm.match(
+    new RegExp(`رقم\\s*(?:ال)?(?:صرف|كمبيوتر|وظيفي|شئون|عامل|كود)\\s*[:：]?\\s*([0-9][0-9 \\-]*)`)
+  );
+  if (labeled) {
+    const headEnd = (labeled.index || 0) + labeled[0].length;
+    const contLine = norm
+      .slice(headEnd)
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    if (contLine) {
+      const candidate = contLine.split(/\d/, 1)[0].trim();
+      const name = cleanNamePart(candidate);
+      if (name) return name;
+    }
   }
 
   const labeledName = norm.match(/(?:اسم|الاسم)\s*(?:ال)?موظف\s*[:：]?\s*([^\n]+)/);
@@ -462,14 +501,17 @@ function extractNameFromText(text) {
     if (name) return name;
   }
 
+  /* الخطوط النقية: أي سطر عربي يبدأ بالاسم يتقدم، وقد تلحقه أعمدة أرقام (مبالغ) تُقص */
   const lines = norm.split("\n").map((l) => l.trim()).filter(Boolean);
   for (const line of lines) {
-    if (line.length < 4 || line.length > 70) continue;
-    if (/\d/.test(line)) continue;
-    if (hasJunkWord(line)) continue;
-    const letters = line.replace(/[^\u0600-\u06FF]/g, "");
-    if (letters.length < line.length * 0.55) continue;
-    const name = cleanNamePart(line);
+    if (line.length < 4) continue;
+    const candidate = line.split(/\d/, 1)[0].trim();
+    if (candidate.length < 3 || candidate.length > 60) continue;
+    if (LABEL_PREFIX_RE.test(candidate)) continue;
+    if (hasJunkWord(candidate)) continue;
+    const letters = candidate.replace(/[^\u0600-\u06FF]/g, "");
+    if (letters.length < candidate.length * 0.55) continue;
+    const name = cleanNamePart(candidate);
     if (name) return name;
   }
   return null;

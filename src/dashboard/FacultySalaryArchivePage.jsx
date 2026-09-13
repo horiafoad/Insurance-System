@@ -212,9 +212,10 @@ function downloadQueryUrl(fileUrl, downloadName) {
 }
 
 /* ------------------------------------------------------------------
-   البحث في الأرشيف بالاسم فقط (مبدأيّ) مع تجاهل اختلافات الكتابة العربية
+   البحث في الأرشيف بالاسم ورقم الكمبيوتر مع تجاهل اختلافات الكتابة العربية
    (أ/إ/آ/ا ، ة/ه ، ي/ى) ومطابقة كل كلمة بحث على حدة (AND بين الكلمات)
-   - لا يُبحث عن رقم الكمبيوتر إطلاقًا.
+   - يُبحث عن رقم الكمبيوتر كـ exact match.
+   - يُبحث عن الاسم مع variants عربية.
    - كل مجموعة or تُدمج مع الأخرى بـ AND (سلوك PostgREST المتكرر).
 ------------------------------------------------------------------ */
 function escFilter(v) {
@@ -256,6 +257,33 @@ function applyNameSearch(query, nameCol, rawQuery) {
     result = result.or(g);
   });
   return result;
+}
+
+/* البحث برقم الكمبيوتر - exact match فقط */
+function applyComputerNumberSearch(query, computerNumberCol, rawQuery) {
+  const q = String(rawQuery || "").trim();
+  if (!q) return query;
+  
+  // التحقق إذا كان البحث رقم فقط
+  if (/^\d{4,}$/.test(q) || /^[A-Za-z0-9_-]{4,}$/.test(q)) {
+    return query.eq(computerNumberCol, q);
+  }
+  
+  return query;
+}
+
+/* دالة بحث شاملة تدعم الاسم ورقم الكمبيوتر */
+function applyCombinedSearch(query, nameCol, computerNumberCol, rawQuery) {
+  const q = String(rawQuery || "").trim();
+  if (!q) return query;
+  
+  // إذا كان البحث رقم فقط، استخدم بحث رقم الكمبيوتر
+  if (/^\d{4,}$/.test(q) || /^[A-Za-z0-9_-]{4,}$/.test(q)) {
+    return applyComputerNumberSearch(query, computerNumberCol, q);
+  }
+  
+  // وإلا استخدم بحث الاسم
+  return applyNameSearch(query, nameCol, q);
 }
 
 /* ------------------------------------------------------------------
@@ -592,7 +620,7 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
 
         const q = search.trim();
         if (q) {
-          query = applyNameSearch(query, NAME_COL, q);
+          query = applyCombinedSearch(query, NAME_COL, 'computer_number', q);
         }
         if (yearFilter !== "all") {
           query = query.eq("year", Number(yearFilter));
@@ -645,7 +673,7 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
 
       const q = search.trim();
       if (q) {
-        query = applyNameSearch(query, NAME_COL, q);
+        query = applyCombinedSearch(query, NAME_COL, 'computer_number', q);
       }
       if (yearFilter !== "all") {
         query = query.eq("year", Number(yearFilter));
