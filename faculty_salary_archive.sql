@@ -17,6 +17,8 @@ alter table public.faculty_salary_pages enable row level security;
 
 drop policy if exists "Allow authenticated users to read faculty salary pages" on public.faculty_salary_pages;
 drop policy if exists "Allow authenticated users to insert faculty salary pages" on public.faculty_salary_pages;
+drop policy if exists "Allow program users to read faculty salary pages" on public.faculty_salary_pages;
+drop policy if exists "Allow program users to insert faculty salary pages" on public.faculty_salary_pages;
 
 create policy "Allow program users to read faculty salary pages"
   on public.faculty_salary_pages for select
@@ -32,6 +34,8 @@ on conflict (id) do nothing;
 
 drop policy if exists "Allow authenticated users to upload faculty salary files" on storage.objects;
 drop policy if exists "Allow public access to faculty salary files" on storage.objects;
+drop policy if exists "Allow program users to upload faculty salary files" on storage.objects;
+drop policy if exists "Allow program users to read faculty salary files" on storage.objects;
 
 create policy "Allow program users to upload faculty salary files"
   on storage.objects for insert

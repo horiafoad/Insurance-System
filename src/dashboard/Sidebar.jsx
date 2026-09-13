@@ -145,6 +145,44 @@ export default function Sidebar({
         <span>📋</span>
         <span>متابعة الخطابات</span>
       </button>
+
+      {/* =========================================
+          أرشيف مفردات المرتب - قسم مستقل (هيئة التدريس والموظفون)
+          ========================================= */}
+
+      <div style={styles.sidebarDivider} />
+
+      <div style={{ padding: "6px 14px 2px", fontSize: 11, fontWeight: 800, color: "#94A3B8" }}>
+        💰 أرشيف مفردات المرتب
+      </div>
+
+      <button
+        onClick={() => setActiveMenu("faculty_salary_archive")}
+        style={{
+          ...styles.smallMenuButton,
+
+          ...(activeMenu === "faculty_salary_archive"
+            ? styles.smallMenuButtonActive
+            : {}),
+        }}
+      >
+        <span>👨‍🏫</span>
+        <span>أعضاء هيئة التدريس</span>
+      </button>
+
+      <button
+        onClick={() => setActiveMenu("employee_salary_archive")}
+        style={{
+          ...styles.smallMenuButton,
+
+          ...(activeMenu === "employee_salary_archive"
+            ? styles.smallMenuButtonActive
+            : {}),
+        }}
+      >
+        <span>👨‍💼</span>
+        <span>الموظفون</span>
+      </button>
     </aside>
   );
 }

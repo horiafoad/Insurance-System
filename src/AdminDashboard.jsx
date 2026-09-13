@@ -26,6 +26,8 @@ import FacultySalariesPage from "./dashboard/FacultySalariesPage";
 import IssuesManagementPage from "./dashboard/IssuesManagementPage";
 import ConnectionTest from "./dashboard/ConnectionTest";
 import LettersTrackingPage from "./dashboard/LettersTrackingPage";
+import FacultySalaryArchivePage from "./dashboard/FacultySalaryArchivePage";
+import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -862,9 +864,13 @@ export default function AdminDashboard({ currentUser }) {
           ? "إدارة القضايا"
           : activeMenu === "letters_tracking"
             ? "متابعة الخطابات"
-            : MENU_ITEMS.find(
-                (item) => item.id === activeMenu
-              )?.title || "الرئيسية";
+            : activeMenu === "faculty_salary_archive"
+              ? "أرشيف مفردات مرتب أعضاء هيئة التدريس"
+              : activeMenu === "employee_salary_archive"
+                ? "أرشيف مفردات مرتب الموظفين"
+                : MENU_ITEMS.find(
+                  (item) => item.id === activeMenu
+                )?.title || "الرئيسية";
 
   if (appLoading) {
     return (
@@ -1058,7 +1064,9 @@ export default function AdminDashboard({ currentUser }) {
             {activeMenu !== "claims" &&
               activeMenu !== "study_leaves" &&
               activeMenu !== "employee_profiles" &&
-              activeMenu !== "letters_tracking" && (
+              activeMenu !== "letters_tracking" &&
+              activeMenu !== "faculty_salary_archive" &&
+              activeMenu !== "employee_salary_archive" && (
                 <button
                   style={styles.primaryButton}
                   onClick={() => {
@@ -1224,6 +1232,14 @@ export default function AdminDashboard({ currentUser }) {
             qrCode={qrCodeFromUrl}
             currentUser={currentUser}
           />
+        )}
+
+        {activeMenu === "faculty_salary_archive" && (
+          <FacultySalaryArchivePage currentUser={currentUser} />
+        )}
+
+        {activeMenu === "employee_salary_archive" && (
+          <EmployeeSalaryArchivePage currentUser={currentUser} />
         )}
 
         {activeMenu === "weekly" && (
