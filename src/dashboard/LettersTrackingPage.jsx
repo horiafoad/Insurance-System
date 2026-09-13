@@ -648,8 +648,12 @@ function LetterTimelineView({ movements = [] }) {
                 }}
               >
                 <TimelineInfoRow label="المستلم" value={movement.received_by || "—"} />
-                <TimelineInfoRow label="التاريخ" value={formatDatePart(movement.received_at)} />
-                <TimelineInfoRow label="الوقت" value={formatTimePart(movement.received_at)} />
+                <TimelineInfoRow
+                  label="🕐"
+                  value={formatFullDateTime(
+                    movement.sent_at || movement.received_at
+                  )}
+                />
                 <TimelineInfoRow label="الإجراء" value={movement.action || "—"} />
               </div>
 
@@ -693,31 +697,6 @@ function timelineStatusLabel(status) {
     completed: "تم التنفيذ",
   };
   return labels[status] || status;
-}
-
-function formatDatePart(value) {
-  if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat("ar-EG", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return "—";
-  }
-}
-
-function formatTimePart(value) {
-  if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat("ar-EG", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return "—";
-  }
 }
 
 // --- LettersArchiveSection.jsx ---
@@ -3592,6 +3571,15 @@ const startQrScanner = async () => {
                       )?.department?.name || "لا توجد محطة حالية"}
                     </div>
                   </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"🕐 آخر تحديث"}
+                    </div>
+                    <div style={{ fontWeight: "800" }}>
+                      {formatFullDateTime(scannedLetter.updated_at)}
+                    </div>
+                  </div>
                 </div>
 
                 <div style={{ marginTop: "16px" }}>
@@ -5992,6 +5980,13 @@ function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
             highlight
           />
 
+          <InfoBox
+            label="آخر تحديث"
+            value={`🕐 ${formatFullDateTime(
+              letter.updated_at
+            )}`}
+          />
+
           {letter.letter_type && (
             <InfoBox
               label="نوع الخطاب"
@@ -6601,7 +6596,7 @@ function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
                                 "600",
                             }}
                           >
-                            {formatDateTime(
+                            {formatFullDateTime(
                               movement.received_at
                             )}
                           </div>
@@ -6639,7 +6634,7 @@ function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
                                   "600",
                               }}
                             >
-                              {formatDateTime(
+                              {formatFullDateTime(
                                 movement.sent_at
                               )}
                             </div>
@@ -7250,6 +7245,42 @@ function formatDateTime(
         minute: "2-digit",
       }
     ).format(new Date(value));
+  } catch {
+    return "—";
+  }
+}
+
+function formatFullDateTime(
+  value
+) {
+  if (!value) {
+    return "—";
+  }
+
+  try {
+    const date = new Date(value);
+
+    const datePart = new Intl.DateTimeFormat(
+      "ar-EG",
+      {
+        numberingSystem: "latn",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }
+    ).format(date);
+
+    const timePart = new Intl.DateTimeFormat(
+      "ar-EG",
+      {
+        numberingSystem: "latn",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }
+    ).format(date);
+
+    return `${datePart} - ${timePart}`;
   } catch {
     return "—";
   }

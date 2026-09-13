@@ -8,6 +8,28 @@ import { supabase } from "./supabaseClient";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
 
+function formatMovementTime(value) {
+  if (!value) return "";
+  try {
+    const date = new Date(value);
+    const datePart = new Intl.DateTimeFormat("ar-EG", {
+      numberingSystem: "latn",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    const timePart = new Intl.DateTimeFormat("ar-EG", {
+      numberingSystem: "latn",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+    return `${datePart} - ${timePart}`;
+  } catch {
+    return "";
+  }
+}
+
 function getQrActionMovement(movements = []) {
   if (!Array.isArray(movements) || movements.length === 0) {
     return null;
@@ -1904,7 +1926,7 @@ const updatedMovements = qrLetter.movements.map((movement) =>
                           fontSize: "16px",
                         }}
                       >
-                        {qrEffectiveStatus ===
+{qrEffectiveStatus ===
                         "completed"
                           ? "تم إتمام حركة الخطاب"
                           : qrEffectiveStatus ===
@@ -1912,6 +1934,20 @@ const updatedMovements = qrLetter.movements.map((movement) =>
                           ? "الخطاب يحتاج تعديل"
                           : "الخطاب قيد التنفيذ"}
                       </div>
+
+                      {qrLetter.updated_at && (
+                        <div
+                          style={{
+                            marginTop: "7px",
+                            fontSize: "12px",
+                            color: "#64748B",
+                            fontWeight: "700",
+                          }}
+                        >
+                          🕐 آخر تحديث:{" "}
+                          {formatMovementTime(qrLetter.updated_at)}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2234,6 +2270,23 @@ const updatedMovements = qrLetter.movements.map((movement) =>
                                       ? " بواسطة " +
                                         movement.received_by
                                       : ""}
+                                  </div>
+                                )}
+
+                                {(movement.received_at ||
+                                  movement.sent_at) && (
+                                  <div
+                                    style={{
+                                      marginTop: "7px",
+                                      color: "#94A3B8",
+                                      fontSize: "12px",
+                                    }}
+                                  >
+                                    🕐{" "}
+                                    {formatMovementTime(
+                                      movement.sent_at ||
+                                        movement.received_at
+                                    )}
                                   </div>
                                 )}
 
