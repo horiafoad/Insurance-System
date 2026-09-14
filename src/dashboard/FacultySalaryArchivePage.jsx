@@ -574,53 +574,81 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
       ? [...new Set(availableMonths.map((m) => Number(m)).filter((m) => Number.isFinite(m) && m >= 1 && m <= 12))].sort((a, b) => a - b)
       : [...Array(12)].map((_, i) => i + 1);
 
-  /* ------------------ تحميل السنوات والأعضاء المتاحين ------------------ */
+  /* دالة مشتركة: تجلب السنوات والشهور والأعضاء بطريقة تتجاوز الحد الأقصى
+     (هذا المشروع يرجع 1000 صف كحد أقصى حتى مع limit يُحدد أكبر).
+     لذلك: أقل/أكبر سنة باستعلام limit=1، وفحص كل سنة محتملة بطلب صغير،
+     وفحص الشهور 1..12 بطلبات صغيرة، وجلب الأعضاء بتقسيم الصفحات. */
+  const loadMetaData = async () => {
+    const table = ARCHIVE_TABLE;
+
+    const [minRes, maxRes] = await Promise.all([
+      supabase.from(table).select("year").order("year", { ascending: true }).limit(1),
+      supabase.from(table).select("year").order("year", { ascending: false }).limit(1),
+    ]);
+    const minYear = Number(minRes.data?.[0]?.year);
+    const maxYear = Number(maxRes.data?.[0]?.year);
+
+    let yearList = [];
+    let monthList;
+
+    if (Number.isFinite(minYear) && Number.isFinite(maxYear) && minYear <= maxYear) {
+      const probeYears = Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i);
+      const yearProbes = await Promise.all(
+        probeYears.map((y) => supabase.from(table).select("year").eq("year", y).limit(1))
+      );
+      yearList = yearProbes
+        .map((res, i) => (res.data && res.data.length > 0 ? probeYears[i] : null))
+        .filter((y) => y !== null)
+        .sort((a, b) => b - a);
+    }
+
+    const monthProbes = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        supabase.from(table).select("month").eq("month", i + 1).limit(1)
+      )
+    );
+    monthList = monthProbes
+      .map((res, i) => (res.data && res.data.length > 0 ? i + 1 : null))
+      .filter((m) => m !== null);
+
+    const memberRows = [];
+    let memberOffset = 0;
+    while (true) {
+      const { data, error: memberError } = await supabase
+        .from(table)
+        .select(`${NAME_COL}, computer_number`)
+        .order("computer_number", { ascending: true })
+        .range(memberOffset, memberOffset + 999);
+      if (memberError || !data || data.length === 0) break;
+      memberRows.push(...data);
+      if (data.length < 1000) break;
+      memberOffset += 1000;
+    }
+
+    const seen = new Set();
+    const uniqueMembers = [];
+    memberRows.forEach((r) => {
+      const key = `${r.computer_number}|${r[NAME_COL]}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueMembers.push(r);
+      }
+    });
+
+    return { yearList, monthList, memberRows: uniqueMembers };
+  };
+
+  /* ------------------ تحميل السنوات والشهور والأعضاء المتاحين ------------------ */
   useEffect(() => {
     let mounted = true;
 
     const loadMeta = async () => {
       try {
-        const [{ data: yearRows }, { data: monthRows }, { data: memberRows }] = await Promise.all([
-          supabase
-            .from(ARCHIVE_TABLE)
-            .select("year")
-            .limit(1000000)
-            .order("year", { ascending: false }),
-          supabase
-            .from(ARCHIVE_TABLE)
-            .select("month")
-            .limit(1000000)
-            .order("month", { ascending: true }),
-          supabase
-            .from(ARCHIVE_TABLE)
-            .select(`${NAME_COL}, computer_number`)
-            .limit(200000)
-            .order("computer_number", { ascending: true }),
-        ]);
-
+        const { yearList, monthList, memberRows } = await loadMetaData();
         if (!mounted) return;
-
-        setYears(
-          [...new Set((yearRows || []).map((r) => Number(r.year)).filter(Number.isFinite))].sort(
-            (a, b) => b - a
-          )
-        );
-        setAvailableMonths(
-          [...new Set((monthRows || []).map((r) => Number(r.month)).filter((m) => Number.isFinite(m) && m >= 1 && m <= 12))].sort(
-            (a, b) => a - b
-          )
-        );
-
-        const seen = new Set();
-        const uniqueMembers = [];
-        (memberRows || []).forEach((r) => {
-          const key = `${r.computer_number}|${r[NAME_COL]}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            uniqueMembers.push(r);
-          }
-        });
-        setMembers(uniqueMembers);
+        setYears(yearList);
+        setAvailableMonths(monthList);
+        setMembers(memberRows);
       } catch (err) {
         console.error("تعذر تحميل بيانات الأرشيف:", err);
       }
@@ -1146,37 +1174,10 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
   };
 
   const refreshMeta = async () => {
-    const [{ data: yearRows }, { data: monthRows }, { data: memberRows }] = await Promise.all([
-      supabase.from(ARCHIVE_TABLE).select("year").limit(1000000).order("year", { ascending: false }),
-      supabase.from(ARCHIVE_TABLE).select("month").limit(1000000).order("month", { ascending: true }),
-      supabase
-        .from(ARCHIVE_TABLE)
-        .select(`${NAME_COL}, computer_number`)
-        .limit(200000)
-        .order("computer_number", { ascending: true }),
-    ]);
-
-    setYears(
-      [...new Set((yearRows || []).map((r) => Number(r.year)).filter(Number.isFinite))].sort(
-        (a, b) => b - a
-      )
-    );
-    setAvailableMonths(
-      [...new Set((monthRows || []).map((r) => Number(r.month)).filter((m) => Number.isFinite(m) && m >= 1 && m <= 12))].sort(
-        (a, b) => a - b
-      )
-    );
-
-    const seen = new Set();
-    const uniqueMembers = [];
-    (memberRows || []).forEach((r) => {
-      const key = `${r.computer_number}|${r[NAME_COL]}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueMembers.push(r);
-      }
-    });
-    setMembers(uniqueMembers);
+    const { yearList, monthList, memberRows } = await loadMetaData();
+    setYears(yearList);
+    setAvailableMonths(monthList);
+    setMembers(memberRows);
   };
 
   /* ------------------ فلاتر متعددة ------------------ */
@@ -1297,8 +1298,7 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
       >
         <div>
           <div style={{ fontSize: 13, color: "#64748B", marginBottom: 8, fontWeight: 600 }}>
-            قسم الاستحقاقات <span style={{ color: "#94A3B8", margin: "0 6px" }}>/</span>
-            <span style={{ color: "#1D4ED8" }}>{cfg.breadcrumb}</span>
+            قسم الاستحقاقات
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <span style={{ fontSize: 34, lineHeight: 1 }}>{cfg.headerEmoji}</span>
