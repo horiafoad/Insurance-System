@@ -877,6 +877,11 @@ export default function AdminDashboard({ currentUser }) {
                       (item) => item.id === activeMenu
                     )?.title || "الرئيسية";
 
+  /* صفحات الأرشيف لها هيدر كامل خاص بها، فنخفي الهيدر العام لتجنب التكرار */
+  const isArchivePage =
+    activeMenu === "faculty_salary_archive" ||
+    activeMenu === "employee_salary_archive";
+
   if (appLoading) {
     return (
       <div
@@ -907,22 +912,23 @@ export default function AdminDashboard({ currentUser }) {
       />
 
       <main style={styles.main}>
-        <header style={styles.header}>
-          <div>
-            <div style={styles.breadcrumb}>
-              قسم الاستحقاقات / {currentTitle}
+        {!isArchivePage && (
+          <header style={styles.header}>
+            <div>
+              <div style={styles.breadcrumb}>
+                قسم الاستحقاقات / {currentTitle}
+              </div>
+
+              <h1 style={styles.pageTitle}>
+                {currentTitle}
+              </h1>
+
+              <p style={styles.pageSub}>
+                {activeMenu === "study_leaves"
+                  ? "متابعة الإجازات الدراسية بمرتب، التعديل من البرنامج، والتنبيه عند قرب أو توقف المرتب"
+                  : "متابعة الأعمال وتقييم الأداء بصورة يومية وأسبوعية وشهرية"}
+              </p>
             </div>
-
-            <h1 style={styles.pageTitle}>
-              {currentTitle}
-            </h1>
-
-            <p style={styles.pageSub}>
-              {activeMenu === "study_leaves"
-                ? "متابعة الإجازات الدراسية بمرتب، التعديل من البرنامج، والتنبيه عند قرب أو توقف المرتب"
-                : "متابعة الأعمال وتقييم الأداء بصورة يومية وأسبوعية وشهرية"}
-            </p>
-          </div>
 
           <div
             style={{
@@ -1084,6 +1090,7 @@ export default function AdminDashboard({ currentUser }) {
               )}
           </div>
         </header>
+        )}
 
         {appError && (
           <div style={styles.errorBox}>{appError}</div>

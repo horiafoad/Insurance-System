@@ -1297,16 +1297,16 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
         }}
       >
         <div>
-          <div style={{ fontSize: 13, color: "#64748B", marginBottom: 8, fontWeight: 600 }}>
+          <div style={{ fontSize: 12, color: "#64748B", marginBottom: 8, fontWeight: 600 }}>
             قسم الاستحقاقات
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <span style={{ fontSize: 34, lineHeight: 1 }}>{cfg.headerEmoji}</span>
             <div>
-              <h2 style={{ margin: 0, fontSize: 25, fontWeight: 900, color: "#0F2942", lineHeight: 1.35 }}>
+              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: "#0F2942", lineHeight: 1.4 }}>
                 {cfg.title}
               </h2>
-              <p style={{ margin: "5px 0 0", color: "#64748B", fontSize: 13.5, lineHeight: 1.8 }}>
+              <p style={{ margin: "5px 0 0", color: "#64748B", fontSize: 14, lineHeight: 1.8 }}>
                 {cfg.id === "faculty"
                   ? "متابعة الأعمال وتقييم الأداء بصورة يومية وأسبوعية وشهرية"
                   : cfg.subtitle}
@@ -2183,10 +2183,10 @@ function MultiSelectDropdown({ icon, label, placeholder, allLabel, open, onOpen,
               borderBottom: "1px solid #EFF3F8",
             }}
           >
-            <button type="button" onClick={onSelectAll} style={msActionButtonStyle}>
+            <button type="button" onClick={() => { onSelectAll(); onOpen(false); }} style={msActionButtonStyle}>
               تحديد الكل
             </button>
-            <button type="button" onClick={onClearAll} style={msActionButtonStyle}>
+            <button type="button" onClick={() => { onClearAll(); onOpen(false); }} style={msActionButtonStyle}>
               إلغاء تحديد الكل
             </button>
           </div>
@@ -2208,7 +2208,7 @@ function MultiSelectDropdown({ icon, label, placeholder, allLabel, open, onOpen,
                 <input
                   type="checkbox"
                   checked={nothingSelected}
-                  onChange={onClearAll}
+                  onChange={() => { onClearAll(); onOpen(false); }}
                   style={{ accentColor: "#2563EB", width: 16, height: 16, cursor: "pointer" }}
                 />
                 <span>{allLabel}</span>
@@ -2231,7 +2231,7 @@ function MultiSelectDropdown({ icon, label, placeholder, allLabel, open, onOpen,
                 <input
                   type="checkbox"
                   checked={selected.includes(option.value)}
-                  onChange={() => onToggle(option.value)}
+                  onChange={() => { onToggle(option.value); onOpen(false); }}
                   style={{ accentColor: "#2563EB", width: 16, height: 16, cursor: "pointer" }}
                 />
                 <span>{option.label}</span>
