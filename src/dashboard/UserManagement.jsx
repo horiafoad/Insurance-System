@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 
-export default function UserManagement() {
+export default function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -14,6 +14,10 @@ export default function UserManagement() {
     fullName: "",
     role: "admin",
   });
+
+  const canDelete = ["creator", "super_admin"].includes(currentUser?.role);
+  const isSelf = (user) =>
+    currentUser?.id === user.id || currentUser?.username === user.username;
 
   useEffect(() => {
     loadUsers();
@@ -133,6 +137,14 @@ export default function UserManagement() {
   };
 
   const handleDelete = async (id, username) => {
+    if (!canDelete) {
+      alert("⛔ خاصية الحذف متاحة للمنشئ الرئيسي فقط.");
+      return;
+    }
+    if (currentUser?.id === id || currentUser?.username === username) {
+      alert("⚠️ لا يمكنك حذف حسابك المسجل به حالياً.");
+      return;
+    }
     if (!window.confirm(`هل أنت متأكد من حذف المستخدم "${username}" نهائياً؟`)) {
       return;
     }
@@ -171,6 +183,11 @@ export default function UserManagement() {
             <p style={styles.cardSub}>
               إنشاء وتعديل وحذف حسابات المستخدمين المصرح لهم بالدخول للوحة الإدارة
             </p>
+            {!canDelete && (
+              <span style={{ fontSize: 12, color: "#92400E", fontWeight: 700 }}>
+                🔒 الحذف متاح للمنشئ الرئيسي فقط
+              </span>
+            )}
           </div>
           <button
             style={styles.primaryButton}
@@ -205,6 +222,18 @@ export default function UserManagement() {
                   <tr key={user.id} style={styles.tr}>
                     <td style={styles.td}>
                       <strong>{user.username}</strong>
+                      {isSelf(user) && (
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: "11px",
+                            color: "#2563EB",
+                            fontWeight: 700,
+                          }}
+                        >
+                          (أنت)
+                        </span>
+                      )}
                     </td>
                     <td style={styles.td}>{user.full_name}</td>
                     <td style={styles.td}>
@@ -256,7 +285,7 @@ export default function UserManagement() {
                         >
                           ✏️ تعديل
                         </button>
-                        {!["creator", "super_admin"].includes(user.role) && user.username !== "horia" && (
+                        {canDelete && !isSelf(user) && !["creator", "super_admin"].includes(user.role) && user.username !== "horia" && (
                           <button
                             style={{
                               ...styles.deleteButton,

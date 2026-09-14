@@ -260,6 +260,7 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
   const [importResults, setImportResults] = useState([]);
   const [importError, setImportError] = useState("");
   const [bulkMode, setBulkMode] = useState("archive");
+  const [showImportInline, setShowImportInline] = useState(false);
   const importInputRef = useRef(null);
 
   const loadPersons = async () => {
@@ -939,6 +940,161 @@ useEffect(() => {
     );
   };
 
+  const importPanel = (
+    <div style={styles.card}>
+      <h2 style={styles.cardTitle}>
+        📥 {bulkMode === "orders" ? "رفع أوامر تنفيذية متعددة" : "استيراد الأرشيف القديم"}
+      </h2>
+
+      <div style={styles.filterRow}>
+        <button
+          style={bulkMode === "archive" ? styles.primaryButton : styles.secondaryButton}
+          disabled={importing}
+          onClick={() => {
+            setBulkMode("archive");
+            setPendingFiles([]);
+            setImportResults([]);
+            setImportError("");
+          }}
+        >
+          📦 استيراد ملف كامل لكل شخص
+        </button>
+        <button
+          style={bulkMode === "orders" ? styles.primaryButton : styles.secondaryButton}
+          disabled={importing}
+          onClick={() => {
+            setBulkMode("orders");
+            setPendingFiles([]);
+            setImportResults([]);
+            setImportError("");
+          }}
+        >
+          📄 رفع أوامر متعددة (الاسم في اسم الملف)
+        </button>
+      </div>
+
+      {bulkMode === "archive" ? (
+        <p style={styles.cardSub}>
+          اختر ملفات PDF القديمة دفعة واحدة — كل ملف يمثل شخصًا واحدًا واسم الملف هو اسم
+          الشخص (مثال: <b>علي شهاب شمس الدين أبو اليزيد.pdf</b>). أي ملف باسم شخص موجود
+          سيُدمج في ملفه، وأي شخص جديد يُسجَّل في الأرشيف ليستقبل الأوامر الجديدة لاحقًا.
+        </p>
+      ) : (
+        <p style={styles.cardSub}>
+          ارفع صور أو PDF لأي عدد من الأوامر دفعة واحدة — اسم الملف يُحدد صاحبه تلقائيًا.
+          <br />
+          ▪ الصيغة: <b>اسم الشخص</b> أو <b>اسم الشخص - عنوان الأمر</b> (مثال:{" "}
+          <b>علي شهاب - إعادة تظبري.pdf</b>)
+          <br />
+          ▪ الاسم الموجود ← يندمج أمره في ملفه تلقائيًا. الاسم غير الموجود ← يُنشأ ملف جديد له.
+        </p>
+      )}
+
+      <div style={styles.filterRow}>
+        <button
+          style={styles.primaryButton}
+          disabled={importing}
+          onClick={() => importInputRef.current?.click()}
+        >
+          {bulkMode === "orders" ? "📂 اختيار صور/PDF الأوامر" : "📂 اختيار ملفات PDF"}
+        </button>
+        <input
+          ref={importInputRef}
+          type="file"
+          multiple
+          accept={bulkMode === "orders" ? "image/*,application/pdf,.pdf" : "application/pdf,.pdf"}
+          style={{ display: "none" }}
+          onChange={(e) => {
+            handleImportFilesSelected(e.target.files);
+            if (e.target) e.target.value = "";
+          }}
+        />
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 14, cursor: "pointer" }}>
+        <input
+          type="checkbox"
+          checked={skipDup}
+          onChange={(e) => setSkipDup(e.target.checked)}
+          disabled={importing}
+        />
+        تخطي الملفات المكررة (نفس اسم الملف المرفوع من قبل لنفس الشخص)
+      </label>
+
+      {importError && <div style={styles.errorBox}>{importError}</div>}
+
+      {pendingFiles.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={styles.resultText}>
+            سيتم {bulkMode === "orders" ? "رفع" : "استيراد"} {pendingFiles.length} ملف:
+          </div>
+          <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 10 }}>
+            {pendingFiles.map((f, i) => (
+              <div key={`${f.name}-${i}`} style={{ padding: "9px 12px", borderBottom: "1px solid #EEF2F6", fontSize: 13 }}>
+                📄 {f.name.replace(/\.[^.]+$/i, "")}
+                {bulkMode === "orders" && /\.(jpe?g|png|webp|bmp|heic|heif)$/i.test(f.name) ? " 🖼️ (ستُحوَّل لصفحة في الملف)" : ""}
+              </div>
+            ))}
+          </div>
+          <div style={styles.modalActions}>
+            <button style={styles.excelButtonLarge} disabled={importing} onClick={runImport}>
+              {importing
+                ? "⏳ جاري الرفع..."
+                : `🚀 ${bulkMode === "orders" ? "رفع" : "استيراد"} ${pendingFiles.length} ملف`}
+            </button>
+            <button style={styles.secondaryButton} disabled={importing} onClick={clearPending}>
+              تفريغ القائمة
+            </button>
+          </div>
+        </div>
+      )}
+
+      {importResults.length > 0 && (
+        <div>
+          <div style={styles.resultText}>
+            النتيجة: {importResults.filter((r) => r.status === "success").length} نجحت •
+            {importResults.filter((r) => r.status === "skipped").length} مكرر •
+            {importResults.filter((r) => r.status === "error").length} فشلت
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {importResults.map((r, i) => (
+              <div
+                key={`${r.fileName}-${i}`}
+                style={{
+                  border: "1px solid #E2E8F0",
+                  borderRadius: 8,
+                  padding: "9px 12px",
+                  fontSize: 13,
+                  background:
+                    r.status === "success"
+                      ? "#F0FDF4"
+                      : r.status === "skipped"
+                        ? "#FFF7ED"
+                        : "#FEF2F2",
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>
+                  {r.status === "success" ? "✅" : r.status === "skipped" ? "⏭️" : "❌"}{" "}
+                  {r.name}
+                  {r.status === "success" && (
+                    <span style={{ color: "#64748B", fontWeight: 600 }}>
+                      {" "}— {r.isNew ? "شخص جديد" : "دُمج في ملفه"} • {r.pages} صفحة
+                    </span>
+                  )}
+                </div>
+                {r.error && (
+                  <div style={{ color: r.status === "skipped" ? "#92400E" : "#B91C1C", marginTop: 3 }}>
+                    {r.error}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div dir="rtl">
       {header}
@@ -1250,6 +1406,18 @@ useEffect(() => {
             />
           </div>
 
+          <div style={{ marginBottom: 14 }}>
+            <button
+              style={showImportInline ? styles.excelButtonLarge : styles.secondaryButton}
+              disabled={importing}
+              onClick={() => setShowImportInline((s) => !s)}
+            >
+              {showImportInline ? "✖️ إغلاق الاستيراد" : "📥 استيراد الأرشيف / رفع أوامر متعددة"}
+            </button>
+          </div>
+
+          {showImportInline && <div style={{ marginBottom: 16 }}>{importPanel}</div>}
+
           {archiveResults.length === 0 ? (
             <div style={styles.empty}>
               {archiveQuery.trim()
@@ -1326,160 +1494,7 @@ useEffect(() => {
         </div>
       )}
 
-      {view === "import" && (
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>
-            📥 {bulkMode === "orders" ? "رفع أوامر تنفيذية متعددة" : "استيراد الأرشيف القديم"}
-          </h2>
-
-          <div style={styles.filterRow}>
-            <button
-              style={bulkMode === "archive" ? styles.primaryButton : styles.secondaryButton}
-              disabled={importing}
-              onClick={() => {
-                setBulkMode("archive");
-                setPendingFiles([]);
-                setImportResults([]);
-                setImportError("");
-              }}
-            >
-              📦 استيراد ملف كامل لكل شخص
-            </button>
-            <button
-              style={bulkMode === "orders" ? styles.primaryButton : styles.secondaryButton}
-              disabled={importing}
-              onClick={() => {
-                setBulkMode("orders");
-                setPendingFiles([]);
-                setImportResults([]);
-                setImportError("");
-              }}
-            >
-              📄 رفع أوامر متعددة (الاسم في اسم الملف)
-            </button>
-          </div>
-
-          {bulkMode === "archive" ? (
-            <p style={styles.cardSub}>
-              اختر ملفات PDF القديمة دفعة واحدة — كل ملف يمثل شخصًا واحدًا واسم الملف هو اسم
-              الشخص (مثال: <b>علي شهاب شمس الدين أبو اليزيد.pdf</b>). أي ملف باسم شخص موجود
-              سيُدمج في ملفه، وأي شخص جديد يُسجَّل في الأرشيف ليستقبل الأوامر الجديدة لاحقًا.
-            </p>
-          ) : (
-            <p style={styles.cardSub}>
-              ارفع صور أو PDF لأي عدد من الأوامر دفعة واحدة — اسم الملف يُحدد صاحبه تلقائيًا.
-              <br />
-              ▪ الصيغة: <b>اسم الشخص</b> أو <b>اسم الشخص - عنوان الأمر</b> (مثال:{" "}
-              <b>علي شهاب - إعادة تظبري.pdf</b>)
-              <br />
-              ▪ الاسم الموجود ← يندمج أمره في ملفه تلقائيًا. الاسم غير الموجود ← يُنشأ ملف جديد له.
-            </p>
-          )}
-
-          <div style={styles.filterRow}>
-            <button
-              style={styles.primaryButton}
-              disabled={importing}
-              onClick={() => importInputRef.current?.click()}
-            >
-              {bulkMode === "orders" ? "📂 اختيار صور/PDF الأوامر" : "📂 اختيار ملفات PDF"}
-            </button>
-            <input
-              ref={importInputRef}
-              type="file"
-              multiple
-              accept={bulkMode === "orders" ? "image/*,application/pdf,.pdf" : "application/pdf,.pdf"}
-              style={{ display: "none" }}
-              onChange={(e) => {
-                handleImportFilesSelected(e.target.files);
-                if (e.target) e.target.value = "";
-              }}
-            />
-          </div>
-
-          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 14, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={skipDup}
-              onChange={(e) => setSkipDup(e.target.checked)}
-              disabled={importing}
-            />
-            تخطي الملفات المكررة (نفس اسم الملف المرفوع من قبل لنفس الشخص)
-          </label>
-
-          {importError && <div style={styles.errorBox}>{importError}</div>}
-
-          {pendingFiles.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={styles.resultText}>
-                سيتم {bulkMode === "orders" ? "رفع" : "استيراد"} {pendingFiles.length} ملف:
-              </div>
-              <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 10 }}>
-                {pendingFiles.map((f, i) => (
-                  <div key={`${f.name}-${i}`} style={{ padding: "9px 12px", borderBottom: "1px solid #EEF2F6", fontSize: 13 }}>
-                    📄 {f.name.replace(/\.[^.]+$/i, "")}
-                    {bulkMode === "orders" && /\.(jpe?g|png|webp|bmp|heic|heif)$/i.test(f.name) ? " 🖼️ (ستُحوَّل لصفحة في الملف)" : ""}
-                  </div>
-                ))}
-              </div>
-              <div style={styles.modalActions}>
-                <button style={styles.excelButtonLarge} disabled={importing} onClick={runImport}>
-                  {importing
-                    ? "⏳ جاري الرفع..."
-                    : `🚀 ${bulkMode === "orders" ? "رفع" : "استيراد"} ${pendingFiles.length} ملف`}
-                </button>
-                <button style={styles.secondaryButton} disabled={importing} onClick={clearPending}>
-                  تفريغ القائمة
-                </button>
-              </div>
-            </div>
-          )}
-
-          {importResults.length > 0 && (
-            <div>
-              <div style={styles.resultText}>
-                النتيجة: {importResults.filter((r) => r.status === "success").length} نجحت •
-                {importResults.filter((r) => r.status === "skipped").length} مكرر •
-                {importResults.filter((r) => r.status === "error").length} فشلت
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {importResults.map((r, i) => (
-                  <div
-                    key={`${r.fileName}-${i}`}
-                    style={{
-                      border: "1px solid #E2E8F0",
-                      borderRadius: 8,
-                      padding: "9px 12px",
-                      fontSize: 13,
-                      background:
-                        r.status === "success"
-                          ? "#F0FDF4"
-                          : r.status === "skipped"
-                            ? "#FFF7ED"
-                            : "#FEF2F2",
-                    }}
-                  >
-                    <div style={{ fontWeight: 800 }}>
-                      {r.status === "success" ? "✅" : r.status === "skipped" ? "⏭️" : "❌"}{" "}
-                      {r.name}
-                      {r.status === "success" && (
-                        <span style={{ color: "#64748B", fontWeight: 600 }}>
-                          {" "}— {r.isNew ? "شخص جديد" : "دُمج في ملفه"} • {r.pages} صفحة
-                        </span>
-                      )}
-                    </div>
-                    {r.error && (
-                      <div style={{ color: r.status === "skipped" ? "#92400E" : "#B91C1C", marginTop: 3 }}>
-                        {r.error}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {view === "import" && importPanel}
 
       {/* ---------- كاميرا ---------- */}
       {cameraOpen && (

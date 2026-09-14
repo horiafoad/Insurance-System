@@ -1354,7 +1354,7 @@ export default function AdminDashboard({ currentUser }) {
             "super_admin",
             "admin",
           ].includes(currentUser?.role) ? (
-            <UserManagement />
+            <UserManagement currentUser={currentUser} />
           ) : (
             <div style={styles.card}>
               <div style={styles.errorBox}>
