@@ -35,6 +35,14 @@ const migrationHint = (err) => {
     : err?.message || String(err);
 };
 
+const deleteHint = (err) => {
+  const msg = err?.message || String(err);
+  if (/permission denied|row-level security|violates row-level security|forbidden/i.test(msg)) {
+    return `${msg}\n\n\u{1F6A7} زر الحذف يحتاج تفعيل صلاحية الحذف في قاعدة البيانات:\nافتحي Supabase → SQL Editor وشغّلي سكريبت "enable_executive_orders_delete.sql" الموجود في مجلد المشروع، ثم جرّبي الحذف مجددًا. لا يغيّر هذا السكريبت أي بيانات أو جداول.`;
+  }
+  return msg;
+};
+
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -819,18 +827,19 @@ useEffect(() => {
     if (!person || deleting) return;
     setDeleting(true);
     setDeleteError("");
+    let fileRemoveWarn = "";
     try {
-      // 1) حذف ملف PDF من بكت التخزين (تجاهل إن كان مفقودًا)
+      // 1) حذف ملف PDF من البكت — أفضل جهد؛ لو فشل نكمل على أي حال وننبه فقط
       try {
         const { error: rmErr } = await supabase.storage
           .from(CFG.bucket)
           .remove([`${person.id}/archive.pdf`]);
         if (rmErr && !/not\s*found|does\s*not\s*exist|404|not find/i.test(rmErr.message)) {
-          throw rmErr;
+          fileRemoveWarn = rmErr.message;
         }
       } catch (rmErr) {
         if (rmErr?.message && !/not\s*found|does\s*not\s*exist|404|not find/i.test(rmErr.message)) {
-          throw rmErr;
+          fileRemoveWarn = rmErr.message;
         }
       }
 
@@ -841,12 +850,16 @@ useEffect(() => {
         .eq("id", person.id);
       if (delErr) throw delErr;
 
-      setSuccess(`تم حذف أرشيف «${person.full_name}» وكل ما يرتبط به بنجاح.`);
+      setSuccess(
+        fileRemoveWarn
+          ? `تم حذف سجل «${person.full_name}» وجميع أوامره بنجاح، لكن تعذّر حذف ملف PDF المرتبط: ${fileRemoveWarn}`
+          : `تم حذف أرشيف «${person.full_name}» وكل ما يرتبط به بنجاح.`
+      );
       setPersonToDelete(null);
       await loadPersons();
     } catch (err) {
       console.error("deletePerson:", err);
-      setDeleteError(migrationHint(err));
+      setDeleteError(deleteHint(err));
     } finally {
       setDeleting(false);
     }

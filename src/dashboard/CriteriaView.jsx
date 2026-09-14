@@ -20,11 +20,23 @@ const MONTH_LABELS = {
 };
 
 const REQUEST_STATUSES = [
-  { value: "جديدة", color: "#2563EB", bg: "#DBEAFE" },
-  { value: "قيد المراجعة", color: "#B45309", bg: "#FEF3C7" },
-  { value: "مقبولة", color: "#047857", bg: "#D1FAE5" },
-  { value: "مرفوضة", color: "#DC2626", bg: "#FEE2E2" },
+  { value: "جديدة", icon: "🟡", color: "#B45309", bg: "#FEF3C7" },
+  { value: "قيد التنفيذ", icon: "🔵", color: "#2563EB", bg: "#DBEAFE" },
+  { value: "تم التنفيذ", icon: "🟢", color: "#047857", bg: "#D1FAE5" },
+  { value: "مرفوضة", icon: "🔴", color: "#DC2626", bg: "#FEE2E2" },
 ];
+
+const STATUS_ALIASES = {
+  "جديد": "جديدة",
+  "قيد المراجعة": "قيد التنفيذ",
+  "جاري التنفيذ": "قيد التنفيذ",
+  "قيد المعالجة": "قيد التنفيذ",
+  "معلق": "قيد التنفيذ",
+  "مقبولة": "تم التنفيذ",
+  "مكتمل": "تم التنفيذ",
+  "منتهي": "تم التنفيذ",
+  "تم الصرف": "تم التنفيذ",
+};
 
 const SERVICE_FILTER_ALIASES = {
   "مفردات مرتب": [
@@ -61,18 +73,34 @@ function formatRequestDate(row) {
   });
 }
 
+function statusMeta(status) {
+  const value = STATUS_ALIASES[status] || status;
+  return (
+    REQUEST_STATUSES.find((item) => item.value === value) || {
+      icon: "⚪",
+      color: "#64748B",
+      bg: "#F1F5F9",
+    }
+  );
+}
+
 function getStatusStyle(status) {
-  const match =
-    REQUEST_STATUSES.find((item) => item.value === status) ||
-    (status === "جديد"
-      ? { color: "#2563EB", bg: "#DBEAFE" }
-      : { color: "#64748B", bg: "#F1F5F9" });
+  const match = statusMeta(status);
 
   return {
     ...styles.statusBadge,
     color: match.color,
     background: match.bg,
   };
+}
+
+function statusIcon(status) {
+  return statusMeta(status).icon;
+}
+
+function statusOptionLabel(status) {
+  const match = REQUEST_STATUSES.find((item) => item.value === status);
+  return match ? `${match.icon} ${match.value}` : status;
 }
 
 function KpiDonut({ items }) {
@@ -256,7 +284,6 @@ export default function CriteriaView() {
 export function ServiceRequestsView({
   selectedService = "all",
   onServiceFilterChange,
-  canManage = false,
 }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -266,6 +293,9 @@ export function ServiceRequestsView({
   const [serviceFilter, setServiceFilter] = useState("all");
   const [updatingId, setUpdatingId] = useState(null);
   const [editingRequest, setEditingRequest] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [toast, setToast] = useState("");
+  const [rejectPending, setRejectPending] = useState(null);
 
   const activeServiceFilter = onServiceFilterChange
     ? selectedService
@@ -342,42 +372,90 @@ export function ServiceRequestsView({
     });
   }, [requests, search, statusFilter, activeServiceFilter]);
 
-  const updateStatus = async (id, status) => {
+  const showToast = (message) => {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 3200);
+  };
+
+  const saveRequestUpdate = async (id, overrideStatus, overrideNotes) => {
     const previous = requests.find((item) => item.id === id);
-    if (!previous || previous.status === status) return;
+    if (!previous) return;
+
+    const draft = drafts[id] || {};
+    const newStatus = overrideStatus || draft.status || previous.status || "جديدة";
+    const newNotes =
+      overrideNotes !== undefined
+        ? overrideNotes
+        : draft.notes !== undefined
+          ? draft.notes
+          : previous.notes;
+
+    if (newStatus === previous.status && newNotes === (previous.notes || "")) {
+      showToast("لا يوجد تغيير في الحالة أو الملاحظات.");
+      return;
+    }
 
     setUpdatingId(id);
     setError("");
     setRequests((current) =>
-      current.map((item) => (item.id === id ? { ...item, status } : item))
+      current.map((item) =>
+        item.id === id ? { ...item, status: newStatus, notes: newNotes } : item
+      )
     );
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
 
     try {
       const { error: updateError } = await supabase
         .from("service_requests")
-        .update({ status })
+        .update({
+          status: newStatus,
+          notes: newNotes || null,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", id);
 
       if (updateError) {
         console.error(updateError);
         setRequests((current) =>
-          current.map((item) =>
-            item.id === id ? { ...item, status: previous.status } : item
-          )
+          current.map((item) => (item.id === id ? previous : item))
         );
-        setError("حدث خطأ أثناء تحديث حالة الطلب: " + updateError.message);
+        setError("حدث خطأ أثناء حفظ التحديث: " + updateError.message);
+        return;
       }
+
+      showToast("تم تحديث الطلب بنجاح.");
     } catch (updateError) {
       console.error(updateError);
       setRequests((current) =>
-        current.map((item) =>
-          item.id === id ? { ...item, status: previous.status } : item
-        )
+        current.map((item) => (item.id === id ? previous : item))
       );
-      setError("تعذر حفظ حالة الطلب في قاعدة البيانات.");
+      setError("تعذر حفظ التحديث في قاعدة البيانات.");
     } finally {
       setUpdatingId(null);
     }
+  };
+
+  const handleSaveClick = (id) => {
+    const previous = requests.find((item) => item.id === id);
+    if (!previous) return;
+
+    const draft = drafts[id] || {};
+    const newStatus = draft.status || previous.status || "جديدة";
+
+    if (newStatus === "مرفوضة" && newStatus !== previous.status) {
+      setRejectPending({
+        id,
+        status: newStatus,
+        notes: draft.notes !== undefined ? draft.notes : previous.notes,
+      });
+      return;
+    }
+
+    saveRequestUpdate(id);
   };
 
   const handleDeleteRequest = async (id) => {
@@ -421,6 +499,7 @@ export function ServiceRequestsView({
           request_year: Number(editingRequest.request_year),
           notes: editingRequest.notes || null,
           status: editingRequest.status,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", editingRequest.id);
 
@@ -464,10 +543,16 @@ export function ServiceRequestsView({
     return {
       total: requests.length,
       newCount: requests.filter(
-        (item) => item.status === "جديدة" || item.status === "جديد"
+        (item) => ["جديدة", "جديد"].includes(item.status)
       ).length,
-      reviewing: requests.filter((item) => item.status === "قيد المراجعة").length,
-      accepted: requests.filter((item) => item.status === "مقبولة").length,
+      inProgress: requests.filter((item) =>
+        ["قيد التنفيذ", "قيد المراجعة", "جاري التنفيذ", "قيد المعالجة", "معلق"].includes(
+          item.status
+        )
+      ).length,
+      completed: requests.filter((item) =>
+        ["تم التنفيذ", "مقبولة", "مكتمل", "منتهي", "تم الصرف"].includes(item.status)
+      ).length,
       rejected: requests.filter((item) => item.status === "مرفوضة").length,
     };
   }, [requests]);
@@ -492,12 +577,16 @@ export function ServiceRequestsView({
       {loading && <div style={styles.infoBox}>جاري تحميل الطلبات...</div>}
       {error && <div style={styles.errorBox}>{error}</div>}
 
+      {toast && (
+        <div style={{ ...styles.successBox, marginTop: 12 }}>{toast}</div>
+      )}
+
       <div style={styles.claimStats}>
         <ClaimStat title="إجمالي الطلبات" value={counts.total} icon="📥" />
-        <ClaimStat title="جديدة" value={counts.newCount} icon="🆕" />
-        <ClaimStat title="قيد المراجعة" value={counts.reviewing} icon="🔎" />
-        <ClaimStat title="مقبولة" value={counts.accepted} icon="✅" />
-        <ClaimStat title="مرفوضة" value={counts.rejected} icon="⛔" />
+        <ClaimStat title="جديدة" value={counts.newCount} icon="🟡" />
+        <ClaimStat title="قيد التنفيذ" value={counts.inProgress} icon="🔵" />
+        <ClaimStat title="تم التنفيذ" value={counts.completed} icon="🟢" />
+        <ClaimStat title="مرفوضة" value={counts.rejected} icon="🔴" />
       </div>
 
       <div style={styles.filterRow}>
@@ -536,7 +625,7 @@ export function ServiceRequestsView({
           <option value="all">كل الحالات</option>
           {statusOptions.map((status) => (
             <option key={status} value={status}>
-              {status}
+              {statusOptionLabel(status)}
             </option>
           ))}
         </select>
@@ -600,22 +689,68 @@ export function ServiceRequestsView({
                     <td style={styles.td}>{request.request_year || "—"}</td>
                     <td style={styles.td}>{request.notes || "—"}</td>
                     <td style={styles.td}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 190 }}>
                         <span style={getStatusStyle(currentStatus)}>
-                          {currentStatus}
+                          {statusIcon(currentStatus)} {currentStatus}
                         </span>
                         <select
-                          value={currentStatus}
+                          value={drafts[request.id]?.status || currentStatus}
                           disabled={updatingId === request.id}
-                          onChange={(e) => updateStatus(request.id, e.target.value)}
-                          style={{ ...styles.filter, padding: "4px 8px", fontSize: "12px" }}
+                          onChange={(e) =>
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [request.id]: {
+                                ...(prev[request.id] || {}),
+                                status: e.target.value,
+                              },
+                            }))
+                          }
+                          style={{ ...styles.claimSelect, padding: "5px 8px", fontSize: "12px" }}
                         >
                           {selectOptions.map((status) => (
                             <option key={status} value={status}>
-                              {status}
+                              {statusOptionLabel(status)}
                             </option>
                           ))}
                         </select>
+                        <textarea
+                          rows={2}
+                          value={
+                            drafts[request.id]?.notes !== undefined
+                              ? drafts[request.id].notes
+                              : request.notes || ""
+                          }
+                          onChange={(e) =>
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [request.id]: {
+                                ...(prev[request.id] || {}),
+                                notes: e.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="أضف ملاحظة لمقدم الطلب..."
+                          style={{
+                            ...styles.input,
+                            minHeight: 46,
+                            resize: "vertical",
+                            fontSize: 12,
+                            padding: "6px 8px",
+                          }}
+                        />
+                        <button
+                          disabled={updatingId === request.id}
+                          onClick={() => handleSaveClick(request.id)}
+                          style={{
+                            ...styles.primaryButton,
+                            padding: "6px 10px",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {updatingId === request.id
+                            ? "⏳ جاري الحفظ..."
+                            : "💾 حفظ التحديث"}
+                        </button>
                       </div>
                     </td>
                     <td style={styles.td}>{formatRequestDate(request)}</td>
@@ -802,10 +937,11 @@ export function ServiceRequestsView({
                   }
                   style={styles.input}
                 >
-                  <option value="جديدة">جديدة</option>
-                  <option value="قيد المراجعة">قيد المراجعة</option>
-                  <option value="مقبولة">مقبولة</option>
-                  <option value="مرفوضة">مرفوضة</option>
+                  {REQUEST_STATUSES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.icon} {item.value}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -835,6 +971,56 @@ export function ServiceRequestsView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal تأكيد رفض الطلب */}
+      {rejectPending && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => setRejectPending(null)}
+        >
+          <div
+            style={{ ...styles.loginBox, width: "min(420px, 95%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: "38px", marginBottom: "8px" }}>
+              ⛔
+            </div>
+
+            <h3 style={styles.loginTitle}>تأكيد رفض الطلب</h3>
+
+            <p style={styles.loginDescription}>
+              هل أنت متأكد من رفض هذا الطلب؟<br />
+              لن يتم تغيير حالة الطلب إلا بعد التأكيد.
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+                marginTop: "18px",
+              }}
+            >
+              <button
+                style={styles.secondaryButton}
+                onClick={() => setRejectPending(null)}
+              >
+                إلغاء
+              </button>
+              <button
+                style={{ ...styles.primaryButton, background: "#DC2626" }}
+                onClick={() => {
+                  const pending = rejectPending;
+                  setRejectPending(null);
+                  saveRequestUpdate(pending.id, pending.status, pending.notes || "");
+                }}
+              >
+                تأكيد الرفض
+              </button>
+            </div>
           </div>
         </div>
       )}

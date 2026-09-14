@@ -28,8 +28,6 @@ import ConnectionTest from "./dashboard/ConnectionTest";
 import LettersTrackingPage from "./dashboard/LettersTrackingPage";
 import FacultySalaryArchivePage from "./dashboard/FacultySalaryArchivePage";
 import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
-import PDFAnalyzer from "./dashboard/PDFAnalyzer";
-import SalaryImportReview from "./dashboard/SalaryImportReview";
 import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
 import {
   ClaimFormModal,
@@ -1263,14 +1261,6 @@ export default function AdminDashboard({ currentUser }) {
             view="archive"
             onNavigate={setActiveMenu}
           />
-        )}
-
-        {activeMenu === "pdf_analyzer" && (
-          <PDFAnalyzer />
-        )}
-
-        {activeMenu === "salary_import" && (
-          <SalaryImportReview currentUser={currentUser} />
         )}
 
         {activeMenu === "weekly" && (

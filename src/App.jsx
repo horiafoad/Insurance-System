@@ -1,12 +1,29 @@
 import logo from "./assets/logo.png";
 import background from "./assets/engineering.jpg";
 import AdminDashboard from "./AdminDashboard";
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import NetworkBanner from "./NetworkBanner";
-import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
+
+const REQUEST_STATUS_META = [
+  { value: "جديدة", icon: "🟡", color: "#B45309", bg: "#FEF3C7" },
+  { value: "قيد التنفيذ", icon: "🔵", color: "#2563EB", bg: "#DBEAFE" },
+  { value: "تم التنفيذ", icon: "🟢", color: "#047857", bg: "#D1FAE5" },
+  { value: "مرفوضة", icon: "🔴", color: "#DC2626", bg: "#FEE2E2" },
+];
+
+function requestStatusMeta(status) {
+  const value = status === "جديد" ? "جديدة" : status;
+  return (
+    REQUEST_STATUS_META.find((item) => item.value === value) || {
+      icon: "⚪",
+      color: "#64748B",
+      bg: "#F1F5F9",
+    }
+  );
+}
 
 function formatMovementTime(value) {
   if (!value) return "";
@@ -746,7 +763,7 @@ const updatedMovements = qrLetter.movements.map((movement) =>
     try {
       const { data, error } = await supabase
         .from("service_requests")
-        .select("id, service_type, name, status, created_at")
+        .select("id, service_type, name, status, notes, created_at, updated_at")
         .eq("id", trackingId.trim())
         .maybeSingle();
 
@@ -4254,111 +4271,168 @@ const updatedMovements = qrLetter.movements.map((movement) =>
               <div
                 style={{
                   marginTop: "18px",
-                  overflowX:
-                    "auto",
-                  borderRadius:
-                    "14px",
-                  border:
-                    "1px solid #DCE6F0",
-                  background:
-                    "#FFFFFF",
-                  textAlign:
-                    "right",
+                  overflowX: "auto",
+                  borderRadius: "14px",
+                  border: "1px solid #DCE6F0",
+                  background: "#FFFFFF",
+                  textAlign: "right",
                 }}
               >
                 <div
                   style={{
-                    minWidth:
-                      isMobile
-                        ? "440px"
-                        : "100%",
-                    display: "grid",
-                    gridTemplateColumns:
-                      "1fr 1.5fr 1fr",
-                    background:
-                      "#F1F5F9",
-                    borderBottom:
-                      "1px solid #DCE6F0",
-                    padding:
-                      "12px 16px",
-                    color:
-                      "#64748B",
-                    fontSize:
-                      "12px",
-                    fontWeight:
-                      "800",
+                    padding: "18px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "14px",
                   }}
                 >
-                  <span>
-                    رقم الطلب
-                  </span>
-
-                  <span>
-                    الخدمة
-                  </span>
-
-                  <span>
-                    الحالة
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    minWidth:
-                      isMobile
-                        ? "440px"
-                        : "100%",
-                    display: "grid",
-                    gridTemplateColumns:
-                      "1fr 1.5fr 1fr",
-                    alignItems:
-                      "center",
-                    padding: "16px",
-                    color:
-                      "#123B5D",
-                    fontSize:
-                      "14px",
-                  }}
-                >
-                  <strong
+                  <div
                     style={{
-                      color:
-                        "#2563EB",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: "10px",
                     }}
                   >
-                    #
-                    {
-                      trackedRequest.id
-                    }
-                  </strong>
+                    <div>
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          color: "#64748B",
+                          fontWeight: "700",
+                        }}
+                      >
+                        رقم الطلب
+                      </span>
+                      <strong
+                        style={{
+                          display: "block",
+                          color: "#2563EB",
+                          fontSize: "16px",
+                        }}
+                      >
+                        #{trackedRequest.id}
+                      </strong>
+                    </div>
 
-                  <strong>
-                    {
-                      trackedRequest.service_type
-                    }
-                  </strong>
+                    <div style={{ textAlign: "left" }}>
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          color: "#64748B",
+                          fontWeight: "700",
+                        }}
+                      >
+                        الخدمة
+                      </span>
+                      <strong
+                        style={{
+                          display: "block",
+                          color: "#123B5D",
+                          fontSize: "14px",
+                        }}
+                      >
+                        {trackedRequest.service_type}
+                      </strong>
+                    </div>
+                  </div>
 
-                  <span
+                  <div>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "#64748B",
+                        fontWeight: "700",
+                      }}
+                    >
+                      حالة الطلب
+                    </span>
+                    <div style={{ display: "flex", marginTop: "6px" }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "6px 14px",
+                          borderRadius: "999px",
+                          fontWeight: "800",
+                          fontSize: "13px",
+                          color: requestStatusMeta(trackedRequest.status).color,
+                          background: requestStatusMeta(trackedRequest.status).bg,
+                        }}
+                      >
+                        {requestStatusMeta(trackedRequest.status).icon}{" "}
+                        {trackedRequest.status || "جديدة"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "#64748B",
+                        fontWeight: "700",
+                      }}
+                    >
+                      آخر تحديث
+                    </span>
+                    <strong
+                      style={{
+                        display: "block",
+                        color: "#123B5D",
+                        fontSize: "13px",
+                        marginTop: "4px",
+                        fontWeight: "600",
+                      }}
+                    >
+                      {formatMovementTime(
+                        trackedRequest.updated_at || trackedRequest.created_at
+                      ) || "—"}
+                    </strong>
+                  </div>
+
+                  <div
                     style={{
-                      justifySelf:
-                        "start",
-                      background:
-                        "#DCFCE7",
-                      color:
-                        "#047857",
-                      padding:
-                        "6px 12px",
-                      borderRadius:
-                        "999px",
-                      fontWeight:
-                        "800",
-                      fontSize:
-                        "12px",
+                      background: "#F8FAFC",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: "12px",
+                      padding: "14px 16px",
                     }}
                   >
-                    {trackedRequest.status ||
-                      "جديد"}
-                  </span>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "#475569",
+                        fontWeight: "800",
+                        display: "block",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      💬 ملاحظات إدارة الاستحقاقات
+                    </span>
+                    {trackedRequest.notes ? (
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: "13.5px",
+                          lineHeight: 1.9,
+                          color: "#334155",
+                        }}
+                      >
+                        "{trackedRequest.notes}"
+                      </p>
+                    ) : (
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: "13px",
+                          color: "#94A3B8",
+                        }}
+                      >
+                        لا توجد ملاحظات حاليًا.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

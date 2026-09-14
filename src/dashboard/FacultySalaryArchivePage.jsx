@@ -541,8 +541,13 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
 
   const [viewMode, setViewMode] = useState("archive"); // archive | import | review
   const [search, setSearch] = useState("");
-  const [yearFilter, setYearFilter] = useState("all");
-  const [monthFilter, setMonthFilter] = useState("all");
+  const [selectedYears, setSelectedYears] = useState([]);
+  const [selectedMonths, setSelectedMonths] = useState([]);
+  const [yearOpen, setYearOpen] = useState(false);
+  const [monthOpen, setMonthOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const selectedYearsKey = selectedYears.join(",");
+  const selectedMonthsKey = selectedMonths.join(",");
 
   const [records, setRecords] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -622,11 +627,11 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
         if (q) {
           query = applyCombinedSearch(query, NAME_COL, 'computer_number', q);
         }
-        if (yearFilter !== "all") {
-          query = query.eq("year", Number(yearFilter));
+        if (selectedYears.length > 0) {
+          query = query.in("year", selectedYears.map(Number));
         }
-        if (monthFilter !== "all") {
-          query = query.eq("month", Number(monthFilter));
+        if (selectedMonths.length > 0) {
+          query = query.in("month", selectedMonths.map(Number));
         }
 
         query = query
@@ -655,7 +660,7 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
     return () => {
       cancelled = true;
     };
-  }, [search, yearFilter, monthFilter]);
+  }, [search, selectedYearsKey, selectedMonthsKey]);
 
   const loadMore = async () => {
     if (loading || loadedAll) return;
@@ -675,11 +680,11 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
       if (q) {
         query = applyCombinedSearch(query, NAME_COL, 'computer_number', q);
       }
-      if (yearFilter !== "all") {
-        query = query.eq("year", Number(yearFilter));
+      if (selectedYears.length > 0) {
+        query = query.in("year", selectedYears.map(Number));
       }
-      if (monthFilter !== "all") {
-        query = query.eq("month", Number(monthFilter));
+      if (selectedMonths.length > 0) {
+        query = query.in("month", selectedMonths.map(Number));
       }
 
       query = query
@@ -725,6 +730,8 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
           computer_number: record.computer_number,
           faculty_name: record[NAME_COL],
           years: new Map(),
+          filesCount: 0,
+          latest: record,
         });
       }
 
@@ -741,6 +748,8 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
       }
 
       months.get(record.month).push(record);
+      member.filesCount += 1;
+      if (isNewer(record, member.latest)) member.latest = record;
     });
 
     const sortedMembers = [...membersMap.values()].sort((a, b) =>
@@ -1096,9 +1105,9 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
       .select("*", { count: "exact" })
       .range(0, PAGE_SIZE - 1);
 
-    if (q) query = applyNameSearch(query, NAME_COL, q);
-    if (yearFilter !== "all") query = query.eq("year", Number(yearFilter));
-    if (monthFilter !== "all") query = query.eq("month", Number(monthFilter));
+    if (q) query = applyCombinedSearch(query, NAME_COL, 'computer_number', q);
+    if (selectedYears.length > 0) query = query.in("year", selectedYears.map(Number));
+    if (selectedMonths.length > 0) query = query.in("month", selectedMonths.map(Number));
 
     const { data, count, error: queryError } = await query
       .order("computer_number", { ascending: true })
@@ -1132,6 +1141,64 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
     setMembers(uniqueMembers);
   };
 
+  /* ------------------ فلاتر متعددة ------------------ */
+  const toggleYear = (value) => {
+    setSelectedYears((current) =>
+      current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value].sort((a, b) => b - a)
+    );
+  };
+
+  const toggleMonth = (value) => {
+    setSelectedMonths((current) =>
+      current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value].sort((a, b) => a - b)
+    );
+  };
+
+  const selectAllYears = () => setSelectedYears([...(years)].sort((a, b) => b - a));
+  const clearAllYears = () => setSelectedYears([]);
+  const selectAllMonths = () => setSelectedMonths([...Array(12)].map((_, i) => i + 1));
+  const clearAllMonths = () => setSelectedMonths([]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedYears([]);
+    setSelectedMonths([]);
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await Promise.all([refreshResults(), refreshMeta()]);
+    } catch (err) {
+      console.error("خطأ في تحديث الأرشيف:", err);
+      setError("تعذر تحديث الأرشيف: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownload = async (record) => {
+    setError("");
+    if (!record || !record.file_url) {
+      setError("لا يوجد ملف PDF لهذه المفردة.");
+      return;
+    }
+    const filename =
+      record.original_filename ||
+      `${record[NAME_COL]} - ${record.year} - ${monthName(record.month)}.pdf`;
+    const link = document.createElement("a");
+    link.href = record.file_url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   /* ------------------ الواجهة ------------------ */
   const filterRowStyle = {
     display: "flex",
@@ -1152,6 +1219,19 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
 
   return (
     <div style={{ paddingBottom: 24 }}>
+      <style>{`
+        .fsa-skeleton-line,
+        .fsa-skeleton-thumb {
+          background: linear-gradient(90deg, #EEF1F5 25%, #E6EBF2 50%, #EEF1F5 75%);
+          background-size: 200% 100%;
+          animation: fsa-shimmer 1.4s ease-in-out infinite;
+          border-radius: 8px;
+        }
+        @keyframes fsa-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
       <datalist id="fsa-members-list">
         {members.map((m) => (
           <option key={`${m.computer_number}|${m[NAME_COL]}`} value={m[NAME_COL]}>
@@ -1160,54 +1240,127 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
         ))}
       </datalist>
 
-      {/* العنوان */}
+      {/* العنوان الرئيسي */}
       <div
         style={{
-          background: "linear-gradient(135deg, #0F2942, #1D4ED8)",
-          color: "#fff",
-          borderRadius: 16,
-          padding: "22px 24px",
-          marginBottom: 18,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          flexWrap: "wrap",
+          gap: 14,
+          marginBottom: 14,
         }}
       >
-        <h2 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>
-          {cfg.headerEmoji} {cfg.title}
-        </h2>
-        <p style={{ margin: "8px 0 0", opacity: 0.85, fontSize: 14 }}>
-          {cfg.subtitle}
-        </p>
+        <div>
+          <div style={{ fontSize: 13, color: "#64748B", marginBottom: 8, fontWeight: 600 }}>
+            قسم الاستحقاقات <span style={{ color: "#94A3B8", margin: "0 6px" }}>/</span>
+            <span style={{ color: "#1D4ED8" }}>{cfg.breadcrumb}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 34, lineHeight: 1 }}>{cfg.headerEmoji}</span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 25, fontWeight: 900, color: "#0F2942", lineHeight: 1.35 }}>
+                {cfg.title}
+              </h2>
+              <p style={{ margin: "5px 0 0", color: "#64748B", fontSize: 13.5, lineHeight: 1.8 }}>
+                {cfg.id === "faculty"
+                  ? "متابعة الأعمال وتقييم الأداء بصورة يومية وأسبوعية وشهرية"
+                  : cfg.subtitle}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={handleRefresh}
+            style={headerIconButtonStyle}
+            disabled={loading}
+            title="تحديث الأرشيف"
+          >
+            🔄 تحديث
+          </button>
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setNotifyOpen((v) => !v)}
+              style={headerIconButtonStyle}
+              title="الإشعارات"
+            >
+              🔔
+            </button>
+            {notifyOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: "calc(100% + 8px)",
+                  background: "#fff",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: 12,
+                  boxShadow: "0 16px 34px rgba(15,41,66,.14)",
+                  zIndex: 50,
+                  padding: "14px 16px",
+                  minWidth: 220,
+                  fontSize: 13,
+                  color: "#334155",
+                }}
+              >
+                لا توجد إشعارات جديدة حاليًا. ✔️
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* تبويبات */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+      {/* شريط معلومات */}
+      <div style={infoBannerStyle}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 34, lineHeight: 1 }}>📄</span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 17, fontWeight: 900, marginBottom: 6 }}>
+              {cfg.title}
+            </div>
+            <div style={{ fontSize: 13.5, lineHeight: 1.9, opacity: 0.93 }}>
+              يتيح لك عرض سريع للمفردات من الأرشيف (مسح ضوئي PDF أصلي). ابحث بالاسم أو رقم الكمبيوتر مع
+              فلترة أكثر من سنة أو شهر معًا، واعاين أو نزّل أي مفردة مباشرة.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* التبويبات */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
         {[
           { id: "archive", label: "🔎 الأرشيف" },
-          { id: "import", label: "📤 استيراد جماعي" },
+          { id: "import", label: "📥 استيراد جماعي" },
           { id: "review", label: "⚠️ يحتاج مراجعة" },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setViewMode(tab.id)}
             style={{
-              border: viewMode === tab.id ? "1px solid #2563EB" : "1px solid #CBD5E1",
-              background: viewMode === tab.id ? "#EFF6FF" : "#fff",
-              color: viewMode === tab.id ? "#1D4ED8" : "#334155",
-              borderRadius: 9,
-              padding: "10px 16px",
+              border: viewMode === tab.id ? "1px solid #2563EB" : "1px solid #E2E8F0",
+              background: viewMode === tab.id ? "#2563EB" : "#fff",
+              color: viewMode === tab.id ? "#fff" : "#0F2942",
+              borderRadius: 11,
+              padding: "10px 18px",
               fontWeight: 800,
               fontSize: 14,
               cursor: "pointer",
+              boxShadow:
+                viewMode === tab.id ? "0 4px 12px rgba(37,99,235,.28)" : "0 1px 3px rgba(15,41,66,.05)",
             }}
           >
             {tab.label}
             {tab.id === "review" && reviewRows.length > 0 && (
               <span
                 style={{
-                  background: "#DC2626",
-                  color: "#fff",
+                  background: viewMode === tab.id ? "#fff" : "#DC2626",
+                  color: viewMode === tab.id ? "#2563EB" : "#fff",
                   borderRadius: 999,
-                  padding: "1px 7px",
+                  padding: "1px 8px",
                   fontSize: 11,
+                  fontWeight: 900,
                   marginRight: 6,
                 }}
               >
@@ -1479,52 +1632,151 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
           <div style={filterRowStyle}>
             <input
               type="search"
-              placeholder={cfg.searchPlaceholder}
+              placeholder={
+                cfg.id === "faculty"
+                  ? "🔎 ابحث باسم الموظف أو رقم الكمبيوتر..."
+                  : cfg.searchPlaceholder
+              }
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{
                 ...controlStyle,
                 flex: 1,
-                minWidth: 260,
+                minWidth: 240,
+                maxWidth: 420,
+                borderRadius: 10,
+                boxShadow: "0 1px 3px rgba(15,41,66,.06)",
               }}
             />
 
-            <select
-              value={yearFilter}
-              onChange={(e) => setYearFilter(e.target.value)}
-              style={controlStyle}
-            >
-              <option value="all">كل السنوات</option>
-              {years.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
+            <MultiSelectDropdown
+              icon="📅"
+              label="السنوات"
+              placeholder="اختر سنوات متعددة"
+              open={yearOpen}
+              onOpen={setYearOpen}
+              options={years.map((y) => ({ value: y, label: `سنة ${y}` }))}
+              selected={selectedYears}
+              onToggle={toggleYear}
+              onSelectAll={selectAllYears}
+              onClearAll={clearAllYears}
+            />
 
-            <select
-              value={monthFilter}
-              onChange={(e) => setMonthFilter(e.target.value)}
-              style={controlStyle}
-            >
-              <option value="all">كل الشهور</option>
-              {MONTH_NAMES.map((name, i) => (
-                <option key={name} value={i + 1}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            <MultiSelectDropdown
+              icon="🗓️"
+              label="الشهور"
+              placeholder="اختر شهور متعددة"
+              open={monthOpen}
+              onOpen={setMonthOpen}
+              options={MONTH_NAMES.map((name, i) => ({ value: i + 1, label: name }))}
+              selected={selectedMonths}
+              onToggle={toggleMonth}
+              onSelectAll={selectAllMonths}
+              onClearAll={clearAllMonths}
+            />
+
+            <button onClick={clearFilters} style={clearFiltersButtonStyle}>
+              🗑 مسح الفلاتر
+            </button>
           </div>
 
-          <div style={{ color: "#64748B", fontSize: 13, marginBottom: 12 }}>
-            عدد المفردات المعروضة: {totalCount} — يمكن الجمع بين البحث + السنة + الشهر معًا.
+          {(selectedYears.length > 0 || selectedMonths.length > 0) && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+              {selectedYears.map((year) => (
+                <span key={`y-${year}`} style={chipStyle}>
+                  📅 {year}
+                  <button
+                    type="button"
+                    onClick={() => toggleYear(year)}
+                    style={chipRemoveStyle}
+                    aria-label={`إزالة ${year}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {selectedMonths.map((month) => (
+                <span key={`m-${month}`} style={chipStyle}>
+                  🗓️ {monthName(month)}
+                  <button
+                    type="button"
+                    onClick={() => toggleMonth(month)}
+                    style={chipRemoveStyle}
+                    aria-label={`إزالة ${monthName(month)}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 14,
+              fontSize: 13.5,
+              color: "#475569",
+              fontWeight: 700,
+            }}
+          >
+            <span style={{ color: "#64748B" }}>تم العثور على</span>
+            <span
+              style={{
+                background: "#EFF6FF",
+                color: "#1D4ED8",
+                borderRadius: 999,
+                padding: "4px 12px",
+                fontWeight: 900,
+                fontSize: 13,
+              }}
+            >
+              {totalCount} ملف
+            </span>
+            <span style={{ color: "#64748B" }}>مطابقة</span>
           </div>
 
           {loading && records.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 40, color: "#64748B" }}>جاري تحميل الأرشيف...</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {[0, 1, 2].map((s) => (
+                <div key={s} style={skeletonCardStyle}>
+                  <div className="fsa-skeleton-line" style={{ width: "55%", height: 18, marginBottom: 12 }} />
+                  <div className="fsa-skeleton-line" style={{ width: "34%", height: 13, marginBottom: 16 }} />
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {[0, 1, 2, 3].map((t) => (
+                      <div key={t} className="fsa-skeleton-thumb" style={{ height: 84 }} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : grouped.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}>
-              لا توجد مفردات مطابقة. جربي تعديل البحث أو الفلاتر.
+            <div
+              style={{
+                textAlign: "center",
+                padding: "56px 24px",
+                background: "#fff",
+                border: "1px dashed #CBD5E1",
+                borderRadius: 18,
+                color: "#94A3B8",
+              }}
+            >
+              <div style={{ fontSize: 46, marginBottom: 10 }}>📁</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
+                لا توجد ملفات مطابقة للبحث
+              </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.9 }}>
+                جرّب تغيير الاسم أو السنة أو الشهر، أو اضغطي «مسح الفلاتر» لعرض كامل الأرشيف.
+              </div>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -1534,29 +1786,69 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
                   style={{
                     background: "#fff",
                     border: "1px solid #E7EBF0",
-                    borderRadius: 14,
+                    borderRadius: 16,
                     padding: 18,
-                    boxShadow: "0 2px 8px rgba(15,41,66,.035)",
+                    boxShadow: "0 2px 10px rgba(15,41,66,.045)",
                   }}
                 >
-                  {/* اسم العضو */}
+                  {/* رأس العضو */}
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "center",
                       justifyContent: "space-between",
+                      alignItems: "center",
                       flexWrap: "wrap",
-                      gap: 8,
+                      gap: 12,
                       marginBottom: 16,
                     }}
                   >
-                    <div>
-                      <div style={{ fontSize: 18, fontWeight: 900, color: "#0F2942" }}>
-                        👤 {member.faculty_name}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 220 }}>
+                      <span
+                        style={{
+                          width: 48,
+                          height: 48,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderRadius: "50%",
+                          background: "linear-gradient(135deg,#1D4ED8,#3B82F6)",
+                          color: "#fff",
+                          fontSize: 22,
+                          fontWeight: 900,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {(member.faculty_name || "؟").trim().charAt(0)}
+                      </span>
+                      <div>
+                        <div style={{ fontSize: 17, fontWeight: 900, color: "#0F2942", lineHeight: 1.4 }}>
+                          {member.faculty_name}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#64748B", marginTop: 2 }}>
+                          💻 {cfg.numberLabel}: {member.computer_number}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 13, color: "#64748B", marginTop: 3 }}>
-                        {cfg.numberLabel}: {member.computer_number}
-                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: 10,
+                      }}
+                    >
+                      <span style={memberChipStyle}>📄 عدد الملفات: {member.filesCount}</span>
+                      <span style={memberChipStyle}>
+                        📅 آخر تحديث:{" "}
+                        {formatShortDate((member.latest && member.latest.updated_at) || (member.latest && member.latest.created_at))}
+                      </span>
+                      <button onClick={() => openRecord(member.latest)} style={previewButtonStyle}>
+                        👁️ معاينة سريعة
+                      </button>
+                      <button onClick={() => handleDownload(member.latest)} style={downloadButtonStyle}>
+                        📥 تحميل
+                      </button>
                     </div>
                   </div>
 
@@ -1663,6 +1955,230 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
     </div>
   );
 }
+
+/* ------------------------------------------------------------------
+   أنماط وأدوات مساعدة (خاصة بهذه الصفحة)
+------------------------------------------------------------------ */
+const headerIconButtonStyle = {
+  border: "1px solid #E2E8F0",
+  background: "#fff",
+  color: "#0F2942",
+  borderRadius: 11,
+  padding: "10px 16px",
+  fontWeight: 800,
+  fontSize: 13.5,
+  cursor: "pointer",
+  boxShadow: "0 2px 6px rgba(15,41,66,.07)",
+};
+
+const infoBannerStyle = {
+  background: "linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)",
+  color: "#fff",
+  borderRadius: 18,
+  padding: "20px 22px",
+  marginBottom: 18,
+  boxShadow: "0 8px 22px rgba(30,64,175,.18)",
+};
+
+const clearFiltersButtonStyle = {
+  border: "1px solid #FECACA",
+  background: "#FFF1F2",
+  color: "#DC2626",
+  borderRadius: 10,
+  padding: "11px 18px",
+  fontWeight: 800,
+  fontSize: 13.5,
+  cursor: "pointer",
+};
+
+const chipStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  background: "#EFF6FF",
+  border: "1px solid #BFDBFE",
+  color: "#1D4ED8",
+  borderRadius: 999,
+  padding: "5px 10px",
+  paddingLeft: 6,
+  fontSize: 12.5,
+  fontWeight: 800,
+};
+
+const chipRemoveStyle = {
+  border: 0,
+  background: "transparent",
+  color: "#1D4ED8",
+  fontSize: 15,
+  lineHeight: 1,
+  cursor: "pointer",
+  padding: "0 4px",
+  borderRadius: 999,
+};
+
+const skeletonCardStyle = {
+  background: "#fff",
+  border: "1px solid #EEF1F5",
+  borderRadius: 14,
+  padding: 18,
+  boxShadow: "0 2px 8px rgba(15,41,66,.035)",
+};
+
+const memberChipStyle = {
+  background: "#F1F5F9",
+  border: "1px solid #E2E8F0",
+  color: "#475569",
+  borderRadius: 999,
+  padding: "6px 12px",
+  fontSize: 12.5,
+  fontWeight: 700,
+  whiteSpace: "nowrap",
+};
+
+const previewButtonStyle = {
+  border: "1px solid #BFDBFE",
+  background: "#EFF6FF",
+  color: "#1D4ED8",
+  borderRadius: 9,
+  padding: "8px 14px",
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: "pointer",
+};
+
+const downloadButtonStyle = {
+  border: "1px solid #2563EB",
+  background: "#2563EB",
+  color: "#fff",
+  borderRadius: 9,
+  padding: "8px 14px",
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: "pointer",
+};
+
+function formatShortDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("ar-EG", {
+    numberingSystem: "latn",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function isNewer(a, b) {
+  if (!b) return true;
+  const aKey = (a.year << 8) + (a.month || 0);
+  const bKey = (b.year << 8) + (b.month || 0);
+  if (aKey !== bKey) return aKey > bKey;
+  return (a.sequence || 1) >= (b.sequence || 1);
+}
+
+/* ------------------------------------------------------------------
+   قائمة اختيار متعدد (سنوات / شهور)
+------------------------------------------------------------------ */
+function MultiSelectDropdown({ icon, label, placeholder, open, onOpen, options, selected, onToggle, onSelectAll, onClearAll }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => onOpen(!open)}
+        style={{
+          border: "1px solid #CBD5E1",
+          background: "#fff",
+          borderRadius: 10,
+          padding: "11px 14px",
+          fontSize: 14,
+          fontWeight: 800,
+          color: "#0F2942",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          boxShadow: "0 1px 3px rgba(15,41,66,.06)",
+        }}
+      >
+        <span>{icon}</span>
+        <span>{selected.length > 0 ? `${label}: ${selected.length}` : placeholder}</span>
+        <span style={{ fontSize: 10, color: "#64748B" }}>▼</span>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            right: 0,
+            background: "#fff",
+            border: "1px solid #E2E8F0",
+            borderRadius: 12,
+            boxShadow: "0 16px 34px rgba(15,41,66,.14)",
+            zIndex: 40,
+            minWidth: 240,
+            maxWidth: "calc(100vw - 32px)",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              padding: "10px 12px",
+              borderBottom: "1px solid #EFF3F8",
+            }}
+          >
+            <button type="button" onClick={onSelectAll} style={msActionButtonStyle}>
+              تحديد الكل
+            </button>
+            <button type="button" onClick={onClearAll} style={msActionButtonStyle}>
+              إلغاء تحديد الكل
+            </button>
+          </div>
+          <div style={{ overflowY: "auto", maxHeight: 260, padding: 6 }}>
+            {options.map((option) => (
+              <label
+                key={String(option.value)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "8px 10px",
+                  borderRadius: 9,
+                  cursor: "pointer",
+                  fontSize: 13.5,
+                  color: "#334155",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(option.value)}
+                  onChange={() => onToggle(option.value)}
+                  style={{ accentColor: "#2563EB", width: 16, height: 16, cursor: "pointer" }}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const msActionButtonStyle = {
+  border: "1px solid #DBEAFE",
+  background: "#EFF6FF",
+  color: "#1D4ED8",
+  borderRadius: 7,
+  padding: "5px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+  cursor: "pointer",
+};
 
 /* ------------------------------------------------------------------
    صف ملف وارد للاستيراد
