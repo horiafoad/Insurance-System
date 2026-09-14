@@ -73,41 +73,59 @@ function CameraModal({ onCaptured, onUseDeviceCamera, onClose }) {
 
   useEffect(() => {
     let active = true;
+    let fallbackTimer = null;
+
+    const attempts = [
+      {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      },
+      { video: true, audio: false },
+    ];
+
     (async () => {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("getUserMedia غير مدعوم");
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        });
-        if (!active) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play?.();
-        }
-        setReady(true);
-        setError("");
-      } catch (err) {
-        console.error("camera open error:", err);
-        setError(
-          "تعذر فتح الكاميرا مباشرة (يحتاج HTTPS، أو التصفح على موبايل). استخدم «الكاميرا الأصلية للجهاز»."
-        );
+      if (!navigator.mediaDevices?.getUserMedia || window.isSecureContext === false) {
+        setError("تعذر فتح الكاميرا المباشرة — جاري فتح كاميرا الجهاز الأصلية...");
+        fallbackTimer = setTimeout(onUseDeviceCamera, 800);
+        return;
       }
+
+      for (const constraints of attempts) {
+        if (!active) return;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          if (!active) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play?.();
+          }
+          setReady(true);
+          setError("");
+          return;
+        } catch (err) {
+          console.error("camera attempt failed:", err);
+        }
+      }
+
+      if (!active) return;
+      setError("تعذر فتح الكاميرا المباشرة — جاري فتح كاميرا الجهاز الأصلية...");
+      fallbackTimer = setTimeout(onUseDeviceCamera, 900);
     })();
+
     return () => {
       active = false;
+      clearTimeout(fallbackTimer);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const capture = () => {
@@ -562,12 +580,23 @@ useEffect(() => {
           let newCount = pageCount;
 
           if (!isNew && person.file_path) {
-            const { data: blob, error: dlErr } = await supabase.storage
-              .from(CFG.bucket)
-              .download(person.file_path);
-            if (!dlErr && blob) {
-              const existing = new Uint8Array(await blob.arrayBuffer());
-              const mergedResult = await mergeOrderIntoArchive(existing, bytes);
+            let existingBytes = null;
+            try {
+              const { data: blob, error: dlErr } = await supabase.storage
+                .from(CFG.bucket)
+                .download(person.file_path);
+              if (!dlErr && blob && blob.size > 0) {
+                const existingBuf = await blob.arrayBuffer();
+                const existingPages = await pdfPageCount(existingBuf);
+                if (existingPages > 0) {
+                  existingBytes = new Uint8Array(existingBuf);
+                }
+              }
+            } catch (err) {
+              console.error(`تجاهل الملف القديم التالف لـ ${person.full_name}:`, err);
+            }
+            if (existingBytes) {
+              const mergedResult = await mergeOrderIntoArchive(existingBytes, bytes);
               merged = mergedResult.mergedBytes;
               oldCount = mergedResult.oldCount;
               newCount = mergedResult.newCount;
