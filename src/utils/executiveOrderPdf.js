@@ -168,3 +168,20 @@ export async function pdfPageCount(arrayBuffer) {
     .promise;
   return pdf.numPages;
 }
+
+/* فتح مستند PDF (للقراءة/العد/العرض) مع نسخة حامية من نقل البافر */
+export async function openPdfDocument(arrayBuffer) {
+  return pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+}
+
+/* رسم صفحة واحدة فقط كصورة JPG (عرض فوري بدون رسم كل الملف) */
+export async function renderPdfPageToJpeg(doc, pageIndex, scale = 1.4) {
+  const page = await doc.getPage(pageIndex + 1);
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: context, viewport }).promise;
+  return canvas.toDataURL("image/jpeg", 0.82);
+}

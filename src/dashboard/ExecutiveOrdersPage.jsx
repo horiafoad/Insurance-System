@@ -11,8 +11,10 @@ import {
   fileToOrderPdfBlob,
   jpegBlobToPdfBytes,
   mergeOrderIntoArchive,
+  openPdfDocument,
   pdfPageCount,
   renderPdfBytesToJpegs,
+  renderPdfPageToJpeg,
 } from "../utils/executiveOrderPdf";
 
 const CFG = EXECUTIVE_ORDERS_CONFIG;
@@ -245,8 +247,11 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
   const [fileLoading, setFileLoading] = useState(false);
   const [fileImages, setFileImages] = useState([]);
   const [filePageIndex, setFilePageIndex] = useState(0);
+  const [filePageCount, setFilePageCount] = useState(0);
   const [fileOrders, setFileOrders] = useState([]);
   const [fileError, setFileError] = useState("");
+  const pdfDocRef = useRef(null);
+  const fileImageCacheRef = useRef({});
 
   /* ---- استيراد الأرشيف القديم ---- */
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -673,13 +678,38 @@ useEffect(() => {
     return data || [];
   };
 
+  const goFilePage = async (index) => {
+    const doc = pdfDocRef.current;
+    if (!doc || index < 0) return;
+    const total = filePageCount || doc.numPages || 0;
+    if (total === 0) return;
+    const target = Math.min(index, total - 1);
+    setFilePageIndex(target);
+    setFileError("");
+    if (fileImageCacheRef.current[target]) {
+      setFileImages([fileImageCacheRef.current[target]]);
+      return;
+    }
+    setFileLoading(true);
+    try {
+      const url = await renderPdfPageToJpeg(doc, target);
+      fileImageCacheRef.current[target] = url;
+      setFileImages([url]);
+    } catch (err) {
+      console.error("renderFilePage:", err);
+      setFileError(migrationHint(err));
+    } finally {
+      setFileLoading(false);
+    }
+  };
+
   const openFileModal = async (person) => {
     setFilePerson(person);
     setFileLoading(true);
     setFileError("");
-    setFileImages([]);
     setFilePageIndex(0);
-    setFileOrders([]);
+    setFilePageCount(0);
+    fileImageCacheRef.current = {};
     try {
       const { data: blob, error: dlErr } = await supabase.storage
         .from(CFG.bucket)
@@ -687,21 +717,27 @@ useEffect(() => {
       if (dlErr || !blob) {
         throw dlErr || new Error("الملف غير موجود في البكت.");
       }
-      const { images } = await renderPdfBytesToJpegs(await blob.arrayBuffer());
-      setFileImages(images);
-      setFilePageIndex(0);
+      const doc = await openPdfDocument(await blob.arrayBuffer());
+      pdfDocRef.current = doc;
+      setFilePageCount(doc.numPages);
       const orders = await loadOrdersForPerson(person.id);
       setFileOrders(orders);
       setFileModalOpen(true);
+      await goFilePage(0);
     } catch (err) {
       setFileError(migrationHint(err));
-    } finally {
       setFileLoading(false);
     }
   };
 
-  const printFile = () => {
-    if (!filePerson || !fileImages.length) return;
+  const printFile = async () => {
+    const doc = pdfDocRef.current;
+    if (!doc || !filePerson) return;
+    const all = [];
+    for (let i = 0; i < doc.numPages; i += 1) {
+      const cached = fileImageCacheRef.current[i];
+      all.push(cached || (await renderPdfPageToJpeg(doc, i)));
+    }
     const printWindow = window.open("", "_blank", "width=900,height=1200");
     if (!printWindow) {
       alert("من فضلك اسمحي بالنوافذ المنبثقة للطباعة.");
@@ -719,8 +755,8 @@ useEffect(() => {
           </style>
         </head>
         <body>
-          <div class="head">${filePerson.full_name}<br/>الملف الكامل (${fileImages.length} صفحة)</div>
-          ${fileImages
+          <div class="head">${filePerson.full_name}<br/>الملف الكامل (${all.length} صفحة)</div>
+          ${all
             .map(
               (src, i) =>
                 `<div class="page"><img src="${src}" alt="صفحة ${i + 1}" /></div>`
@@ -1432,7 +1468,7 @@ useEffect(() => {
               {fileImages.length > 0 && (
                 <>
                   <div style={{ fontSize: 12, color: "#64748B", marginBottom: 8 }}>
-                    صفحة {filePageIndex + 1} من {fileImages.length}
+                    صفحة {filePageIndex + 1} من {filePageCount || fileImages.length}
                   </div>
                   <img
                     src={fileImages[filePageIndex]}
@@ -1443,14 +1479,14 @@ useEffect(() => {
                     <button
                       style={{ ...styles.viewButton, background: "#F1F5F9", color: "#334155" }}
                       disabled={filePageIndex <= 0}
-                      onClick={() => setFilePageIndex((i) => i - 1)}
+                      onClick={() => goFilePage(filePageIndex - 1)}
                     >
                       السابق
                     </button>
                     <button
                       style={{ ...styles.viewButton, background: "#F1F5F9", color: "#334155" }}
-                      disabled={filePageIndex >= fileImages.length - 1}
-                      onClick={() => setFilePageIndex((i) => i + 1)}
+                      disabled={filePageIndex >= (filePageCount || 1) - 1}
+                      onClick={() => goFilePage(filePageIndex + 1)}
                     >
                       التالي
                     </button>
