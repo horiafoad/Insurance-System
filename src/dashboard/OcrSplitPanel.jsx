@@ -196,15 +196,30 @@ function nameIsMoreComplete(a, b) {
     (String(b).match(/[\u0600-\u06FF]/g) || []).length;
 }
 
-/* هل الاسم قراءة ضوضاء من ترويسة/تذييل القالب (مثل «نظام أوراكل للرواتب» أو «أمين الكلية»)
-   بعد OCR مسح لا اسمَ موظفَ فيه؟ هذه لا تُعدّ بداية مفردة ولا اسمًا صحيحًا. */
+/* هل الاسم قراءة ضوضاء من ترويسة/تذييل/سطور قالب المرتب (مثل «نظام أوراكل للرواتب»،
+   «حكومة»، «أمين الكلية»، «شيخوخة عجز ووفاه») — قراءة OCR لصفحة تتمة لا اسمَ موظفَ فيها؟
+   هذه لا تُعدّ بداية مفردة ولا اسمًا صحيحًا. */
 function isFooterNoiseName(name) {
   if (!name) return false;
   const norm = normalizeDigits(String(name))
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ة/g, "ه")
     .toLowerCase();
-  return /اوراكل|اوركال|اوركل|الرواتب|مفردات|يعتمد|امين الكلية|امين الكليه|oracle|hrms|صافى|اجمالى|مستحقات|بيانات|الجدول|الشهر|السنة/.test(norm);
+  return /اوراكل|اوركال|اوركل|الرواتب|مفردات|يعتمد|امين الكلية|امين الكليه|oracle|hrms|صافى|اجمالى|مستحقات|بيانات|الجدول|الشهر|السنة|حكومة|الحكومة|لحكومة|جمهورية|شيخوخة|عجز|وفاه|بدل|اصابة|تأمين|الريادة|الاشراف|الإشراف|امتحانات|دمغة|مجموع|خصم|منحة|نقابات|نوادى|اقساط|جودة|اساسى|استحقاق/.test(norm);
+}
+
+/* هل النص اسمُ موظف حقيقي (وليس سطر قالب أو قراءة OCR خاطئة)؟
+   الاسم مقبولٌ فقط إذا حمل كلمة من قاموس الأسماء العربية الشائعة إلى جانب ألا يكون
+   ضجيج قالب. أي صوت آخر (اسم من كلمة واحدة، سطر مرتب، تذييل…) يُدمج في المفردة السابقة. */
+function isPlausibleEmployeeName(name) {
+  if (!name) return false;
+  if (isFooterNoiseName(name)) return false;
+  const tokens = arabicNameTokens(name);
+  if (tokens.length < 2) return false;
+  if (tokens.some((t) => t.length >= 2 && KNOWN_ARABIC_NAMES.has(t))) return true;
+  /* اسم مركّب طويل بلا كلمات قاموسية معروفة (أسماء غير شائعة مثل «بولا وجدى نصيف عزيز») —
+     سطر قالب المرتب لا يبلغ 4 كلمات عربية خالصة أبدًا، فيُقبل كاسم شخص حقيقي. */
+  return tokens.length >= 4 && tokens.every((t) => t.length >= 3);
 }
 
 /* تقسيم الصفحات إلى مفردات: الصفحات المتتالية لنفس مفردة المرتب مرتبطة ببعضها.
@@ -257,11 +272,11 @@ function groupPagesByNumber(pages, numberPattern) {
     const newLabeledNumber =
       labeledNumber && (!inheritedNumber || (hasNumber && !sameKey));
 
-    /* اسم موثوق مختلف تمامًا (بلا رأس رقمي) => بداية مفردة جديدة
-       (ما لم يكن الاسم ضجيج تذييل كـ«نظام أوراكل للرواتب») */
+    /* اسم موثوق مختلف تمامًا (بلا رأس رقمي) => بداية مفردة جديدة.
+       يُشترط أن يكون الاسم اسمَ شخص حقيقي (وليس سطر قالب/تتمة مثل «حكومة» أو «جودة») */
     const newDifferentName =
-      hasName && inheritedName && !namesShareIdentity(p.detectedName, inheritedName) &&
-      !isFooterNoiseName(p.detectedName);
+      hasName && inheritedName && isPlausibleEmployeeName(p.detectedName) &&
+      !namesShareIdentity(p.detectedName, inheritedName);
 
     if (ymBreak || newLabeledNumber || newDifferentName) {
       /* بداية مفردة جديدة: تصفير الوراثة حتى لا تُنسخ بيانات الموظف السابق بالخطأ */
@@ -306,14 +321,14 @@ function groupPagesByNumber(pages, numberPattern) {
   return mergeHeaderlessGroups(groups);
 }
 
-/* دمج أي مفردة لاحقة بلا اسم (أو بضجيج تذييل مثل «نظام أوراكل للرواتب») في المفردة السابقة
-   مع وراثة اسمها ورقمها — تُستخدم لالتقاط حالة «صفحة ونص» حيث تتمة المفردة السابقة
-   تأتي كمفردة منفصلة ناقصة. */
+/* دمج أي مفردة لاحقة بلا اسم موظف حقيقي (فارغ، أو ضجيج تذييل/سطر مرتب كـ«حكومة»
+   أو «شيخوخة عجز ووفاه») في المفردة السابقة مع وراثة اسمها ورقمها — تُستخدم لالتقاط
+   حالة «صفحة ونص» حيث تتمة المفردة السابقة تأتي كمفردة منفصلة ناقصة. */
 function mergeHeaderlessGroups(groups) {
   const merged = [];
   for (const g of groups) {
     const prev = merged[merged.length - 1];
-    if (prev && (!g.name || isFooterNoiseName(g.name))) {
+    if (prev && !isPlausibleEmployeeName(g.name)) {
       prev.pageIndexes.push(...g.pageIndexes);
       prev.dataUrls.push(...g.dataUrls);
       prev.missingHeader = (prev.missingHeader || 0) + (g.missingHeader || 0) + 1;
@@ -472,6 +487,7 @@ const JUNK_WORDS = [
   "القومي","الرقم","الكود","اوركال","الاوركال","اوركل","ضريبة","الضرائب","الاستقطاع","استقطاع",
   "الخصم","الخصومات","التأسيسي","الاساسي","الأساسي","المستندات","التاريخ","الدرجة","الدرجه",
   "اوراكل","أوراكل","اوركل","اوركال","الرواتب","مفردات","يعتمد","أمين الكلية","امين الكلية","oracle","hrms",
+  "حكومة","الحكومة","لحكومة","الجمهورية","جمهورية","مصرية",
 ];
 
 /* سطور التسميات (Labels) التي قد تُتخَطّف كاسم بالخطأ — مثل "الرقم القومي" ثم رقم قومي طويل */
