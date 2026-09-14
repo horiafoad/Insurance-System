@@ -11,6 +11,7 @@ import {
   fileToOrderPdfBlob,
   jpegBlobToPdfBytes,
   mergeOrderIntoArchive,
+  pdfPageCount,
   renderPdfBytesToJpegs,
 } from "../utils/executiveOrderPdf";
 
@@ -229,6 +230,14 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
   const [fileOrders, setFileOrders] = useState([]);
   const [fileError, setFileError] = useState("");
 
+  /* ---- استيراد الأرشيف القديم ---- */
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [skipDup, setSkipDup] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [importResults, setImportResults] = useState([]);
+  const [importError, setImportError] = useState("");
+  const importInputRef = useRef(null);
+
   const loadPersons = async () => {
     setPersonsLoading(true);
     try {
@@ -444,6 +453,185 @@ useEffect(() => {
     setConfirmOpen(true);
   };
 
+  /* ---------------- استيراد الأرشيف القديم (PDFs) ---------------- */
+
+  const insertPersonRow = async (name) => {
+    const { data, error: insErr } = await supabase
+      .from(CFG.personsTable)
+      .insert({
+        full_name: name,
+        full_name_norm: normalizeArabicText(name),
+        file_path: null,
+        file_url: null,
+        page_count: 0,
+        order_count: 0,
+        created_by: createdBy,
+      })
+      .select("id, full_name, full_name_norm, file_path, file_url, page_count, order_count, updated_at")
+      .single();
+    if (insErr) throw insErr;
+    return data;
+  };
+
+  const handleImportFilesSelected = (fileList) => {
+    if (!fileList || !fileList.length) return;
+    const pdfs = Array.from(fileList).filter((f) =>
+      /\.pdf$/i.test(f.name) || String(f.type || "").toLowerCase() === "application/pdf"
+    );
+    if (!pdfs.length) {
+      setImportError("اختر ملفات PDF فقط.");
+      return;
+    }
+    setImportError("");
+    setPendingFiles(pdfs);
+    setImportResults([]);
+  };
+
+  const clearPending = () => {
+    setPendingFiles([]);
+    setImportResults([]);
+    setImportError("");
+    if (importInputRef.current) importInputRef.current.value = "";
+  };
+
+  const runImport = async () => {
+    if (!pendingFiles.length || importing) return;
+    setImporting(true);
+    setImportError("");
+    setImportResults([]);
+
+    try {
+      let personMap = new Map(persons.map((p) => [p.id, p]));
+
+      const { data: allOrders } = await supabase
+        .from(CFG.ordersTable)
+        .select("person_id, original_filename");
+      if (allOrders && !Array.isArray(allOrders)) throw allOrders;
+      const seen = new Set(
+        (allOrders || [])
+          .filter((o) => o.person_id && o.original_filename)
+          .map((o) => `${o.person_id}|${o.original_filename}`)
+      );
+
+      const results = [];
+      for (let i = 0; i < pendingFiles.length; i += 1) {
+        const file = pendingFiles[i];
+        const rawName = file.name.replace(/\.pdf$/i, "").trim();
+        const res = {
+          name: rawName || file.name,
+          fileName: file.name,
+          pages: 0,
+          status: "pending",
+        };
+
+        try {
+          if (!rawName) {
+            res.status = "error";
+            res.error = "اسم الملف فارغ — اعد تسمية الملف باسم الشخص";
+            results.push(res);
+            setImportResults([...results]);
+            continue;
+          }
+
+          const norm = normalizeArabicText(rawName);
+          let person = [...personMap.values()].find(
+            (p) => (p.full_name_norm || normalizeArabicText(p.full_name)) === norm
+          );
+          let isNew = false;
+
+          if (person) {
+            if (skipDup && seen.has(`${person.id}|${file.name}`)) {
+              res.status = "skipped";
+              res.error = "مكرر — هذا الملف مستورد من قبل";
+              results.push(res);
+              setImportResults([...results]);
+              continue;
+            }
+          } else {
+            person = await insertPersonRow(rawName);
+            personMap.set(person.id, person);
+            isNew = true;
+          }
+
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const pageCount = await pdfPageCount(bytes.buffer);
+          res.pages = pageCount || 1;
+
+          let merged = bytes;
+          let oldCount = 0;
+          let newCount = pageCount;
+
+          if (!isNew && person.file_path) {
+            const { data: blob, error: dlErr } = await supabase.storage
+              .from(CFG.bucket)
+              .download(person.file_path);
+            if (!dlErr && blob) {
+              const existing = new Uint8Array(await blob.arrayBuffer());
+              const mergedResult = await mergeOrderIntoArchive(existing, bytes);
+              merged = mergedResult.mergedBytes;
+              oldCount = mergedResult.oldCount;
+              newCount = mergedResult.newCount;
+              res.pages = newCount;
+              res.pagesAdded = mergedResult.addedCount;
+            }
+          }
+
+          const path = `${person.id}/archive.pdf`;
+          const { error: upErr } = await supabase.storage
+            .from(CFG.bucket)
+            .upload(path, merged, { contentType: "application/pdf", upsert: true });
+          if (upErr) throw upErr;
+
+          const { data: pub } = supabase.storage.from(CFG.bucket).getPublicUrl(path);
+
+          const { error: persErr } = await supabase
+            .from(CFG.personsTable)
+            .update({
+              file_path: path,
+              file_url: pub?.publicUrl,
+              page_count: newCount,
+              order_count: (person.order_count || 0) + 1,
+              full_name_norm: norm,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", person.id);
+          if (persErr) throw persErr;
+
+          const { error: ordErr } = await supabase.from(CFG.ordersTable).insert({
+            person_id: person.id,
+            order_title: "ملف الأرشيف القديم",
+            order_date: new Date().toISOString().slice(0, 10),
+            source_mime: "application/pdf",
+            original_filename: file.name,
+            page_start: oldCount + 1,
+            page_end: newCount,
+            created_by: createdBy,
+          });
+          if (ordErr) throw ordErr;
+
+          seen.add(`${person.id}|${file.name}`);
+          res.status = "success";
+          res.isNew = isNew;
+        } catch (err) {
+          console.error(`import ${file.name}:`, err);
+          res.status = "error";
+          res.error = migrationHint(err);
+        }
+
+        results.push(res);
+        setImportResults([...results]);
+      }
+      setPendingFiles([]);
+      if (importInputRef.current) importInputRef.current.value = "";
+      await loadPersons();
+    } catch (outerErr) {
+      console.error("runImport:", outerErr);
+      setImportError(migrationHint(outerErr));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   /* ---------------- الأرشيف: فتح الملف الكامل ---------------- */
 
   const loadOrdersForPerson = async (personId) => {
@@ -524,10 +712,16 @@ useEffect(() => {
       <div>
         <div style={styles.breadcrumb}>الأرشيف التنفيذي</div>
         <h2 style={styles.sectionHeading}>
-          {view === "archive" ? CFG.archiveTitle : CFG.addTitle}
+          {view === "archive"
+            ? CFG.archiveTitle
+            : view === "import"
+              ? "📥 استيراد الأرشيف القديم"
+              : CFG.addTitle}
         </h2>
         <p style={styles.pageSub}>
-          كل شخص له ملف PDF واحد تُضاف إليه الأوامر التنفيذية الجديدة دون تغيير القديمة.
+          {view === "import"
+            ? "ارفع ملفات PDF — اسم الملف = اسم الشخص، ثم يُدمج في ملفه."
+            : "كل شخص له ملف PDF واحد تُضاف إليه الأوامر التنفيذية الجديدة دون تغيير القديمة."}
         </p>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -546,6 +740,14 @@ useEffect(() => {
           }}
         >
           🗂️ الأرشيف
+        </button>
+        <button
+          onClick={() => onNavigate("executive_orders_import")}
+          style={{
+            ...(view === "import" ? styles.primaryButton : styles.secondaryButton),
+          }}
+        >
+          📥 استيراد الأرشيف القديم
         </button>
       </div>
     </div>
@@ -1000,6 +1202,117 @@ useEffect(() => {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === "import" && (
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>📥 استيراد الأرشيف القديم</h2>
+          <p style={styles.cardSub}>
+            اختر ملفات PDF القديمة دفعة واحدة — كل ملف يمثل شخصًا واحدًا واسم الملف هو اسم
+            الشخص (مثال: <b>علي شهاب شمس الدين أبو اليزيد.pdf</b>). أي ملف باسم شخص موجود
+            سيُدمج في ملفه، وأي شخص جديد يُسجَّل في الأرشيف ليستقبل الأوامر الجديدة لاحقًا.
+          </p>
+
+          <div style={styles.filterRow}>
+            <button
+              style={styles.primaryButton}
+              disabled={importing}
+              onClick={() => importInputRef.current?.click()}
+            >
+              📂 اختيار ملفات PDF
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              multiple
+              accept="application/pdf,.pdf"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                handleImportFilesSelected(e.target.files);
+                if (e.target) e.target.value = "";
+              }}
+            />
+          </div>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 14, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={skipDup}
+              onChange={(e) => setSkipDup(e.target.checked)}
+              disabled={importing}
+            />
+            تخطي الملفات المكررة (نفس اسم الملف المستورد من قبل لنفس الشخص)
+          </label>
+
+          {importError && <div style={styles.errorBox}>{importError}</div>}
+
+          {pendingFiles.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={styles.resultText}>
+                سيتم استيراد {pendingFiles.length} ملف:
+              </div>
+              <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 10 }}>
+                {pendingFiles.map((f, i) => (
+                  <div key={`${f.name}-${i}`} style={{ padding: "9px 12px", borderBottom: "1px solid #EEF2F6", fontSize: 13 }}>
+                    📄 {f.name.replace(/\.pdf$/i, "")}
+                  </div>
+                ))}
+              </div>
+              <div style={styles.modalActions}>
+                <button style={styles.excelButtonLarge} disabled={importing} onClick={runImport}>
+                  {importing ? "⏳ جاري الاستيراد..." : `🚀 استيراد ${pendingFiles.length} ملف`}
+                </button>
+                <button style={styles.secondaryButton} disabled={importing} onClick={clearPending}>
+                  تفريغ القائمة
+                </button>
+              </div>
+            </div>
+          )}
+
+          {importResults.length > 0 && (
+            <div>
+              <div style={styles.resultText}>
+                النتيجة: {importResults.filter((r) => r.status === "success").length} نجحت •
+                {importResults.filter((r) => r.status === "skipped").length} مكرر •
+                {importResults.filter((r) => r.status === "error").length} فشلت
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {importResults.map((r, i) => (
+                  <div
+                    key={`${r.fileName}-${i}`}
+                    style={{
+                      border: "1px solid #E2E8F0",
+                      borderRadius: 8,
+                      padding: "9px 12px",
+                      fontSize: 13,
+                      background:
+                        r.status === "success"
+                          ? "#F0FDF4"
+                          : r.status === "skipped"
+                            ? "#FFF7ED"
+                            : "#FEF2F2",
+                    }}
+                  >
+                    <div style={{ fontWeight: 800 }}>
+                      {r.status === "success" ? "✅" : r.status === "skipped" ? "⏭️" : "❌"}{" "}
+                      {r.name}
+                      {r.status === "success" && (
+                        <span style={{ color: "#64748B", fontWeight: 600 }}>
+                          {" "}— {r.isNew ? "شخص جديد" : "دُمج في ملفه"} • {r.pages} صفحة
+                        </span>
+                      )}
+                    </div>
+                    {r.error && (
+                      <div style={{ color: r.status === "skipped" ? "#92400E" : "#B91C1C", marginTop: 3 }}>
+                        {r.error}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

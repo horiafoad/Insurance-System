@@ -156,3 +156,9 @@ export async function renderPdfBytesToJpegs(arrayBuffer, scale = 1.4) {
 
   return { images, pageCount: pdf.numPages };
 }
+
+/* عدّ صفحات PDF (سريع — بدون رسم صور) — يُستخدم في استيراد الأرشيف القديم */
+export async function pdfPageCount(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  return pdf.numPages;
+}

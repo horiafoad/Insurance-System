@@ -875,7 +875,9 @@ export default function AdminDashboard({ currentUser }) {
                   ? "إضافة أمر تنفيذي"
                   : activeMenu === "executive_orders_archive"
                     ? "أرشيف الأوامر التنفيذية"
-                    : MENU_ITEMS.find(
+                    : activeMenu === "executive_orders_import"
+                      ? "استيراد الأرشيف القديم"
+                      : MENU_ITEMS.find(
                       (item) => item.id === activeMenu
                     )?.title || "الرئيسية";
 
@@ -1261,6 +1263,14 @@ export default function AdminDashboard({ currentUser }) {
           <ExecutiveOrdersPage
             currentUser={currentUser}
             view="archive"
+            onNavigate={setActiveMenu}
+          />
+        )}
+
+        {activeMenu === "executive_orders_import" && (
+          <ExecutiveOrdersPage
+            currentUser={currentUser}
+            view="import"
             onNavigate={setActiveMenu}
           />
         )}
