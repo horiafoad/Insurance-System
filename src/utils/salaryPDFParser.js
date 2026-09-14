@@ -568,6 +568,8 @@ export function groupPagesIntoSalarySlips(pages) {
         employeeName: page.employeeName,
         month: page.month,
         year: page.year,
+        ownLabeledNumber: hasLabeledComputerNumber(page.lines) && page.computerNumber
+          ? page.computerNumber : "",
         pageStart: page.pageNumber,
         pageEnd: page.pageNumber,
         pages: [page],
@@ -581,6 +583,9 @@ export function groupPagesIntoSalarySlips(pages) {
       currentSlip.pageEnd = page.pageNumber;
       currentSlip.pages.push(page);
       
+      if (hasLabeledComputerNumber(page.lines) && page.computerNumber) {
+        currentSlip.ownLabeledNumber = page.computerNumber;
+      }
       if (!currentSlip.computerNumber && page.computerNumber) {
         currentSlip.computerNumber = page.computerNumber;
       }
@@ -603,17 +608,28 @@ export function groupPagesIntoSalarySlips(pages) {
     slips.push(currentSlip);
   }
 
-  // دمج مفردات «صفحة ونص»: أي مفردة انفصلت بلا اسم (ذيل/تتمة مفردة سابقة) — أو بضجيج
-  // تذييل قالب مثل «نظام أوراكل للرواتب» — تُدمج تلقائيًا في المفردة السابقة وترث
-  // رقمها واسمها وتُعدّ جزءًا من نفس المفردة.
+  // دمج مفردات «صفحة ونص» — القاعدة العامة (تُطبق على كل الملفات):
+  // المفردة اللاحقة تبقى منفصلة فقط إذا حملت معًا (1) رقم كمبيوتر مُسمّى بليبل مختلف
+  // عن المفردة السابقة، و(2) اسم موظف حقيقي. أي تتمة/ضجيج تذييل بلا الرقم المُسمّي
+  // («حكومة»، «نظام أوراكل للرواتب»، سطر مرتب…) تُدمج تلقائيًا في المفردة السابقة
+  // وترث رقمها واسمها وتُعدّ جزءًا من نفس المفردة.
+  const keyOf = (n) => String(n || "").split("-")[0].replace(/[^A-Za-z0-9_]/g, "");
   const merged = [];
   for (const s of slips) {
     const prev = merged[merged.length - 1];
-    if (prev && (!s.employeeName || isFooterNoiseName(s.employeeName))) {
-      prev.pages.push(...s.pages);
-      prev.pageEnd = s.pageEnd;
-      prev.needsReview = !prev.computerNumber || !prev.employeeName;
-      continue;
+    if (prev) {
+      const prevKey = prev.computerNumber ? keyOf(prev.computerNumber) : "";
+      const ownKey = s.ownLabeledNumber ? keyOf(s.ownLabeledNumber) : "";
+      const hasDifferentLabeledNumber = Boolean(ownKey && prevKey && ownKey !== prevKey);
+      const realName = s.employeeName && !isFooterNoiseName(s.employeeName) &&
+        (String(s.employeeName).match(/[\u0600-\u06FF]+/g) || []).length >= 2;
+      const isRealNewEmployee = hasDifferentLabeledNumber && realName;
+      if (!isRealNewEmployee) {
+        prev.pages.push(...s.pages);
+        prev.pageEnd = s.pageEnd;
+        prev.needsReview = !prev.computerNumber || !prev.employeeName;
+        continue;
+      }
     }
     merged.push(s);
   }

@@ -252,6 +252,7 @@ function groupPagesByNumber(pages, numberPattern) {
         number: p.detectedNumber || "",
         name: p.detectedName || "",
         yearMonth: p.detectedYearMonth || null,
+        ownLabeledNumber: labeledNumber && hasNumber ? p.detectedNumber : "",
         pageIndexes: [p.index],
         dataUrls: [p.dataUrl],
       };
@@ -285,6 +286,7 @@ function groupPagesByNumber(pages, numberPattern) {
         number: p.detectedNumber || "",
         name: p.detectedName || "",
         yearMonth: p.detectedYearMonth || null,
+        ownLabeledNumber: labeledNumber && hasNumber ? p.detectedNumber : "",
         pageIndexes: [p.index],
         dataUrls: [p.dataUrl],
       };
@@ -298,6 +300,7 @@ function groupPagesByNumber(pages, numberPattern) {
     current.dataUrls.push(p.dataUrl);
     if (!hasNumber && !hasName) current.missingHeader = (current.missingHeader || 0) + 1;
     if (!current.yearMonth && p.detectedYearMonth) current.yearMonth = p.detectedYearMonth;
+    if (labeledNumber && hasNumber) current.ownLabeledNumber = p.detectedNumber;
 
     /* الرقم: يُورَّث ولا يُستبدل بقيمة صحيحة. يُحدَّث فقط برقم يطابق مفتاح نفس المفردة؛
        وأرقام المبالغ (بلا ليبل) في الصفحات التكميلية لا تلمس رقم المفردة أصلًا. */
@@ -321,19 +324,29 @@ function groupPagesByNumber(pages, numberPattern) {
   return mergeHeaderlessGroups(groups);
 }
 
-/* دمج أي مفردة لاحقة بلا اسم موظف حقيقي (فارغ، أو ضجيج تذييل/سطر مرتب كـ«حكومة»
-   أو «شيخوخة عجز ووفاه») في المفردة السابقة مع وراثة اسمها ورقمها — تُستخدم لالتقاط
-   حالة «صفحة ونص» حيث تتمة المفردة السابقة تأتي كمفردة منفصلة ناقصة. */
+/* دمج أي مفردة لاحقة لا تثبت أنها موظف جديد حقيقي في المفردة السابقة مع وراثة اسمها
+   ورقمها — تُستخدم لالتقاط حالة «صفحة ونص» حيث تتمة المفردة السابقة تأتي كمفردة منفصلة.
+
+   القاعدة العامة (تُطبق على كل الملفات): المفردة اللاحقة تبقى منفصلة فقط إذا حملت
+   معًا (1) رقم كمبيوتر مُسمّى بليبل مختلف عن رقم المفردة السابقة، و(2) اسم موظف حقيقي.
+   أي صورة ناقصة — تتمة صفحة، ضجيج تذييل «حكومة»/«نظام أوراكل»/سطر مرتب، اسم مجزأ،
+   رقم مبلغ بلا ليبل، أو رأس بلا رقم مقروء — تُدمج تلقائيًا في المفردة السابقة. */
 function mergeHeaderlessGroups(groups) {
   const merged = [];
   for (const g of groups) {
     const prev = merged[merged.length - 1];
-    if (prev && !isPlausibleEmployeeName(g.name)) {
-      prev.pageIndexes.push(...g.pageIndexes);
-      prev.dataUrls.push(...g.dataUrls);
-      prev.missingHeader = (prev.missingHeader || 0) + (g.missingHeader || 0) + 1;
-      prev.needsReview = !prev.number || !prev.name;
-      continue;
+    if (prev) {
+      const prevKey = prev.number ? groupKeyFor(prev.number) : "";
+      const ownKey = g.ownLabeledNumber ? groupKeyFor(g.ownLabeledNumber) : "";
+      const hasDifferentLabeledNumber = Boolean(ownKey && prevKey && ownKey !== prevKey);
+      const isRealNewEmployee = hasDifferentLabeledNumber && isPlausibleEmployeeName(g.name);
+      if (!isRealNewEmployee) {
+        prev.pageIndexes.push(...g.pageIndexes);
+        prev.dataUrls.push(...g.dataUrls);
+        prev.missingHeader = (prev.missingHeader || 0) + (g.missingHeader || 0) + 1;
+        prev.needsReview = !prev.number || !prev.name;
+        continue;
+      }
     }
     merged.push(g);
   }
