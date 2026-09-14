@@ -242,6 +242,8 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
 
   /* ---- أرشيف ---- */
   const [archiveQuery, setArchiveQuery] = useState("");
+  const [archiveSearchFocus, setArchiveSearchFocus] = useState(false);
+  const [hoverDeleteId, setHoverDeleteId] = useState(null);
   const [fileModalOpen, setFileModalOpen] = useState(false);
   const [filePerson, setFilePerson] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
@@ -261,6 +263,9 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
   const [importError, setImportError] = useState("");
   const [bulkMode, setBulkMode] = useState("archive");
   const [showImportInline, setShowImportInline] = useState(false);
+  const [personToDelete, setPersonToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const importInputRef = useRef(null);
 
   const loadPersons = async () => {
@@ -269,7 +274,7 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
       const { data, error: fetchErr } = await supabase
         .from(CFG.personsTable)
         .select(
-          "id, full_name, full_name_norm, file_path, file_url, page_count, order_count, updated_at"
+          "id, full_name, full_name_norm, file_path, file_url, page_count, order_count, created_at, updated_at"
         )
         .order("full_name");
       if (fetchErr) throw fetchErr;
@@ -807,35 +812,201 @@ useEffect(() => {
     setTimeout(() => printWindow.print(), 500);
   };
 
+  /* ---------------- حذف أرشيف شخص ---------------- */
+
+  const handleDeletePerson = async () => {
+    const person = personToDelete;
+    if (!person || deleting) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      // 1) حذف ملف PDF من بكت التخزين (تجاهل إن كان مفقودًا)
+      try {
+        const { error: rmErr } = await supabase.storage
+          .from(CFG.bucket)
+          .remove([`${person.id}/archive.pdf`]);
+        if (rmErr && !/not\s*found|does\s*not\s*exist|404|not find/i.test(rmErr.message)) {
+          throw rmErr;
+        }
+      } catch (rmErr) {
+        if (rmErr?.message && !/not\s*found|does\s*not\s*exist|404|not find/i.test(rmErr.message)) {
+          throw rmErr;
+        }
+      }
+
+      // 2) حذف صف الشخص — الأوامر المرتبطة تُحذف تلقائيًا بـ ON DELETE CASCADE
+      const { error: delErr } = await supabase
+        .from(CFG.personsTable)
+        .delete()
+        .eq("id", person.id);
+      if (delErr) throw delErr;
+
+      setSuccess(`تم حذف أرشيف «${person.full_name}» وكل ما يرتبط به بنجاح.`);
+      setPersonToDelete(null);
+      await loadPersons();
+    } catch (err) {
+      console.error("deletePerson:", err);
+      setDeleteError(migrationHint(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   /* ---------------- عرض ---------------- */
 
   const header = (
-    <div className="" style={styles.pageHeader}>
-      <div>
-        <div style={styles.breadcrumb}>الأرشيف التنفيذي</div>
-        <h2 style={styles.sectionHeading}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 18,
+        flexWrap: "wrap",
+        marginBottom: 22,
+      }}
+    >
+      <div style={{ minWidth: 220 }}>
+        <div
+          style={{
+            color: "#64748B",
+            fontSize: 12,
+            fontWeight: 600,
+            marginBottom: 6,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span style={{ color: "#93C5FD" }}>أرشيف الأوامر التنفيذية</span>
+          {view === "add" && (
+            <>
+              <span style={{ color: "#CBD5E1" }}>/</span>
+              <span>إضافة أمر تنفيذي</span>
+            </>
+          )}
+        </div>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 26,
+            fontWeight: 900,
+            color: "#0F172A",
+            lineHeight: 1.25,
+          }}
+        >
           {view === "archive" ? CFG.archiveTitle : CFG.addTitle}
         </h2>
-        <p style={styles.pageSub}>
+        <p
+          style={{
+            margin: "6px 0 0",
+            color: "#64748B",
+            fontSize: 13.5,
+            fontWeight: 500,
+          }}
+        >
           كل شخص له ملف PDF واحد تُضاف إليه الأوامر التنفيذية الجديدة دون تغيير القديمة.
         </p>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <button
           onClick={() => onNavigate("executive_orders_add")}
+          title="إضافة أمر تنفيذي جديد"
           style={{
-            ...(view === "add" ? styles.primaryButton : styles.secondaryButton),
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            border: view === "add" ? "1px solid #1D4ED8" : "1px solid #CBD5E1",
+            background: view === "add" ? "#2563EB" : "#fff",
+            color: view === "add" ? "#fff" : "#1E293B",
+            borderRadius: 999,
+            padding: "10px 18px",
+            cursor: "pointer",
+            fontWeight: 800,
+            fontSize: 13.5,
+            boxShadow: view === "add" ? "0 4px 12px rgba(37,99,235,.25)" : "0 1px 2px rgba(15,41,66,.06)",
+            whiteSpace: "nowrap",
           }}
         >
-          ➕ إضافة أمر تنفيذي
+          <span>➕</span>
+          <span>إضافة أمر تنفيذي</span>
         </button>
+
         <button
           onClick={() => onNavigate("executive_orders_archive")}
+          title="أرشيف الأوامر التنفيذية"
           style={{
-            ...(view === "archive" ? styles.primaryButton : styles.secondaryButton),
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            border: view === "archive" ? "1px solid #1D4ED8" : "1px solid #CBD5E1",
+            background: view === "archive" ? "#2563EB" : "#fff",
+            color: view === "archive" ? "#fff" : "#1E293B",
+            borderRadius: 999,
+            padding: "10px 18px",
+            cursor: "pointer",
+            fontWeight: 800,
+            fontSize: 13.5,
+            boxShadow: view === "archive" ? "0 4px 12px rgba(37,99,235,.25)" : "0 1px 2px rgba(15,41,66,.06)",
+            whiteSpace: "nowrap",
           }}
         >
-          🗂️ الأرشيف
+          <span>🗂️</span>
+          <span>الأرشيف</span>
+        </button>
+
+        <button
+          onClick={loadPersons}
+          title="تحديث الأرشيف"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 40,
+            height: 40,
+            border: "1px solid #E2E8F0",
+            background: "#fff",
+            color: "#475569",
+            borderRadius: "50%",
+            cursor: "pointer",
+            fontSize: 16,
+            boxShadow: "0 1px 3px rgba(15,41,66,.08)",
+          }}
+        >
+          🔄
+        </button>
+
+        <button
+          title="الإشعارات"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 40,
+            height: 40,
+            border: "1px solid #E2E8F0",
+            background: "#fff",
+            color: "#475569",
+            borderRadius: "50%",
+            cursor: "pointer",
+            fontSize: 16,
+            position: "relative",
+            boxShadow: "0 1px 3px rgba(15,41,66,.08)",
+          }}
+        >
+          <span>🔔</span>
+          <span
+            style={{
+              position: "absolute",
+              top: 8,
+              right: 9,
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "#2563EB",
+              border: "2px solid #fff",
+            }}
+          />
         </button>
       </div>
     </div>
@@ -1451,18 +1622,88 @@ useEffect(() => {
       )}
 
       {view === "archive" && (
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>🗂️ أرشيف الأوامر التنفيذية</h2>
-          <p style={styles.cardSub}>
-            ابحث بأي جزء من الاسم لفتح الملف الكامل لأي شخص.
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #EDF1F7",
+            borderRadius: 18,
+            padding: "22px 22px 16px",
+            marginBottom: 16,
+            boxShadow: "0 1px 3px rgba(15,41,66,.04), 0 10px 30px -18px rgba(15,41,66,.18)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 900,
+                color: "#0F172A",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span>📁</span>
+              <span>أرشيف الأوامر التنفيذية</span>
+            </h2>
+            <span
+              style={{
+                background: "#EFF6FF",
+                color: "#1D4ED8",
+                fontSize: 12,
+                fontWeight: 800,
+                padding: "3px 10px",
+                borderRadius: 999,
+              }}
+            >
+              {archiveResults.length} شخص
+            </span>
+          </div>
+          <p
+            style={{
+              margin: "6px 0 18px",
+              color: "#64748B",
+              fontSize: 13.5,
+            }}
+          >
+            ابحث بأي جزء من الاسم لفتح الملف الكامل لأي شخص، أو استعرض بطاقات الأشخاص بالأسفل.
           </p>
 
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ position: "relative", marginBottom: 18 }}>
+            <span
+              style={{
+                position: "absolute",
+                right: 15,
+                top: "50%",
+                transform: "translateY(-50%)",
+                fontSize: 16,
+                color: "#94A3B8",
+                pointerEvents: "none",
+              }}
+            >
+              🔍
+            </span>
             <input
-              style={styles.searchInput}
-              placeholder="🔎 بحث بالحروف — مثال: شهاب"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                border: archiveSearchFocus
+                  ? "1.5px solid #2563EB"
+                  : "1.5px solid #E2E8F0",
+                background: archiveSearchFocus ? "#fff" : "#F8FAFC",
+                borderRadius: 13,
+                padding: "13px 42px 13px 14px",
+                fontSize: 15,
+                outline: "none",
+                color: "#0F172A",
+                transition: "border-color .15s, background .15s",
+              }}
+              placeholder="ابحث في الأرشيف..."
               value={archiveQuery}
               onChange={(e) => setArchiveQuery(e.target.value)}
+              onFocus={() => setArchiveSearchFocus(true)}
+              onBlur={() => setArchiveSearchFocus(false)}
             />
           </div>
 
@@ -1503,67 +1744,242 @@ useEffect(() => {
                 : "لا توجد سجلات في الأرشيف بعد."}
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {archiveResults.map((person) => (
                 <div
                   key={person.id}
                   style={{
-                    border: "1px solid #E7EBF0",
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    flexWrap: "wrap",
                     background: "#fff",
+                    border: "1px solid #EDF1F7",
+                    borderRadius: 16,
+                    padding: "16px 18px",
+                    boxShadow:
+                      "0 1px 2px rgba(15,41,66,.05), 0 8px 24px -16px rgba(15,41,66,.15)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
                   }}
                 >
-                  <span style={styles.workIcon}>👤</span>
-                  <div style={styles.workInfo}>
-                    <b>{person.full_name}</b>
-                    <small style={{ color: "#64748B" }}>
-                      {person.order_count || 0} أمر تنفيذي • {person.page_count || 0} صفحة
-                      {person.updated_at ? ` • آخر تحديث: ${formatDate(person.updated_at)}` : ""}
-                    </small>
+                  {/* صف الاسم */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        background: "#EFF6FF",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 22,
+                        flexShrink: 0,
+                      }}
+                    >
+                      👤
+                    </div>
+                    <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <b style={{ fontSize: 15.5, color: "#0F172A" }}>
+                          {person.full_name}
+                        </b>
+                        <span
+                          style={{
+                            background: "#D1FAE5",
+                            color: "#047857",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            padding: "2px 9px",
+                            borderRadius: 999,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          ✓ تمت أرشفته
+                        </span>
+                        {person.updated_at &&
+                          person.created_at &&
+                          new Date(person.updated_at).getTime() !==
+                            new Date(person.created_at).getTime() && (
+                            <span
+                              style={{
+                                background: "#DBEAFE",
+                                color: "#1D4ED8",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                padding: "2px 9px",
+                                borderRadius: 999,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              ⚡ معالجة سريعة
+                            </span>
+                          )}
+                      </div>
+                      {person.file_url && (
+                        <a
+                          href={person.file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="فتح الملف الأصلي"
+                          style={{
+                            color: "#64748B",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            textDecoration: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            marginTop: 3,
+                          }}
+                        >
+                          🖥️ عرض الملف الأصلي
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ marginRight: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {person.file_url && (
-                      <a
-                        href={person.file_url}
-                        target="_blank"
-                        rel="noreferrer"
+
+                  {/* صف الإحصائيات */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                      gap: 8,
+                    }}
+                  >
+                    {[
+                      {
+                        label: "عدد الأوامر التنفيذية",
+                        value: person.order_count || 0,
+                        color: "#1D4ED8",
+                      },
+                      {
+                        label: "عدد الصفحات",
+                        value: person.page_count || 0,
+                        color: "#0369A1",
+                      },
+                      {
+                        label: "آخر تحديث",
+                        value: person.updated_at
+                          ? formatDate(person.updated_at)
+                          : "—",
+                        color: "#475569",
+                      },
+                      {
+                        label: "تاريخ الأرشفة",
+                        value: person.created_at
+                          ? formatDate(person.created_at)
+                          : "—",
+                        color: "#475569",
+                      },
+                    ].map((stat) => (
+                      <div
+                        key={stat.label}
                         style={{
-                          ...styles.viewButton,
-                          textDecoration: "none",
-                          background: "#DCEEFB",
-                          color: "#0369A1",
-                          fontWeight: 800,
+                          background: "#F8FAFC",
+                          border: "1px solid #EEF2F7",
+                          borderRadius: 11,
+                          padding: "9px 12px",
                         }}
                       >
-                        📂 فتح الملف (عرض أصلي)
-                      </a>
-                    )}
+                        <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700 }}>
+                          {stat.label}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 14.5,
+                            fontWeight: 800,
+                            color: stat.color,
+                            marginTop: 2,
+                          }}
+                        >
+                          {stat.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* صف الأزرار */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <button
-                      style={styles.viewButton}
                       onClick={() => openFileModal(person)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        border: "1px solid #BFDBFE",
+                        background: "#EFF6FF",
+                        color: "#1D4ED8",
+                        borderRadius: 9,
+                        padding: "8px 13px",
+                        cursor: "pointer",
+                        fontWeight: 800,
+                        fontSize: 12.5,
+                        whiteSpace: "nowrap",
+                      }}
                     >
-                      👁️ معاينة سريعة
+                      <span>👁️</span>
+                      <span>معاينة سريعة</span>
                     </button>
+
                     {person.file_url && (
                       <a
                         href={downloadQueryUrl(person.file_url, `${person.full_name}.pdf`)}
                         target="_blank"
                         rel="noreferrer"
                         style={{
-                          ...styles.viewButton,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          border: "1px solid #E2E8F0",
+                          background: "#fff",
+                          color: "#334155",
+                          borderRadius: 9,
+                          padding: "8px 13px",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                          fontSize: 12.5,
                           textDecoration: "none",
-                          background: "#EFF6FF",
-                          color: "#1D4ED8",
+                          whiteSpace: "nowrap",
                         }}
                       >
-                        ⬇️ تحميل
+                        <span>⬇️</span>
+                        <span>تحميل</span>
                       </a>
                     )}
+
+                    <button
+                      onClick={() => {
+                        setDeleteError("");
+                        setPersonToDelete(person);
+                      }}
+                      onMouseEnter={() => setHoverDeleteId(person.id)}
+                      onMouseLeave={() => setHoverDeleteId(null)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        border: `1px solid ${
+                          hoverDeleteId === person.id ? "#DC2626" : "#FECACA"
+                        }`,
+                        background: hoverDeleteId === person.id ? "#FEF2F2" : "#fff",
+                        color: "#DC2626",
+                        borderRadius: 9,
+                        padding: "8px 13px",
+                        cursor: "pointer",
+                        fontWeight: 800,
+                        fontSize: 12.5,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <span>🗑️</span>
+                      <span>حذف</span>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1712,6 +2128,79 @@ useEffect(() => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- تأكيد حذف الأرشيف ---------- */}
+      {personToDelete && (
+        <div
+          style={styles.modalOverlay}
+          onClick={deleting ? undefined : () => setPersonToDelete(null)}
+        >
+          <div
+            style={{ ...styles.loginBox, width: "min(440px, 95%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={styles.closeButton}
+              disabled={deleting}
+              onClick={() => setPersonToDelete(null)}
+            >
+              ×
+            </button>
+
+            <div style={{ fontSize: 40, marginBottom: 8, textAlign: "center" }}>
+              🗑️
+            </div>
+
+            <h2 style={styles.loginTitle}>حذف الأرشيف</h2>
+
+            <p
+              style={{
+                ...styles.loginDescription,
+                textAlign: "center",
+                fontSize: 14,
+                lineHeight: 1.9,
+              }}
+            >
+              هل أنت متأكد من حذف أرشيف <b>{personToDelete.full_name}</b>؟
+              <br />
+              سيتم حذف ملف الأرشيف وجميع البيانات المرتبطة به.
+              <br />
+              <span style={{ color: "#B91C1C", fontSize: 12.5, fontWeight: 700 }}>
+                لا يمكن التراجع عن هذا الإجراء.
+              </span>
+            </p>
+
+            {deleteError && <div style={styles.errorBox}>{deleteError}</div>}
+
+            <div style={styles.modalActions}>
+              <button
+                style={styles.secondaryButton}
+                disabled={deleting}
+                onClick={() => setPersonToDelete(null)}
+              >
+                إلغاء
+              </button>
+              <button
+                style={{
+                  border: 0,
+                  background: "#DC2626",
+                  color: "#fff",
+                  borderRadius: 9,
+                  padding: "12px 22px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  whiteSpace: "nowrap",
+                }}
+                disabled={deleting}
+                onClick={handleDeletePerson}
+              >
+                {deleting ? "⏳ جاري الحذف..." : "🗑️ حذف الأرشيف"}
+              </button>
             </div>
           </div>
         </div>

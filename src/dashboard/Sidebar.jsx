@@ -191,7 +191,7 @@ export default function Sidebar({
       <div style={styles.sidebarDivider} />
 
       <div style={{ padding: "6px 14px 2px", fontSize: 11, fontWeight: 800, color: "#94A3B8" }}>
-        📜 الأرشيف التنفيذي
+        📜 أرشيف الأوامر التنفيذية
       </div>
 
       <button
