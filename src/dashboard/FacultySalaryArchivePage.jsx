@@ -1250,20 +1250,20 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
     gap: 10,
     flexWrap: "wrap",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
   };
 
   const controlStyle = {
     border: "1px solid #CBD5E1",
     background: "#fff",
-    borderRadius: 8,
+    borderRadius: 10,
     padding: "11px 12px",
     fontSize: 14,
     fontFamily: "inherit",
   };
 
   return (
-    <div style={{ paddingBottom: 24 }}>
+    <div className="fsa-page" style={{ paddingBottom: 20 }}>
       <style>{`
         .fsa-skeleton-line,
         .fsa-skeleton-thumb {
@@ -1275,6 +1275,23 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
         @keyframes fsa-shimmer {
           0% { background-position: 200% 0; }
           100% { background-position: -200% 0; }
+        }
+
+        .fsa-page {
+          background: #F7F8FA;
+          border: 1px solid #EEF1F5;
+          border-radius: 18px;
+          padding: 18px;
+          box-shadow: 0 1px 3px rgba(15,41,66,.04);
+        }
+
+        @media (max-width: 640px) {
+          .fsa-page { padding: 12px; border-radius: 14px; }
+          .fsa-filter-row { flex-direction: column !important; align-items: stretch !important; }
+          .fsa-filter-row > .fsa-search-input,
+          .fsa-filter-row > .fsa-dropdown,
+          .fsa-filter-row > .fsa-filter-clear { width: 100% !important; flex: none !important; }
+          .fsa-filter-row > .fsa-dropdown > button { width: 100%; justify-content: space-between; }
         }
       `}</style>
       <datalist id="fsa-members-list">
@@ -1300,13 +1317,13 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
           <div style={{ fontSize: 12, color: "#64748B", marginBottom: 8, fontWeight: 600 }}>
             قسم الاستحقاقات
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 34, lineHeight: 1 }}>{cfg.headerEmoji}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 26, lineHeight: 1 }}>{cfg.headerEmoji}</span>
             <div>
-              <h2 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: "#0F2942", lineHeight: 1.4 }}>
+              <h2 style={{ margin: 0, fontSize: 24, fontWeight: 900, color: "#0F2942", lineHeight: 1.4 }}>
                 {cfg.title}
               </h2>
-              <p style={{ margin: "5px 0 0", color: "#64748B", fontSize: 14, lineHeight: 1.8 }}>
+              <p style={{ margin: "4px 0 0", color: "#64748B", fontSize: 13, lineHeight: 1.8 }}>
                 {cfg.id === "faculty"
                   ? "متابعة الأعمال وتقييم الأداء بصورة يومية وأسبوعية وشهرية"
                   : cfg.subtitle}
@@ -1356,18 +1373,28 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
         </div>
       </div>
 
-      {/* شريط معلومات */}
-      <div style={infoBannerStyle}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 34, lineHeight: 1 }}>📄</span>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 17, fontWeight: 900, marginBottom: 6, color: "#1E3A5F" }}>
-              {cfg.title}
-            </div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.9, color: "#47607D" }}>
-              يتيح لك عرض سريع للمفردات من الأرشيف (مسح ضوئي PDF أصلي). ابحث بالاسم أو رقم الكمبيوتر مع
-              فلترة أكثر من سنة أو شهر معًا، واعاين أو نزّل أي مفردة مباشرة.
-            </div>
+      {/* شريط معلومات — كارت أبيض مضغوط */}
+      <div
+        style={{
+          background: "#fff",
+          border: "1px solid #E7EBF0",
+          borderRadius: 14,
+          padding: "12px 16px",
+          marginBottom: 16,
+          boxShadow: "0 1px 2px rgba(15,41,66,.04)",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontSize: 22, lineHeight: 1 }}>📄</span>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 900, color: "#102A43" }}>{cfg.title}</div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.7, color: "#66788F", marginTop: 3 }}>
+            {cfg.id === "faculty"
+              ? "الوصول السريع إلى مفردات المرتب المحفوظة في الأرشيف الإلكتروني بصيغة PDF الأصلية، مع البحث والفلترة والمعاينة والتحميل."
+              : "الوصول السريع إلى مفردات مرتب الموظفين المحفوظة في الأرشيف الإلكتروني بصيغة PDF الأصلية، مع البحث والفلترة والمعاينة والتحميل."}
           </div>
         </div>
       </div>
@@ -1399,8 +1426,8 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
             {tab.id === "review" && reviewRows.length > 0 && (
               <span
                 style={{
-                  background: viewMode === tab.id ? "#fff" : "#B3464E",
-                  color: viewMode === tab.id ? "#1E3A5F" : "#fff",
+                  background: viewMode === tab.id ? "#fff" : "#EDF0F4",
+                  color: viewMode === tab.id ? "#1E3A5F" : "#64748B",
                   borderRadius: 999,
                   padding: "1px 8px",
                   fontSize: 11,
@@ -1673,9 +1700,10 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
       {viewMode === "archive" && (
         <div>
           {/* البحث والفلاتر */}
-          <div style={filterRowStyle}>
+          <div className="fsa-filter-row" style={filterRowStyle}>
             <input
               type="search"
+              className="fsa-search-input"
               placeholder={
                 cfg.id === "faculty"
                   ? "🔎 ابحث باسم الموظف أو رقم الكمبيوتر..."
@@ -1687,41 +1715,45 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
                 ...controlStyle,
                 flex: 1,
                 minWidth: 240,
-                maxWidth: 420,
+                maxWidth: 560,
                 borderRadius: 10,
-                boxShadow: "0 1px 3px rgba(15,41,66,.06)",
+                boxShadow: "0 1px 3px rgba(15,41,66,.05)",
               }}
             />
 
-            <MultiSelectDropdown
-              icon="📅"
-              label="السنوات"
-              placeholder="كل السنوات"
-              allLabel="كل السنوات"
-              open={yearOpen}
-              onOpen={setYearOpen}
-              options={yearOptionsList.map((y) => ({ value: y, label: `سنة ${y}` }))}
-              selected={selectedYears}
-              onToggle={toggleYear}
-              onSelectAll={selectAllYears}
-              onClearAll={clearAllYears}
-            />
+            <div className="fsa-dropdown">
+              <MultiSelectDropdown
+                icon="📅"
+                label="السنوات"
+                placeholder="كل السنوات"
+                allLabel="كل السنوات"
+                open={yearOpen}
+                onOpen={setYearOpen}
+                options={yearOptionsList.map((y) => ({ value: y, label: `سنة ${y}` }))}
+                selected={selectedYears}
+                onToggle={toggleYear}
+                onSelectAll={selectAllYears}
+                onClearAll={clearAllYears}
+              />
+            </div>
 
-            <MultiSelectDropdown
-              icon="🗓️"
-              label="الشهور"
-              placeholder="كل الشهور"
-              allLabel="كل الشهور"
-              open={monthOpen}
-              onOpen={setMonthOpen}
-              options={monthOptionsList.map((m) => ({ value: m, label: monthName(m) }))}
-              selected={selectedMonths}
-              onToggle={toggleMonth}
-              onSelectAll={selectAllMonths}
-              onClearAll={clearAllMonths}
-            />
+            <div className="fsa-dropdown">
+              <MultiSelectDropdown
+                icon="🗓️"
+                label="الشهور"
+                placeholder="كل الشهور"
+                allLabel="كل الشهور"
+                open={monthOpen}
+                onOpen={setMonthOpen}
+                options={monthOptionsList.map((m) => ({ value: m, label: monthName(m) }))}
+                selected={selectedMonths}
+                onToggle={toggleMonth}
+                onSelectAll={selectAllMonths}
+                onClearAll={clearAllMonths}
+              />
+            </div>
 
-            <button onClick={clearFilters} style={clearFiltersButtonStyle}>
+            <button className="fsa-filter-clear" onClick={clearFilters} style={clearFiltersButtonStyle}>
               🗑 مسح الفلاتر
             </button>
           </div>
@@ -1761,28 +1793,26 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 10,
               flexWrap: "wrap",
-              marginBottom: 14,
-              fontSize: 13.5,
-              color: "#475569",
-              fontWeight: 700,
+              marginBottom: 12,
             }}
           >
-            <span style={{ color: "#64748B" }}>تم العثور على</span>
             <span
               style={{
-                background: "#EFF6FF",
-                color: "#1D4ED8",
+                background: "#fff",
+                border: "1px solid #E2E9F2",
                 borderRadius: 999,
-                padding: "4px 12px",
+                padding: "6px 14px",
                 fontWeight: 900,
                 fontSize: 13,
+                color: "#0F2942",
+                boxShadow: "0 1px 2px rgba(15,41,66,.04)",
               }}
             >
-              {totalCount} ملف
+              {totalCount} {pluralizeFiles(totalCount)}
             </span>
-            <span style={{ color: "#64748B" }}>مطابقة</span>
+            <span style={{ fontSize: 12.5, color: "#7D93AB", fontWeight: 700 }}>نتيجة مطابقة</span>
           </div>
 
           {loading && records.length === 0 ? (
@@ -1832,9 +1862,9 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
                   style={{
                     background: "#fff",
                     border: "1px solid #E7EBF0",
-                    borderRadius: 16,
-                    padding: 18,
-                    boxShadow: "0 2px 10px rgba(15,41,66,.045)",
+                    borderRadius: 14,
+                    padding: 14,
+                    boxShadow: "0 1px 3px rgba(15,41,66,.04)",
                   }}
                 >
                   {/* رأس العضو */}
@@ -1845,21 +1875,21 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
                       alignItems: "center",
                       flexWrap: "wrap",
                       gap: 12,
-                      marginBottom: 16,
+                      marginBottom: 12,
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 220 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 200 }}>
                       <span
                         style={{
-                          width: 48,
-                          height: 48,
+                          width: 42,
+                          height: 42,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           borderRadius: "50%",
                           background: "linear-gradient(135deg,#2B5FA8,#5B8BC9)",
                           color: "#fff",
-                          fontSize: 22,
+                          fontSize: 19,
                           fontWeight: 900,
                           flexShrink: 0,
                         }}
@@ -1867,10 +1897,10 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
                         {(member.faculty_name || "؟").trim().charAt(0)}
                       </span>
                       <div>
-                        <div style={{ fontSize: 17, fontWeight: 900, color: "#0F2942", lineHeight: 1.4 }}>
+                        <div style={{ fontSize: 16, fontWeight: 900, color: "#0F2942", lineHeight: 1.4 }}>
                           {member.faculty_name}
                         </div>
-                        <div style={{ fontSize: 13, color: "#64748B", marginTop: 2 }}>
+                        <div style={{ fontSize: 12.5, color: "#64748B", marginTop: 2 }}>
                           💻 {cfg.numberLabel}: {member.computer_number}
                         </div>
                       </div>
@@ -2007,34 +2037,25 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
    أنماط وأدوات مساعدة (خاصة بهذه الصفحة)
 ------------------------------------------------------------------ */
 const headerIconButtonStyle = {
-  border: "1px solid #DCE6F2",
+  border: "1px solid #E2E9F2",
   background: "#fff",
-  color: "#1E3A5F",
-  borderRadius: 11,
-  padding: "10px 16px",
+  color: "#334A63",
+  borderRadius: 9,
+  padding: "8px 13px",
   fontWeight: 800,
-  fontSize: 13.5,
+  fontSize: 12.5,
   cursor: "pointer",
-  boxShadow: "0 1px 4px rgba(15,41,66,.06)",
-};
-
-const infoBannerStyle = {
-  background: "#EDF4FF",
-  border: "1px solid #CFE0F7",
-  color: "#1E3A5F",
-  borderRadius: 16,
-  padding: "18px 20px",
-  marginBottom: 18,
+  boxShadow: "0 1px 2px rgba(15,41,66,.04)",
 };
 
 const clearFiltersButtonStyle = {
-  border: "1px solid #F0D5D8",
-  background: "#FDF4F4",
-  color: "#B3464E",
+  border: "1px solid #DDE4EC",
+  background: "#F4F7FB",
+  color: "#47607D",
   borderRadius: 10,
-  padding: "11px 18px",
+  padding: "11px 16px",
   fontWeight: 800,
-  fontSize: 13.5,
+  fontSize: 13,
   cursor: "pointer",
 };
 
@@ -2103,6 +2124,14 @@ const downloadButtonStyle = {
   fontSize: 13,
   cursor: "pointer",
 };
+
+function pluralizeFiles(count) {
+  const n = Number(count) || 0;
+  if (n === 2) return "ملفان";
+  if (n >= 3 && n <= 10) return "ملفات";
+  if (n > 10) return "ملفًا";
+  return "ملف";
+}
 
 function formatShortDate(value) {
   if (!value) return "—";
@@ -2685,8 +2714,8 @@ function ThumbnailCard({ record, onOpen, onDownload }) {
 
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: "#1E3A5F" }}>
-            {monthName(record.month)} {record.year}
+          <span style={{ fontSize: 12.5, fontWeight: 900, color: "#0F2942" }}>
+            📄 {monthName(record.month)} {record.year}
           </span>
           <span style={{ fontSize: 11, color: "#7D93AB" }}>
             {record.preview_urls?.length > 1
@@ -2704,24 +2733,44 @@ function ThumbnailCard({ record, onOpen, onDownload }) {
           }}
           title={fileName}
         >
-          📄 {fileName}
+          {fileName}
         </div>
-        <button
-          onClick={() => onDownload && onDownload(record)}
-          style={{
-            border: "1px solid #DCE6F2",
-            background: "#fff",
-            color: "#1E4E8C",
-            borderRadius: 8,
-            padding: "6px 10px",
-            fontSize: 12,
-            fontWeight: 800,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          📥 تحميل PDF
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => onOpen && onOpen(record)}
+            style={{
+              flex: 1,
+              border: "1px solid #C8DAF2",
+              background: "#EDF4FF",
+              color: "#1E4E8C",
+              borderRadius: 8,
+              padding: "6px 8px",
+              fontSize: 11.5,
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            👁️ معاينة
+          </button>
+          <button
+            onClick={() => onDownload && onDownload(record)}
+            style={{
+              flex: 1,
+              border: "1px solid #DCE6F2",
+              background: "#fff",
+              color: "#1E4E8C",
+              borderRadius: 8,
+              padding: "6px 8px",
+              fontSize: 11.5,
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            📥 تحميل PDF
+          </button>
+        </div>
       </div>
     </div>
   );
