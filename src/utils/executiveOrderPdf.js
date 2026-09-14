@@ -140,7 +140,9 @@ export async function mergeOrderIntoArchive(existingBytes, additionBytes) {
 
 /* تحويل صفحات PDF إلى صور JPG للعرض (نفس أسلوب أرشيف المفردات) */
 export async function renderPdfBytesToJpegs(arrayBuffer, scale = 1.4) {
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pdf = await pdfjsLib
+    .getDocument({ data: arrayBuffer.slice(0) })
+    .promise;
   const images = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
@@ -157,8 +159,12 @@ export async function renderPdfBytesToJpegs(arrayBuffer, scale = 1.4) {
   return { images, pageCount: pdf.numPages };
 }
 
-/* عدّ صفحات PDF (سريع — بدون رسم صور) — يُستخدم في استيراد الأرشيف القديم */
+/* عدّ صفحات PDF (سريع — بدون رسم صور) — يُستخدم في استيراد الأرشيف القديم.
+   ملاحظة: pdfjs "ينقل" (يتخلص من) الـArrayBuffer الذي يُمرَّر له (يُفرَّغ byteLength)،
+   لذلك تُمرَّر نسخة كاملة SLICE حتى لا يتأثر بافر المتصل المستخدم في الرفع/الدمج. */
 export async function pdfPageCount(arrayBuffer) {
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pdf = await pdfjsLib
+    .getDocument({ data: arrayBuffer.slice(0) })
+    .promise;
   return pdf.numPages;
 }
