@@ -204,6 +204,7 @@ const JUNK_WORDS = [
   "كلية","قسم","شهر","سنة","سنوى","دفع","مستحق","تأمين","علاوة","حافز","كادر","درجة","وظيف","مكأفاة",
   "مكافأة","مجموع","اللجنة","النقابات","مستحقات","أجور","اجور","تكليف","حوالة","ملاحظات","ملاحظة",
   "البيانات","عدد","قيمة","صفحة","مرتبات","الشهر",
+  "اوراكل","أوراكل","اوركل","اوركال","الرواتب","مفردات","يعتمد","أمين الكلية","امين الكلية","oracle","hrms",
 ];
 
 const TITLE_TAILS = [
@@ -459,7 +460,8 @@ function isNewSalarySlip(lines, previousSlip = null) {
   }
 
   // اسم مختلف تمامًا (لا يتشارك مع اسم المفردة السابقة) => مفردة جديدة (رقم غير مقروء)
-  if (employeeName) {
+  // ما لم يكن الاسم ضجيج تذييل كـ «نظام أوراكل للرواتب» / «أمين الكلية» (قراءة OCR خاطئة)
+  if (employeeName && !isFooterNoiseName(employeeName)) {
     if (previousSlip && previousSlip.employeeName) {
       return !namesShareIdentity(employeeName, previousSlip.employeeName);
     }
@@ -601,12 +603,13 @@ export function groupPagesIntoSalarySlips(pages) {
     slips.push(currentSlip);
   }
 
-  // دمج مفردات «صفحة ونص»: أي مفردة انفصلت بلا اسم (ذيل/تتمة مفردة سابقة) تُدمج
-  // تلقائيًا في المفردة السابقة وترث رقمها واسمها وتُعدّ جزءًا من نفس المفردة.
+  // دمج مفردات «صفحة ونص»: أي مفردة انفصلت بلا اسم (ذيل/تتمة مفردة سابقة) — أو بضجيج
+  // تذييل قالب مثل «نظام أوراكل للرواتب» — تُدمج تلقائيًا في المفردة السابقة وترث
+  // رقمها واسمها وتُعدّ جزءًا من نفس المفردة.
   const merged = [];
   for (const s of slips) {
     const prev = merged[merged.length - 1];
-    if (prev && !s.employeeName) {
+    if (prev && (!s.employeeName || isFooterNoiseName(s.employeeName))) {
       prev.pages.push(...s.pages);
       prev.pageEnd = s.pageEnd;
       prev.needsReview = !prev.computerNumber || !prev.employeeName;
@@ -616,6 +619,17 @@ export function groupPagesIntoSalarySlips(pages) {
   }
 
   return merged;
+}
+
+/* هل هذا نص من تذييل/ترويسة قالب (مثل «نظام أوراكل للرواتب» أو «أمين الكلية») —
+   قراءة OCR خاطئة لا تُعدّ اسمَ موظف ولا بداية مفردة؟ */
+function isFooterNoiseName(name) {
+  if (!name) return false;
+  const norm = normalizeDigits(String(name))
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .toLowerCase();
+  return /اوراكل|اوركال|اوركل|الرواتب|مفردات|يعتمد|امين الكلية|امين الكليه|oracle|hrms|صافى|اجمالى|مستحقات|بيانات|الجدول|الشهر|السنة/.test(norm);
 }
 
 // ============================================

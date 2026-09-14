@@ -196,6 +196,17 @@ function nameIsMoreComplete(a, b) {
     (String(b).match(/[\u0600-\u06FF]/g) || []).length;
 }
 
+/* هل الاسم قراءة ضوضاء من ترويسة/تذييل القالب (مثل «نظام أوراكل للرواتب» أو «أمين الكلية»)
+   بعد OCR مسح لا اسمَ موظفَ فيه؟ هذه لا تُعدّ بداية مفردة ولا اسمًا صحيحًا. */
+function isFooterNoiseName(name) {
+  if (!name) return false;
+  const norm = normalizeDigits(String(name))
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .toLowerCase();
+  return /اوراكل|اوركال|اوركل|الرواتب|مفردات|يعتمد|امين الكلية|امين الكليه|oracle|hrms|صافى|اجمالى|مستحقات|بيانات|الجدول|الشهر|السنة/.test(norm);
+}
+
 /* تقسيم الصفحات إلى مفردات: الصفحات المتتالية لنفس مفردة المرتب مرتبطة ببعضها.
    الصفحة التكميلية ترث تلقائيًا (رقم/اسم) من أقرب صفحة سابقة موثوقة لنفس المفردة،
    ولا تُنسخ بيانات أي موظف إلى مفردة جديدة (تُصفَّر الوراثة عند بداية مفردة جديدة).
@@ -246,9 +257,11 @@ function groupPagesByNumber(pages, numberPattern) {
     const newLabeledNumber =
       labeledNumber && (!inheritedNumber || (hasNumber && !sameKey));
 
-    /* اسم موثوق مختلف تمامًا (بلا رأس رقمي) => بداية مفردة جديدة */
+    /* اسم موثوق مختلف تمامًا (بلا رأس رقمي) => بداية مفردة جديدة
+       (ما لم يكن الاسم ضجيج تذييل كـ«نظام أوراكل للرواتب») */
     const newDifferentName =
-      hasName && inheritedName && !namesShareIdentity(p.detectedName, inheritedName);
+      hasName && inheritedName && !namesShareIdentity(p.detectedName, inheritedName) &&
+      !isFooterNoiseName(p.detectedName);
 
     if (ymBreak || newLabeledNumber || newDifferentName) {
       /* بداية مفردة جديدة: تصفير الوراثة حتى لا تُنسخ بيانات الموظف السابق بالخطأ */
@@ -293,13 +306,14 @@ function groupPagesByNumber(pages, numberPattern) {
   return mergeHeaderlessGroups(groups);
 }
 
-/* دمج أي مفردة لاحقة بلا اسم في المفردة السابقة (مع وراثة اسمها ورقمها) —
-   تُستخدم لالتقاط حالة «صفحة ونص» حيث يتمة المفردة السابقة تأتي كمفردة منفصلة ناقصة. */
+/* دمج أي مفردة لاحقة بلا اسم (أو بضجيج تذييل مثل «نظام أوراكل للرواتب») في المفردة السابقة
+   مع وراثة اسمها ورقمها — تُستخدم لالتقاط حالة «صفحة ونص» حيث تتمة المفردة السابقة
+   تأتي كمفردة منفصلة ناقصة. */
 function mergeHeaderlessGroups(groups) {
   const merged = [];
   for (const g of groups) {
     const prev = merged[merged.length - 1];
-    if (prev && !g.name) {
+    if (prev && (!g.name || isFooterNoiseName(g.name))) {
       prev.pageIndexes.push(...g.pageIndexes);
       prev.dataUrls.push(...g.dataUrls);
       prev.missingHeader = (prev.missingHeader || 0) + (g.missingHeader || 0) + 1;
@@ -380,6 +394,7 @@ function extractNumberFromText(text, numberPattern) {
             .replace(/[Gg]/g, "6");
         }
       }
+      if (!/^[0-9A-Za-z_-]+$/.test(value)) return null;
       return value;
     }
   }
@@ -456,6 +471,7 @@ const JUNK_WORDS = [
   "البيانات","عدد","قيمة","صفحة","مرتبات","الشهر",
   "القومي","الرقم","الكود","اوركال","الاوركال","اوركل","ضريبة","الضرائب","الاستقطاع","استقطاع",
   "الخصم","الخصومات","التأسيسي","الاساسي","الأساسي","المستندات","التاريخ","الدرجة","الدرجه",
+  "اوراكل","أوراكل","اوركل","اوركال","الرواتب","مفردات","يعتمد","أمين الكلية","امين الكلية","oracle","hrms",
 ];
 
 /* سطور التسميات (Labels) التي قد تُتخَطّف كاسم بالخطأ — مثل "الرقم القومي" ثم رقم قومي طويل */
