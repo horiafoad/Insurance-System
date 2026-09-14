@@ -46,7 +46,9 @@ COMMENT ON COLUMN public.faculty_salary_archive.pages_count IS 'عدد صفحا�
 COMMENT ON COLUMN public.faculty_salary_archive.status IS 'حالة التحقق: verified, needs_review, imported';
 
 -- ---------------------------------------------------------------
--- 2.5) إزالة السياسات القديمة إذا وجدت (لمنع التضارب)
+-- 2.5) إزالة السياسات القديمة إذا وجدت ثم إعادة إنشائها فورًا
+-- (يجب عدم ترك الجداول بلا سياسة INSERT وإلا يفشل الاستيراد
+--  بـ new row violates row-level security policy)
 -- ---------------------------------------------------------------
 
 DROP POLICY IF EXISTS "esa_select_for_app" ON public.employee_salary_archive;
@@ -58,6 +60,27 @@ DROP POLICY IF EXISTS "fsa_select_for_app" ON public.faculty_salary_archive;
 DROP POLICY IF EXISTS "fsa_insert_for_app" ON public.faculty_salary_archive;
 DROP POLICY IF EXISTS "fsa_update_for_app" ON public.faculty_salary_archive;
 DROP POLICY IF EXISTS "fsa_delete_for_app" ON public.faculty_salary_archive;
+
+ALTER TABLE public.faculty_salary_archive ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_salary_archive ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "fsa_select_for_app" ON public.faculty_salary_archive
+  FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "fsa_insert_for_app" ON public.faculty_salary_archive
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "fsa_update_for_app" ON public.faculty_salary_archive
+  FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "fsa_delete_for_app" ON public.faculty_salary_archive
+  FOR DELETE TO anon, authenticated USING (true);
+
+CREATE POLICY "esa_select_for_app" ON public.employee_salary_archive
+  FOR SELECT TO anon, authenticated USING (true);
+CREATE POLICY "esa_insert_for_app" ON public.employee_salary_archive
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
+CREATE POLICY "esa_update_for_app" ON public.employee_salary_archive
+  FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "esa_delete_for_app" ON public.employee_salary_archive
+  FOR DELETE TO anon, authenticated USING (true);
 
 -- ---------------------------------------------------------------
 -- 3) إنشاء جدول لتتبع ملفات الاستيراد

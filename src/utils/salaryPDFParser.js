@@ -600,8 +600,22 @@ export function groupPagesIntoSalarySlips(pages) {
   if (currentSlip) {
     slips.push(currentSlip);
   }
-  
-  return slips;
+
+  // دمج مفردات «صفحة ونص»: أي مفردة انفصلت بلا اسم (ذيل/تتمة مفردة سابقة) تُدمج
+  // تلقائيًا في المفردة السابقة وترث رقمها واسمها وتُعدّ جزءًا من نفس المفردة.
+  const merged = [];
+  for (const s of slips) {
+    const prev = merged[merged.length - 1];
+    if (prev && !s.employeeName) {
+      prev.pages.push(...s.pages);
+      prev.pageEnd = s.pageEnd;
+      prev.needsReview = !prev.computerNumber || !prev.employeeName;
+      continue;
+    }
+    merged.push(s);
+  }
+
+  return merged;
 }
 
 // ============================================

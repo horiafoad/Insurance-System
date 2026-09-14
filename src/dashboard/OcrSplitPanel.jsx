@@ -286,7 +286,29 @@ function groupPagesByNumber(pages, numberPattern) {
   });
 
   if (current) groups.push({ ...current, needsReview: !current.number || !current.name });
-  return groups;
+
+  /* دمج مفردات «صفحة ونص»: في الملفات الممسوحة يظهر ذيل مفردة المرتب (تتمة الصفحة)
+     كمفردة منفصلة فارغة الاسم والرقم. أي مفردة لاحقة بلا اسم تُدمج تلقائيًا في المفردة
+     السابقة وترث اسمَها ورقمَ كمبيوترها وتُعدّ جزءًا من نفس المفردة. */
+  return mergeHeaderlessGroups(groups);
+}
+
+/* دمج أي مفردة لاحقة بلا اسم في المفردة السابقة (مع وراثة اسمها ورقمها) —
+   تُستخدم لالتقاط حالة «صفحة ونص» حيث يتمة المفردة السابقة تأتي كمفردة منفصلة ناقصة. */
+function mergeHeaderlessGroups(groups) {
+  const merged = [];
+  for (const g of groups) {
+    const prev = merged[merged.length - 1];
+    if (prev && !g.name) {
+      prev.pageIndexes.push(...g.pageIndexes);
+      prev.dataUrls.push(...g.dataUrls);
+      prev.missingHeader = (prev.missingHeader || 0) + (g.missingHeader || 0) + 1;
+      prev.needsReview = !prev.number || !prev.name;
+      continue;
+    }
+    merged.push(g);
+  }
+  return merged;
 }
 
 const MONTH_KEYWORDS = [
