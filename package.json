@@ -36,6 +36,7 @@
     "@capacitor/ios": "^8.5.1",
     "@supabase/supabase-js": "^2.112.3",
     "html5-qrcode": "^2.3.8",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",

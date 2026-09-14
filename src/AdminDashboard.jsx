@@ -30,6 +30,7 @@ import FacultySalaryArchivePage from "./dashboard/FacultySalaryArchivePage";
 import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
 import PDFAnalyzer from "./dashboard/PDFAnalyzer";
 import SalaryImportReview from "./dashboard/SalaryImportReview";
+import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -870,9 +871,13 @@ export default function AdminDashboard({ currentUser }) {
               ? "أرشيف مفردات مرتب أعضاء هيئة التدريس"
               : activeMenu === "employee_salary_archive"
                 ? "أرشيف مفردات مرتب الموظفين"
-                : MENU_ITEMS.find(
-                  (item) => item.id === activeMenu
-                )?.title || "الرئيسية";
+                : activeMenu === "executive_orders_add"
+                  ? "إضافة أمر تنفيذي"
+                  : activeMenu === "executive_orders_archive"
+                    ? "أرشيف الأوامر التنفيذية"
+                    : MENU_ITEMS.find(
+                      (item) => item.id === activeMenu
+                    )?.title || "الرئيسية";
 
   if (appLoading) {
     return (
@@ -1242,6 +1247,22 @@ export default function AdminDashboard({ currentUser }) {
 
         {activeMenu === "employee_salary_archive" && (
           <EmployeeSalaryArchivePage currentUser={currentUser} />
+        )}
+
+        {activeMenu === "executive_orders_add" && (
+          <ExecutiveOrdersPage
+            currentUser={currentUser}
+            view="add"
+            onNavigate={setActiveMenu}
+          />
+        )}
+
+        {activeMenu === "executive_orders_archive" && (
+          <ExecutiveOrdersPage
+            currentUser={currentUser}
+            view="archive"
+            onNavigate={setActiveMenu}
+          />
         )}
 
         {activeMenu === "pdf_analyzer" && (

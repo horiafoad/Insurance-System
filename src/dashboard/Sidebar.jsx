@@ -183,6 +183,44 @@ export default function Sidebar({
         <span>👨‍💼</span>
         <span>الموظفون</span>
       </button>
+
+      {/* =========================================
+          أرشيف الأوامر التنفيذية - قسم مستقل
+          ========================================= */}
+
+      <div style={styles.sidebarDivider} />
+
+      <div style={{ padding: "6px 14px 2px", fontSize: 11, fontWeight: 800, color: "#94A3B8" }}>
+        📜 الأرشيف التنفيذي
+      </div>
+
+      <button
+        onClick={() => setActiveMenu("executive_orders_add")}
+        style={{
+          ...styles.smallMenuButton,
+
+          ...(activeMenu === "executive_orders_add"
+            ? styles.smallMenuButtonActive
+            : {}),
+        }}
+      >
+        <span>➕</span>
+        <span>إضافة أمر تنفيذي</span>
+      </button>
+
+      <button
+        onClick={() => setActiveMenu("executive_orders_archive")}
+        style={{
+          ...styles.smallMenuButton,
+
+          ...(activeMenu === "executive_orders_archive"
+            ? styles.smallMenuButtonActive
+            : {}),
+        }}
+      >
+        <span>🗂️</span>
+        <span>أرشيف الأوامر التنفيذية</span>
+      </button>
     </aside>
   );
 }
