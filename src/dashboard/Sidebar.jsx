@@ -221,20 +221,6 @@ export default function Sidebar({
         <span>🗂️</span>
         <span>أرشيف الأوامر التنفيذية</span>
       </button>
-
-      <button
-        onClick={() => setActiveMenu("executive_orders_import")}
-        style={{
-          ...styles.smallMenuButton,
-
-          ...(activeMenu === "executive_orders_import"
-            ? styles.smallMenuButtonActive
-            : {}),
-        }}
-      >
-        <span>📥</span>
-        <span>استيراد الأرشيف القديم</span>
-      </button>
     </aside>
   );
 }

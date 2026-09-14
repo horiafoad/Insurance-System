@@ -814,18 +814,10 @@ useEffect(() => {
       <div>
         <div style={styles.breadcrumb}>الأرشيف التنفيذي</div>
         <h2 style={styles.sectionHeading}>
-          {view === "archive"
-            ? CFG.archiveTitle
-            : view === "import"
-              ? bulkMode === "orders"
-                ? "📄 رفع أوامر تنفيذية متعددة"
-                : "📥 استيراد الأرشيف القديم"
-              : CFG.addTitle}
+          {view === "archive" ? CFG.archiveTitle : CFG.addTitle}
         </h2>
         <p style={styles.pageSub}>
-          {view === "import"
-            ? "ارفع ملفات PDF — اسم الملف = اسم الشخص، ثم يُدمج في ملفه."
-            : "كل شخص له ملف PDF واحد تُضاف إليه الأوامر التنفيذية الجديدة دون تغيير القديمة."}
+          كل شخص له ملف PDF واحد تُضاف إليه الأوامر التنفيذية الجديدة دون تغيير القديمة.
         </p>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -844,14 +836,6 @@ useEffect(() => {
           }}
         >
           🗂️ الأرشيف
-        </button>
-        <button
-          onClick={() => onNavigate("executive_orders_import")}
-          style={{
-            ...(view === "import" ? styles.primaryButton : styles.secondaryButton),
-          }}
-        >
-          📥 استيراد الأرشيف القديم
         </button>
       </div>
     </div>
@@ -942,13 +926,26 @@ useEffect(() => {
 
   const importPanel = (
     <div style={styles.card}>
-      <h2 style={styles.cardTitle}>
+      <div
+      style={{
+        background: "linear-gradient(135deg, #EFF6FF 0%, #F8FAFC 100%)",
+        border: "1px solid #DBEAFE",
+        borderRadius: 14,
+        padding: "14px 16px",
+        marginBottom: 16,
+      }}
+    >
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#1E3A8A" }}>
         📥 {bulkMode === "orders" ? "رفع أوامر تنفيذية متعددة" : "استيراد الأرشيف القديم"}
-      </h2>
+      </div>
+      <div style={{ fontSize: 13, color: "#475569", marginTop: 4, lineHeight: 1.7 }}>
+        اسم الملف = اسم الشخص • المرفوعات تُدمج تلقائيًا في الملف الصحيح • الاسم الجديد يُنشئ
+        ملفه فورًا
+      </div>
+    </div>
 
-      <div style={styles.filterRow}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <button
-          style={bulkMode === "archive" ? styles.primaryButton : styles.secondaryButton}
           disabled={importing}
           onClick={() => {
             setBulkMode("archive");
@@ -956,11 +953,33 @@ useEffect(() => {
             setImportResults([]);
             setImportError("");
           }}
+          style={{
+            flex: "1 1 210px",
+            padding: "12px 14px",
+            borderRadius: 12,
+            border:
+              bulkMode === "archive" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+            background: bulkMode === "archive" ? "#EFF6FF" : "#fff",
+            color: bulkMode === "archive" ? "#1D4ED8" : "#475569",
+            fontWeight: 800,
+            fontSize: 14.5,
+            cursor: "pointer",
+            textAlign: "center",
+          }}
         >
-          📦 استيراد ملف كامل لكل شخص
+          📦 ملف كامل لكل شخص
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              opacity: 0.82,
+              marginTop: 3,
+            }}
+          >
+            ملف PDF قديم كامل يُضاف لملف الشخص
+          </div>
         </button>
         <button
-          style={bulkMode === "orders" ? styles.primaryButton : styles.secondaryButton}
           disabled={importing}
           onClick={() => {
             setBulkMode("orders");
@@ -968,19 +987,56 @@ useEffect(() => {
             setImportResults([]);
             setImportError("");
           }}
+          style={{
+            flex: "1 1 210px",
+            padding: "12px 14px",
+            borderRadius: 12,
+            border:
+              bulkMode === "orders" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+            background: bulkMode === "orders" ? "#EFF6FF" : "#fff",
+            color: bulkMode === "orders" ? "#1D4ED8" : "#475569",
+            fontWeight: 800,
+            fontSize: 14.5,
+            cursor: "pointer",
+            textAlign: "center",
+          }}
         >
-          📄 رفع أوامر متعددة (الاسم في اسم الملف)
+          📄 رفع أوامر متعددة
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              opacity: 0.82,
+              marginTop: 3,
+            }}
+          >
+            صور أو PDF — اسم الشخص في اسم الملف
+          </div>
         </button>
       </div>
 
       {bulkMode === "archive" ? (
-        <p style={styles.cardSub}>
+        <p
+          style={{
+            fontSize: 13.5,
+            color: "#334155",
+            lineHeight: 1.9,
+            margin: "0 0 14px",
+          }}
+        >
           اختر ملفات PDF القديمة دفعة واحدة — كل ملف يمثل شخصًا واحدًا واسم الملف هو اسم
           الشخص (مثال: <b>علي شهاب شمس الدين أبو اليزيد.pdf</b>). أي ملف باسم شخص موجود
           سيُدمج في ملفه، وأي شخص جديد يُسجَّل في الأرشيف ليستقبل الأوامر الجديدة لاحقًا.
         </p>
       ) : (
-        <p style={styles.cardSub}>
+        <p
+          style={{
+            fontSize: 13.5,
+            color: "#334155",
+            lineHeight: 1.9,
+            margin: "0 0 14px",
+          }}
+        >
           ارفع صور أو PDF لأي عدد من الأوامر دفعة واحدة — اسم الملف يُحدد صاحبه تلقائيًا.
           <br />
           ▪ الصيغة: <b>اسم الشخص</b> أو <b>اسم الشخص - عنوان الأمر</b> (مثال:{" "}
@@ -990,14 +1046,17 @@ useEffect(() => {
         </p>
       )}
 
-      <div style={styles.filterRow}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         <button
-          style={styles.primaryButton}
+          style={{ ...styles.primaryButton, fontSize: 15, padding: "12px 22px" }}
           disabled={importing}
           onClick={() => importInputRef.current?.click()}
         >
-          {bulkMode === "orders" ? "📂 اختيار صور/PDF الأوامر" : "📂 اختيار ملفات PDF"}
+          {bulkMode === "orders" ? "📂 اختيار صور / PDF الأوامر" : "📂 اختيار ملفات PDF"}
         </button>
+        <span style={{ fontSize: 12.5, color: "#64748B" }}>
+          يمكنك اختيار أكثر من ملف في نفس الوقت
+        </span>
         <input
           ref={importInputRef}
           type="file"
@@ -1011,7 +1070,7 @@ useEffect(() => {
         />
       </div>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 14, cursor: "pointer" }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, color: "#334155", marginBottom: 14, cursor: "pointer" }}>
         <input
           type="checkbox"
           checked={skipDup}
@@ -1030,7 +1089,7 @@ useEffect(() => {
           </div>
           <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 10 }}>
             {pendingFiles.map((f, i) => (
-              <div key={`${f.name}-${i}`} style={{ padding: "9px 12px", borderBottom: "1px solid #EEF2F6", fontSize: 13 }}>
+              <div key={`${f.name}-${i}`} style={{ padding: "10px 14px", borderBottom: "1px solid #EEF2F6", fontSize: 13.5 }}>
                 📄 {f.name.replace(/\.[^.]+$/i, "")}
                 {bulkMode === "orders" && /\.(jpe?g|png|webp|bmp|heic|heif)$/i.test(f.name) ? " 🖼️ (ستُحوَّل لصفحة في الملف)" : ""}
               </div>
@@ -1063,8 +1122,9 @@ useEffect(() => {
                 style={{
                   border: "1px solid #E2E8F0",
                   borderRadius: 8,
-                  padding: "9px 12px",
-                  fontSize: 13,
+                  padding: "10px 14px",
+                  fontSize: 13.5,
+                  lineHeight: 1.7,
                   background:
                     r.status === "success"
                       ? "#F0FDF4"
@@ -1406,13 +1466,31 @@ useEffect(() => {
             />
           </div>
 
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 16 }}>
             <button
-              style={showImportInline ? styles.excelButtonLarge : styles.secondaryButton}
               disabled={importing}
               onClick={() => setShowImportInline((s) => !s)}
+              style={{
+                width: "100%",
+                padding: "13px 16px",
+                borderRadius: 12,
+                border: showImportInline
+                  ? "1px solid #FECACA"
+                  : "2px dashed #60A5FA",
+                background: showImportInline ? "#FEF2F2" : "#EFF6FF",
+                color: showImportInline ? "#B91C1C" : "#1D4ED8",
+                fontSize: 14.5,
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
             >
-              {showImportInline ? "✖️ إغلاق الاستيراد" : "📥 استيراد الأرشيف / رفع أوامر متعددة"}
+              {showImportInline
+                ? "✖️ إغلاق الاستيراد"
+                : "📥 استيراد الأرشيف / رفع أوامر متعددة"}
             </button>
           </div>
 
@@ -1493,8 +1571,6 @@ useEffect(() => {
           )}
         </div>
       )}
-
-      {view === "import" && importPanel}
 
       {/* ---------- كاميرا ---------- */}
       {cameraOpen && (
