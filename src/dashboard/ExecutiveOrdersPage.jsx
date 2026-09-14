@@ -1280,12 +1280,28 @@ useEffect(() => {
                       {person.updated_at ? ` • آخر تحديث: ${formatDate(person.updated_at)}` : ""}
                     </small>
                   </div>
-                  <div style={{ marginRight: "auto", display: "flex", gap: 8 }}>
+                  <div style={{ marginRight: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {person.file_url && (
+                      <a
+                        href={person.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          ...styles.viewButton,
+                          textDecoration: "none",
+                          background: "#DCEEFB",
+                          color: "#0369A1",
+                          fontWeight: 800,
+                        }}
+                      >
+                        📂 فتح الملف (عرض أصلي)
+                      </a>
+                    )}
                     <button
                       style={styles.viewButton}
                       onClick={() => openFileModal(person)}
                     >
-                      📂 فتح الملف الكامل
+                      👁️ معاينة سريعة
                     </button>
                     {person.file_url && (
                       <a
