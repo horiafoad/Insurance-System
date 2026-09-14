@@ -259,6 +259,7 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
   const [importing, setImporting] = useState(false);
   const [importResults, setImportResults] = useState([]);
   const [importError, setImportError] = useState("");
+  const [bulkMode, setBulkMode] = useState("archive");
   const importInputRef = useRef(null);
 
   const loadPersons = async () => {
@@ -498,15 +499,24 @@ useEffect(() => {
 
   const handleImportFilesSelected = (fileList) => {
     if (!fileList || !fileList.length) return;
-    const pdfs = Array.from(fileList).filter((f) =>
-      /\.pdf$/i.test(f.name) || String(f.type || "").toLowerCase() === "application/pdf"
-    );
-    if (!pdfs.length) {
-      setImportError("اختر ملفات PDF فقط.");
+    const imageLike = (f) =>
+      /\.(jpe?g|png|webp|bmp|heic|heif)$/i.test(f.name) ||
+      /^image\//i.test(String(f.type || ""));
+    const pdfLike = (f) =>
+      /\.pdf$/i.test(f.name) || String(f.type || "").toLowerCase() === "application/pdf";
+    const accepted = bulkMode === "orders"
+      ? Array.from(fileList).filter((f) => pdfLike(f) || imageLike(f))
+      : Array.from(fileList).filter(pdfLike);
+    if (!accepted.length) {
+      setImportError(
+        bulkMode === "orders"
+          ? "اختر ملفات صور أو PDF لكل أمر."
+          : "اختر ملفات PDF فقط."
+      );
       return;
     }
     setImportError("");
-    setPendingFiles(pdfs);
+    setPendingFiles(accepted);
     setImportResults([]);
   };
 
@@ -539,7 +549,17 @@ useEffect(() => {
       const results = [];
       for (let i = 0; i < pendingFiles.length; i += 1) {
         const file = pendingFiles[i];
-        const rawName = file.name.replace(/\.pdf$/i, "").trim();
+        const baseName = file.name.replace(/\.[^.]+$/i, "").trim();
+        let rawName = baseName;
+        let orderTitle =
+          bulkMode === "archive" ? "ملف الأرشيف القديم" : baseName;
+        if (bulkMode === "orders" && baseName.includes(" - ")) {
+          const splitAt = baseName.indexOf(" - ");
+          rawName = baseName.slice(0, splitAt).trim();
+          const titlePart = baseName.slice(splitAt + 3).trim();
+          if (rawName && titlePart) orderTitle = titlePart;
+          else rawName = baseName;
+        }
         const res = {
           name: rawName || file.name,
           fileName: file.name,
@@ -565,7 +585,7 @@ useEffect(() => {
           if (person) {
             if (skipDup && seen.has(`${person.id}|${file.name}`)) {
               res.status = "skipped";
-              res.error = "مكرر — هذا الملف مستورد من قبل";
+              res.error = "مكرر — هذا الملف مستورد/مرفوع من قبل";
               results.push(res);
               setImportResults([...results]);
               continue;
@@ -576,13 +596,24 @@ useEffect(() => {
             isNew = true;
           }
 
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          const pageCount = await pdfPageCount(bytes.buffer);
-          res.pages = pageCount || 1;
+          const imageLike =
+            /\.(jpe?g|png|webp|bmp|heic|heif)$/i.test(file.name) ||
+            /^image\//i.test(String(file.type || ""));
+          let additionBytes;
+          let addedPages;
+          if (bulkMode === "orders" && imageLike) {
+            const jpeg = await fileToOrderPdfBlob(file);
+            additionBytes = await jpegBlobToPdfBytes(jpeg);
+            addedPages = 1;
+          } else {
+            additionBytes = new Uint8Array(await file.arrayBuffer());
+            addedPages = await pdfPageCount(additionBytes.buffer);
+          }
+          res.pages = addedPages || 1;
 
-          let merged = bytes;
+          let merged = additionBytes;
           let oldCount = 0;
-          let newCount = pageCount;
+          let newCount = addedPages;
 
           if (!isNew && person.file_path) {
             let existingBytes = null;
@@ -601,7 +632,7 @@ useEffect(() => {
               console.error(`تجاهل الملف القديم التالف لـ ${person.full_name}:`, err);
             }
             if (existingBytes) {
-              const mergedResult = await mergeOrderIntoArchive(existingBytes, bytes);
+              const mergedResult = await mergeOrderIntoArchive(existingBytes, additionBytes);
               merged = mergedResult.mergedBytes;
               oldCount = mergedResult.oldCount;
               newCount = mergedResult.newCount;
@@ -633,9 +664,9 @@ useEffect(() => {
 
           const { error: ordErr } = await supabase.from(CFG.ordersTable).insert({
             person_id: person.id,
-            order_title: "ملف الأرشيف القديم",
+            order_title: orderTitle,
             order_date: new Date().toISOString().slice(0, 10),
-            source_mime: "application/pdf",
+            source_mime: file.type || "application/pdf",
             original_filename: file.name,
             page_start: oldCount + 1,
             page_end: newCount,
@@ -717,6 +748,11 @@ useEffect(() => {
       if (dlErr || !blob) {
         throw dlErr || new Error("الملف غير موجود في البكت.");
       }
+      if (blob.size === 0) {
+        throw new Error(
+          "⚠️ الملف المخزّن لهذا الشخص فارغ (0 بايت) — على الأرجح من الاستيراد الأول قبل الإصلاح. أعد استيراد ملفه من «استيراد الأرشيف القديم» مع إلغاء خيار «تخطي المكرر» وسيُرفع الملف سليمًا تلقائيًا."
+        );
+      }
       const doc = await openPdfDocument(await blob.arrayBuffer());
       pdfDocRef.current = doc;
       setFilePageCount(doc.numPages);
@@ -780,7 +816,9 @@ useEffect(() => {
           {view === "archive"
             ? CFG.archiveTitle
             : view === "import"
-              ? "📥 استيراد الأرشيف القديم"
+              ? bulkMode === "orders"
+                ? "📄 رفع أوامر تنفيذية متعددة"
+                : "📥 استيراد الأرشيف القديم"
               : CFG.addTitle}
         </h2>
         <p style={styles.pageSub}>
@@ -1274,12 +1312,53 @@ useEffect(() => {
 
       {view === "import" && (
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>📥 استيراد الأرشيف القديم</h2>
-          <p style={styles.cardSub}>
-            اختر ملفات PDF القديمة دفعة واحدة — كل ملف يمثل شخصًا واحدًا واسم الملف هو اسم
-            الشخص (مثال: <b>علي شهاب شمس الدين أبو اليزيد.pdf</b>). أي ملف باسم شخص موجود
-            سيُدمج في ملفه، وأي شخص جديد يُسجَّل في الأرشيف ليستقبل الأوامر الجديدة لاحقًا.
-          </p>
+          <h2 style={styles.cardTitle}>
+            📥 {bulkMode === "orders" ? "رفع أوامر تنفيذية متعددة" : "استيراد الأرشيف القديم"}
+          </h2>
+
+          <div style={styles.filterRow}>
+            <button
+              style={bulkMode === "archive" ? styles.primaryButton : styles.secondaryButton}
+              disabled={importing}
+              onClick={() => {
+                setBulkMode("archive");
+                setPendingFiles([]);
+                setImportResults([]);
+                setImportError("");
+              }}
+            >
+              📦 استيراد ملف كامل لكل شخص
+            </button>
+            <button
+              style={bulkMode === "orders" ? styles.primaryButton : styles.secondaryButton}
+              disabled={importing}
+              onClick={() => {
+                setBulkMode("orders");
+                setPendingFiles([]);
+                setImportResults([]);
+                setImportError("");
+              }}
+            >
+              📄 رفع أوامر متعددة (الاسم في اسم الملف)
+            </button>
+          </div>
+
+          {bulkMode === "archive" ? (
+            <p style={styles.cardSub}>
+              اختر ملفات PDF القديمة دفعة واحدة — كل ملف يمثل شخصًا واحدًا واسم الملف هو اسم
+              الشخص (مثال: <b>علي شهاب شمس الدين أبو اليزيد.pdf</b>). أي ملف باسم شخص موجود
+              سيُدمج في ملفه، وأي شخص جديد يُسجَّل في الأرشيف ليستقبل الأوامر الجديدة لاحقًا.
+            </p>
+          ) : (
+            <p style={styles.cardSub}>
+              ارفع صور أو PDF لأي عدد من الأوامر دفعة واحدة — اسم الملف يُحدد صاحبه تلقائيًا.
+              <br />
+              ▪ الصيغة: <b>اسم الشخص</b> أو <b>اسم الشخص - عنوان الأمر</b> (مثال:{" "}
+              <b>علي شهاب - إعادة تظبري.pdf</b>)
+              <br />
+              ▪ الاسم الموجود ← يندمج أمره في ملفه تلقائيًا. الاسم غير الموجود ← يُنشأ ملف جديد له.
+            </p>
+          )}
 
           <div style={styles.filterRow}>
             <button
@@ -1287,13 +1366,13 @@ useEffect(() => {
               disabled={importing}
               onClick={() => importInputRef.current?.click()}
             >
-              📂 اختيار ملفات PDF
+              {bulkMode === "orders" ? "📂 اختيار صور/PDF الأوامر" : "📂 اختيار ملفات PDF"}
             </button>
             <input
               ref={importInputRef}
               type="file"
               multiple
-              accept="application/pdf,.pdf"
+              accept={bulkMode === "orders" ? "image/*,application/pdf,.pdf" : "application/pdf,.pdf"}
               style={{ display: "none" }}
               onChange={(e) => {
                 handleImportFilesSelected(e.target.files);
@@ -1309,7 +1388,7 @@ useEffect(() => {
               onChange={(e) => setSkipDup(e.target.checked)}
               disabled={importing}
             />
-            تخطي الملفات المكررة (نفس اسم الملف المستورد من قبل لنفس الشخص)
+            تخطي الملفات المكررة (نفس اسم الملف المرفوع من قبل لنفس الشخص)
           </label>
 
           {importError && <div style={styles.errorBox}>{importError}</div>}
@@ -1317,18 +1396,21 @@ useEffect(() => {
           {pendingFiles.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={styles.resultText}>
-                سيتم استيراد {pendingFiles.length} ملف:
+                سيتم {bulkMode === "orders" ? "رفع" : "استيراد"} {pendingFiles.length} ملف:
               </div>
               <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 10 }}>
                 {pendingFiles.map((f, i) => (
                   <div key={`${f.name}-${i}`} style={{ padding: "9px 12px", borderBottom: "1px solid #EEF2F6", fontSize: 13 }}>
-                    📄 {f.name.replace(/\.pdf$/i, "")}
+                    📄 {f.name.replace(/\.[^.]+$/i, "")}
+                    {bulkMode === "orders" && /\.(jpe?g|png|webp|bmp|heic|heif)$/i.test(f.name) ? " 🖼️ (ستُحوَّل لصفحة في الملف)" : ""}
                   </div>
                 ))}
               </div>
               <div style={styles.modalActions}>
                 <button style={styles.excelButtonLarge} disabled={importing} onClick={runImport}>
-                  {importing ? "⏳ جاري الاستيراد..." : `🚀 استيراد ${pendingFiles.length} ملف`}
+                  {importing
+                    ? "⏳ جاري الرفع..."
+                    : `🚀 ${bulkMode === "orders" ? "رفع" : "استيراد"} ${pendingFiles.length} ملف`}
                 </button>
                 <button style={styles.secondaryButton} disabled={importing} onClick={clearPending}>
                   تفريغ القائمة
