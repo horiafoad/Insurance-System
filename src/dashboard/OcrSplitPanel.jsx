@@ -158,20 +158,68 @@ function ocrWorkerCount() {
   return Math.min(6, Math.max(2, cpus));
 }
 
-/* تقسيم الصفحات إلى مفردات: بداية مفردة جديدة تُكتشف من رأس المفردة (رقم/اسم/شهر)
-   وليست كل صفحة مفردة منفصلة.
-   - نفس الرقم (مفتاح التجميع) -> صفحة تالية لنفس المفردة
-   - صفحة بلا رأس (لا رقم ولا اسم) -> صفحة تكميلية تلتحق بالمفردة الحالية
-   - صفحة بنفس الاسم دون رقم -> تكميلية أيضًا
-   - أي رقم مختلف -> مفردة جديدة
+/* هل الصفحة تحمل رأس مفردة بليبل رقم (مثل «رقم الكمبيوتر: 035627-30300104»)
+   وليس مجرد أرقام مبالغ في أعمدة الصرف (لا يسبقها ليبل «رقم...»)؟ */
+function hasLabeledNumber(text, numberPattern) {
+  const norm = normalizeDigits(String(text || ""));
+  const patterns = [
+    numberPattern,
+    "(?:صرف|كمبيوتر|وظيفي|شئون|عامل|كود)",
+  ].filter(Boolean);
+  return patterns.some((pattern) =>
+    new RegExp(`رقم\\s*(?:ال)?${pattern}\\s*[:：]?\\s*[A-Za-z0-9]`).test(norm)
+  );
+}
+
+function arabicNameTokens(name) {
+  return String(name || "")
+    .split(/\s+/)
+    .filter((t) => /[\u0600-\u06FF]/.test(t));
+}
+
+/* هل الاسمين لنفس الشخص؟ يتشاركان في كلمة معتبرة (≥4 أحرف) أو أحدهما مجموعة فرعية
+   من الآخر (اسم مجزأ بسبب اختلاف قراءة OCR بين صفحات نفس المفردة). */
+function namesShareIdentity(a, b) {
+  const ta = arabicNameTokens(a);
+  const tb = arabicNameTokens(b);
+  if (ta.length === 0 || tb.length === 0) return false;
+  if (ta.some((t) => t.length >= 4 && tb.includes(t))) return true;
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+  return setA.size <= setB.size
+    ? [...setA].every((t) => setB.has(t))
+    : [...setB].every((t) => setA.has(t));
+}
+
+function nameIsMoreComplete(a, b) {
+  return (String(a).match(/[\u0600-\u06FF]/g) || []).length >
+    (String(b).match(/[\u0600-\u06FF]/g) || []).length;
+}
+
+/* تقسيم الصفحات إلى مفردات: الصفحات المتتالية لنفس مفردة المرتب مرتبطة ببعضها.
+   الصفحة التكميلية ترث تلقائيًا (رقم/اسم) من أقرب صفحة سابقة موثوقة لنفس المفردة،
+   ولا تُنسخ بيانات أي موظف إلى مفردة جديدة (تُصفَّر الوراثة عند بداية مفردة جديدة).
+
+   بداية مفردة جديدة تُكتشف فقط من رأس حقيقي:
+   - شهر/سنة مختلف في رأس الصفحة، أو
+   - رأس بليبل رقم بخلاف رقم المفردة الحالية (أو رأس برقم عندما لا يوجد رقم بعد)، أو
+   - اسم موثوق مختلف تمامًا عن اسم المفردة الحالية.
+
+   أي رقم مختلف بلا ليبل (أرقام مبالغ أعمدة الصرف) أو اسم مجزأ جزئيًا في صفحة بلا رأس
+   لا يفتح مفردة جديدة؛ الصفحة تُلحق بنفس المفردة وترث القيم الناقصة.
 */
-function groupPagesByNumber(pages) {
+function groupPagesByNumber(pages, numberPattern) {
   const groups = [];
   let current = null;
+  /* آخر قيمة موثوقة لكل حقل داخل مجموعة المفردة الحالية — تَرِث منها الصفحات التكميلية */
+  let inheritedNumber = "";
+  let inheritedName = "";
 
   pages.forEach((p) => {
     const hasNumber = Boolean(p.detectedNumber);
     const hasName = Boolean(p.detectedName);
+    const labeledNumber = hasLabeledNumber(p.text, numberPattern);
+    const pYm = p.detectedYearMonth || null;
 
     if (!current) {
       current = {
@@ -181,33 +229,29 @@ function groupPagesByNumber(pages) {
         pageIndexes: [p.index],
         dataUrls: [p.dataUrl],
       };
+      inheritedNumber = hasNumber ? p.detectedNumber : "";
+      inheritedName = hasName ? p.detectedName : "";
       return;
     }
 
-    const sameNumber = hasNumber && current.number && groupKeyFor(p.detectedNumber) === groupKeyFor(current.number);
-    const sameNameOnly = !hasNumber && hasName && current.name && p.detectedName === current.name;
-
-    /* نفس الرقم لكن الشهر/السنة مختلفان في رأس الصفحة => مفردة جديدة (نفس الموظف بشهر آخر)
-       مثال: صفحة 6 = أحمد - فبراير بعد مفردة أحمد - يناير */
-    const pYm = p.detectedYearMonth || null;
     const cYm = current.yearMonth || null;
     const ymBreak =
       pYm && pYm.month && cYm && cYm.month &&
       (pYm.month !== cYm.month || (pYm.year && cYm.year && pYm.year !== cYm.year));
 
-    if (sameNumber && !ymBreak) {
-      current.pageIndexes.push(p.index);
-      current.dataUrls.push(p.dataUrl);
-      if (p.detectedName && !current.name) current.name = p.detectedName;
-      if (!current.yearMonth && p.detectedYearMonth) current.yearMonth = p.detectedYearMonth;
-    } else if (!hasNumber && !hasName) {
-      current.pageIndexes.push(p.index);
-      current.dataUrls.push(p.dataUrl);
-      current.missingHeader = (current.missingHeader || 0) + 1;
-    } else if (sameNameOnly) {
-      current.pageIndexes.push(p.index);
-      current.dataUrls.push(p.dataUrl);
-    } else {
+    const sameKey =
+      hasNumber && inheritedNumber && groupKeyFor(p.detectedNumber) === groupKeyFor(inheritedNumber);
+
+    /* رأس حقيقي بليبل رقم: مختلف عن رقم المفردة الحالية، أو أول رقم مقروء للمفردة */
+    const newLabeledNumber =
+      labeledNumber && (!inheritedNumber || (hasNumber && !sameKey));
+
+    /* اسم موثوق مختلف تمامًا (بلا رأس رقمي) => بداية مفردة جديدة */
+    const newDifferentName =
+      hasName && inheritedName && !namesShareIdentity(p.detectedName, inheritedName);
+
+    if (ymBreak || newLabeledNumber || newDifferentName) {
+      /* بداية مفردة جديدة: تصفير الوراثة حتى لا تُنسخ بيانات الموظف السابق بالخطأ */
       groups.push({ ...current, needsReview: !current.number || !current.name });
       current = {
         number: p.detectedNumber || "",
@@ -216,6 +260,28 @@ function groupPagesByNumber(pages) {
         pageIndexes: [p.index],
         dataUrls: [p.dataUrl],
       };
+      inheritedNumber = hasNumber ? p.detectedNumber : "";
+      inheritedName = hasName ? p.detectedName : "";
+      return;
+    }
+
+    /* صفحة تكميلية لنفس المفردة: تُلحق وترث القيمة الناقصة من آخر صفحة سابقة موثوقة */
+    current.pageIndexes.push(p.index);
+    current.dataUrls.push(p.dataUrl);
+    if (!hasNumber && !hasName) current.missingHeader = (current.missingHeader || 0) + 1;
+    if (!current.yearMonth && p.detectedYearMonth) current.yearMonth = p.detectedYearMonth;
+
+    /* الرقم: يُورَّث ولا يُستبدل بقيمة صحيحة. يُحدَّث فقط برقم يطابق مفتاح نفس المفردة؛
+       وأرقام المبالغ (بلا ليبل) في الصفحات التكميلية لا تلمس رقم المفردة أصلًا. */
+    if (hasNumber && sameKey) {
+      inheritedNumber = p.detectedNumber;
+      current.number = p.detectedNumber;
+    }
+
+    /* الاسم: يُورَّث ولا يُستبدل إلا بمرشّح لنفس الشخص وأكثر اكتمالًا */
+    if (hasName && (!inheritedName || nameIsMoreComplete(p.detectedName, inheritedName))) {
+      inheritedName = p.detectedName;
+      current.name = p.detectedName;
     }
   });
 
@@ -852,7 +918,7 @@ export default function OcrSplitPanel({ currentUser, onImportComplete, onBack, c
       setMemberNames([...new Set(known.map((m) => m[NAME_COL]).filter(Boolean))]);
 
       const builtBatches = buckets.map((pagesArr, fi) => {
-        const groups = groupPagesByNumber(pagesArr);
+        const groups = groupPagesByNumber(pagesArr, cfg.numberPattern);
         const fileYear = fileMeta[fi].year;
         const fileMonth = fileMeta[fi].month;
         const resolved = groups.map((g) => {

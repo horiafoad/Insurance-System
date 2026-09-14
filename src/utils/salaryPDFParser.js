@@ -391,48 +391,86 @@ function extractMonthYear(lines) {
 }
 
 // ============================================
+// ربط الصفحات المتتالية لنفس مفردة المرتب
+// ============================================
+
+const NUMBER_LABELS = "(?:عامل|صرف|كمبيوتر|وظيفي|شئون|كود)";
+
+/* هل الصفحة تحمل رأس مفردة بليبل رقم ("رقم العامل: 035004")؟
+   أرقام المبالغ في أعمدة الصرف لا يسبقها ليبل «رقم...» فلا تُعد رأس مفردة. */
+function hasLabeledComputerNumber(lines) {
+  const re = new RegExp(`رقم\\s*(?:ال)?${NUMBER_LABELS}\\s*[:：]?\\s*[A-Za-z0-9]`);
+  return Array.isArray(lines) && lines.some((l) => re.test(normalizeDigits(l.text)));
+}
+
+function arabicNameTokens(name) {
+  return String(name || "").split(/\s+/).filter((t) => /[\u0600-\u06FF]/.test(t));
+}
+
+/* هل الاسمين لنفس الشخص؟ يتشاركان في كلمة معتبرة (≥4 أحرف) أو أحدهما مجموعة فرعية من
+   الآخر (اسم مجزأ بسبب اختلاف قراءة OCR بين صفحات نفس المفردة). */
+function namesShareIdentity(a, b) {
+  const ta = arabicNameTokens(a);
+  const tb = arabicNameTokens(b);
+  if (ta.length === 0 || tb.length === 0) return false;
+  if (ta.some((t) => t.length >= 4 && tb.includes(t))) return true;
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+  return setA.size <= setB.size
+    ? [...setA].every((t) => setB.has(t))
+    : [...setB].every((t) => setA.has(t));
+}
+
+/* مفتاح تجميع رقمين: الجزء قبل الشرطة (الرقم الثابت للموظف) مع الحفاظ على الحروف */
+function sameComputerNumberKey(a, b) {
+  const key = (n) => String(n || "").split("-")[0].replace(/[^A-Za-z0-9_]/g, "");
+  return key(a) === key(b);
+}
+
+// ============================================
 // اكتشاف بداية مفردة جديدة
 // ============================================
 
 function isNewSalarySlip(lines, previousSlip = null) {
   const fullText = lines.map(l => l.text).join(' ');
   const normalized = normalizeArabicText(fullText);
-  
-  // مؤشرات قوية على بداية مفردة جديدة
+
+  // مؤشرات عامة على رأس مفردة (ليست كلها كافية وحدها لفتح مفردة جديدة)
   const strongIndicators = [
     "بيانات مفردات مرتب",
     "مفردات مرتب",
-    "رقم العامل",
-    "رقم الكمبيوتر",
-    "رقم الصرف",
     "بيانات الموظف",
   ];
-  
-  const hasStrongIndicator = strongIndicators.some(indicator => 
+
+  const hasStrongIndicator = strongIndicators.some(indicator =>
     normalized.includes(indicator)
   );
-  
-  if (hasStrongIndicator) return true;
-  
-  // التحقق من وجود رقم عامل جديد
+
   const computerNumber = extractComputerNumber(lines);
-  if (computerNumber) {
-    // إذا كان هناك مفردة سابقة ورقم مختلف
+  const employeeName = extractEmployeeName(lines);
+  const hasLabeledNumberLine = hasLabeledComputerNumber(lines);
+
+  // رقم حقيقي مقروء بليبل: مختلف عن رقم المفردة السابقة => مفردة جديدة
+  if (computerNumber && hasLabeledNumberLine) {
     if (previousSlip && previousSlip.computerNumber) {
-      return computerNumber !== previousSlip.computerNumber;
+      return !sameComputerNumberKey(computerNumber, previousSlip.computerNumber);
     }
     return true;
   }
-  
-  // التحقق من وجود اسم جديد
-  const employeeName = extractEmployeeName(lines);
+
+  // اسم مختلف تمامًا (لا يتشارك مع اسم المفردة السابقة) => مفردة جديدة (رقم غير مقروء)
   if (employeeName) {
     if (previousSlip && previousSlip.employeeName) {
-      return employeeName !== previousSlip.employeeName;
+      return !namesShareIdentity(employeeName, previousSlip.employeeName);
     }
     return true;
   }
-  
+
+  // رأس عام بلا بيانات مقروءة: تكميلي عندما توجد مفردة سابقة مكتملة
+  if (hasStrongIndicator) {
+    return !previousSlip || !previousSlip.computerNumber;
+  }
+
   return false;
 }
 
@@ -442,23 +480,20 @@ function isNewSalarySlip(lines, previousSlip = null) {
 
 function isContinuationPage(lines, currentSlip) {
   if (!currentSlip) return false;
-  
-  const fullText = lines.map(l => l.text).join(' ');
-  const normalized = normalizeArabicText(fullText);
-  
-  // إذا لم يكن هناك رقم عامل جديد واسم جديد
-  const computerNumber = extractComputerNumber(lines);
+
+  // رأس بليبل رقم: القرار يُترك لاكتشاف بداية المفردة (وليس تكميلية)
+  if (hasLabeledComputerNumber(lines)) return false;
+
   const employeeName = extractEmployeeName(lines);
-  
-  if (!computerNumber && !employeeName) {
-    return true; // صفحة تكميلية
+
+  // لا اسم مقروء (أرقام المبالغ لا تُعد رأسًا) => صفحة تكميلية
+  if (!employeeName) return true;
+
+  // نفس الاسم (أو جزء منه بسبب OCR) => تكميلية لنفس المفردة
+  if (currentSlip.employeeName) {
+    return namesShareIdentity(employeeName, currentSlip.employeeName);
   }
-  
-  // إذا كان الاسم نفسه لكن لا يوجد رقم
-  if (employeeName === currentSlip.employeeName && !computerNumber) {
-    return true;
-  }
-  
+
   return false;
 }
 
@@ -519,10 +554,9 @@ export function groupPagesIntoSalarySlips(pages) {
   
   for (const page of pages) {
     const isNew = isNewSalarySlip(page.lines, currentSlip);
-    const isContinuation = isContinuationPage(page.lines, currentSlip);
     
     if (!currentSlip || isNew) {
-      // بدء مفردة جديدة
+      // بدء مفردة جديدة (تصفير الوراثة: لا تُنسخ بيانات الموظف السابق إلى الجديد)
       if (currentSlip) {
         slips.push(currentSlip);
       }
@@ -537,12 +571,14 @@ export function groupPagesIntoSalarySlips(pages) {
         pages: [page],
         needsReview: !page.computerNumber || !page.employeeName
       };
-    } else if (isContinuation) {
-      // صفحة تكميلية
+    } else {
+      // صفحة تكميلية / غير حاسمة لنفس المفردة: تُلحق ولا تُسقَط،
+      // وتَرِث تلقائيًا القيم الناقصة من أقرب صفحة سابقة موثوقة لنفس المفردة
+      isContinuationPage(page.lines, currentSlip);
+      
       currentSlip.pageEnd = page.pageNumber;
       currentSlip.pages.push(page);
       
-      // تحديث البيانات إذا كانت مفقودة
       if (!currentSlip.computerNumber && page.computerNumber) {
         currentSlip.computerNumber = page.computerNumber;
       }
@@ -555,6 +591,8 @@ export function groupPagesIntoSalarySlips(pages) {
       if (!currentSlip.year && page.year) {
         currentSlip.year = page.year;
       }
+      
+      currentSlip.needsReview = !currentSlip.computerNumber || !currentSlip.employeeName;
     }
   }
   
