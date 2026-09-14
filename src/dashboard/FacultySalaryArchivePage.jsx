@@ -543,13 +543,6 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
   const selectedYearsKey = selectedYears.join(",");
   const selectedMonthsKey = selectedMonths.join(",");
 
-  /* قوائم الخيارات مشتقة من البيانات الفعلية (لا قوائم ثابتة) */
-  const yearOptionsList = [...new Set(years.map((y) => Number(y)).filter(Number.isFinite))].sort((a, b) => b - a);
-  const monthOptionsList =
-    availableMonths.length > 0
-      ? [...new Set(availableMonths.map((m) => Number(m)).filter((m) => Number.isFinite(m) && m >= 1 && m <= 12))].sort((a, b) => a - b)
-      : [...Array(12)].map((_, i) => i + 1);
-
   const [records, setRecords] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -557,7 +550,6 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
   const [loadedAll, setLoadedAll] = useState(false);
 
   const [years, setYears] = useState([]);
-  // eslint-disable-next-line no-useless-assignment -- حالة React لا يفهمها الفحص (read في monthOptionsList)
   const [availableMonths, setAvailableMonths] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
 
@@ -574,6 +566,13 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
   const [ocrMode, setOcrMode] = useState(false);
 
   const pageRef = useRef(0);
+
+  /* قوائم الخيارات مشتقة من البيانات الفعلية (تُعرَّف بعد كل الـ states) — لا قوائم ثابتة */
+  const yearOptionsList = [...new Set(years.map((y) => Number(y)).filter(Number.isFinite))].sort((a, b) => b - a);
+  const monthOptionsList =
+    availableMonths.length > 0
+      ? [...new Set(availableMonths.map((m) => Number(m)).filter((m) => Number.isFinite(m) && m >= 1 && m <= 12))].sort((a, b) => a - b)
+      : [...Array(12)].map((_, i) => i + 1);
 
   /* ------------------ تحميل السنوات والأعضاء المتاحين ------------------ */
   useEffect(() => {
