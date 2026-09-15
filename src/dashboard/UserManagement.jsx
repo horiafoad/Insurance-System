@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { PERMISSIONS } from "../utils/permissions";
 
 export default function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -13,15 +14,38 @@ export default function UserManagement({ currentUser }) {
     password: "",
     fullName: "",
     role: "admin",
+    sectorId: "",
+    departmentId: "",
   });
+  const [sectors, setSectors] = useState([]);
+  const [departments, setDepartments] = useState([]);
 
   const canDelete = ["creator", "super_admin"].includes(currentUser?.role);
   const isSelf = (user) =>
     currentUser?.id === user.id || currentUser?.username === user.username;
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
+  const loadOrgData = async () => {
+    const sectorsRes = await supabase
+      .from("letter_sectors")
+      .select("id,name,is_active,sort_order")
+      .eq("is_active", true)
+      .order("sort_order")
+      .order("id");
+
+    if (!sectorsRes.error) {
+      setSectors(sectorsRes.data || []);
+    }
+
+    const deptsRes = await supabase
+      .from("letter_departments")
+      .select("id,name,is_active,sector_id")
+      .eq("is_active", true)
+      .order("name");
+
+    if (!deptsRes.error) {
+      setDepartments(deptsRes.data || []);
+    }
+  };
 
   const loadUsers = async () => {
     try {
@@ -47,6 +71,11 @@ export default function UserManagement({ currentUser }) {
     }
   };
 
+  useEffect(() => {
+    loadUsers();
+    loadOrgData();
+  }, []);
+
   const handleOpenCreate = () => {
     setEditingUserId(null);
     setFormData({
@@ -54,6 +83,9 @@ export default function UserManagement({ currentUser }) {
       password: "",
       fullName: "",
       role: "admin",
+      sectorId: "",
+      departmentId: "",
+      permissions: [],
     });
     setShowForm(true);
   };
@@ -65,8 +97,29 @@ export default function UserManagement({ currentUser }) {
       password: user.password || "",
       fullName: user.full_name || "",
       role: user.role || "admin",
+      sectorId:
+        user.sector_id != null ? String(user.sector_id) : "",
+      departmentId:
+        user.department_id != null
+          ? String(user.department_id)
+          : "",
+      permissions:
+        user.permissions == null
+          ? PERMISSIONS.map((permission) => permission.id)
+          : Array.isArray(user.permissions)
+            ? user.permissions
+            : [],
     });
     setShowForm(true);
+  };
+
+  const togglePermission = (permissionId) => {
+    setFormData((prev) => ({
+      ...prev,
+      permissions: prev.permissions.includes(permissionId)
+        ? prev.permissions.filter((id) => id !== permissionId)
+        : [...prev.permissions, permissionId],
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -83,6 +136,13 @@ export default function UserManagement({ currentUser }) {
           username: formData.username.trim(),
           full_name: formData.fullName.trim(),
           role: formData.role,
+          sector_id: formData.sectorId
+            ? Number(formData.sectorId)
+            : null,
+          department_id: formData.departmentId
+            ? Number(formData.departmentId)
+            : null,
+          permissions: formData.permissions,
         };
         if (formData.password) {
           updatePayload.password = formData.password;
@@ -114,6 +174,13 @@ export default function UserManagement({ currentUser }) {
             password: formData.password,
             full_name: formData.fullName.trim(),
             role: formData.role,
+            sector_id: formData.sectorId
+              ? Number(formData.sectorId)
+              : null,
+            department_id: formData.departmentId
+              ? Number(formData.departmentId)
+              : null,
+            permissions: formData.permissions,
           })
           .select()
           .single();
@@ -212,6 +279,8 @@ export default function UserManagement({ currentUser }) {
                 <tr>
                   <th style={styles.th}>اسم المستخدم</th>
                   <th style={styles.th}>الاسم الكامل</th>
+                  <th style={styles.th}>الهيكل التنظيمي</th>
+                  <th style={styles.th}>الصلاحيات 🛡️</th>
                   <th style={styles.th}>الدور / الصلاحية</th>
                   <th style={styles.th}>تاريخ الإنشاء</th>
                   <th style={styles.th}>إجراءات المدير الرئيسي</th>
@@ -236,6 +305,107 @@ export default function UserManagement({ currentUser }) {
                       )}
                     </td>
                     <td style={styles.td}>{user.full_name}</td>
+                    <td style={styles.td}>
+                      {(() => {
+                        const sector = sectors.find(
+                          (s) =>
+                            String(s.id) === String(user.sector_id)
+                        );
+                        const department = departments.find(
+                          (d) =>
+                            String(d.id) ===
+                            String(user.department_id)
+                        );
+                        return sector || department ? (
+                          <div>
+                            {sector && (
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  color: "#1E40AF",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                🏛️ {sector.name}
+                              </div>
+                            )}
+                            {department && (
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  color: "#475569",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                🗂️ {department.name}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          "—"
+                        );
+                      })()}
+                    </td>
+                    <td style={styles.td}>
+                      {user.permissions == null ? (
+                        <span
+                          style={{
+                            padding: "3px 10px",
+                            borderRadius: "14px",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            background: "#E0E7FF",
+                            color: "#3730A3",
+                          }}
+                        >
+                          وصول كامل
+                        </span>
+                      ) : user.permissions.length === 0 ? (
+                        <span
+                          style={{
+                            padding: "3px 10px",
+                            borderRadius: "14px",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            background: "#FEE2E2",
+                            color: "#991B1B",
+                          }}
+                        >
+                          بدون صلاحيات
+                        </span>
+                      ) : (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "4px",
+                          }}
+                        >
+                          {user.permissions.map(
+                            (permissionId) => {
+                              const meta = PERMISSIONS.find(
+                                (p) => p.id === permissionId
+                              );
+                              return meta ? (
+                                <span
+                                  key={permissionId}
+                                  style={{
+                                    padding: "2px 8px",
+                                    borderRadius: "10px",
+                                    fontSize: "10px",
+                                    fontWeight: 800,
+                                    background: "#DBEAFE",
+                                    color: "#1E40AF",
+                                  }}
+                                >
+                                  {meta.icon} {meta.title}
+                                </span>
+                              ) : null;
+                            }
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td style={styles.td}>
                       <span
                         style={{
@@ -402,6 +572,153 @@ export default function UserManagement({ currentUser }) {
                   <option value="user">مستخدم (عرض وتعديل محدود)</option>
                   <option value="super_admin">منشئ البرنامج (صلاحيات كاملة)</option>
                 </select>
+              </div>
+
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  القطاع 🏛️
+                </label>
+                <select
+                  value={formData.sectorId}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      sectorId: e.target.value,
+                      departmentId: "",
+                    })
+                  }
+                  style={styles.input}
+                >
+                  <option value="">بدون قطاع</option>
+                  {sectors.map((sector) => (
+                    <option key={sector.id} value={sector.id}>
+                      {sector.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: "16px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  الإدارة 🏢
+                </label>
+                <select
+                  value={formData.departmentId}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      departmentId: e.target.value,
+                    })
+                  }
+                  style={styles.input}
+                  disabled={!formData.sectorId}
+                >
+                  <option value="">
+                    {!formData.sectorId
+                      ? "اختر القطاع أولًا"
+                      : departments.filter(
+                          (d) =>
+                            String(d.sector_id) ===
+                            String(formData.sectorId)
+                        ).length === 0
+                      ? "لا توجد إدارات في هذا القطاع"
+                      : "اختر الإدارة..."}
+                  </option>
+                  {departments
+                    .filter(
+                      (d) =>
+                        String(d.sector_id) ===
+                        String(formData.sectorId)
+                    )
+                    .map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div
+                style={{
+                  marginBottom: "18px",
+                  textAlign: "right",
+                }}
+              >
+                <label
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    marginBottom: "4px",
+                    display: "block",
+                  }}
+                >
+                  🛡️ صلاحيات المستخدم
+                </label>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(180px, 1fr))",
+                    gap: "10px",
+                    marginTop: "8px",
+                  }}
+                >
+                  {PERMISSIONS.map((permission) => (
+                    <label
+                      key={permission.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "10px 12px",
+                        borderRadius: "12px",
+                        border:
+                          formData.permissions.includes(
+                            permission.id
+                          )
+                            ? "2px solid #3B82F6"
+                            : "1px solid #E2E8F0",
+                        background:
+                          formData.permissions.includes(
+                            permission.id
+                          )
+                            ? "#EFF6FF"
+                            : "#F8FAFC",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: "700",
+                        color: "#1E293B",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.permissions.includes(
+                          permission.id
+                        )}
+                        onChange={() =>
+                          togglePermission(permission.id)
+                        }
+                        style={{
+                          accentColor: "#3B82F6",
+                          transform: "scale(1.25)",
+                        }}
+                      />
+                      {permission.icon} {permission.title}
+                    </label>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: "6px",
+                    fontSize: "11px",
+                    color: "#94A3B8",
+                  }}
+                >
+                  اتركها فارغة إذا كان الموظف لا يحتاج أي صلاحية
+                  — ولا تظهر الاستحقاقات تلقائيًا لأي شخص.
+                </div>
               </div>
 
               <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>

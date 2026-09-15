@@ -4,6 +4,7 @@ import AdminDashboard from "./AdminDashboard";
 import { useMemo, useRef, useState, useEffect } from "react";
 import NetworkBanner from "./NetworkBanner";
 import { supabase } from "./supabaseClient";
+import { hasPermission } from "./utils/permissions";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
 
@@ -146,7 +147,11 @@ const qrHasPreviousCompletedStation = useMemo(
 
   // فقط المستخدم المسجل (وهو المصرح له) يقدر ينفّذ استلام/تسليم/إرجاع.
   // أي شخص آخر يشوف مسار الخطاب فقط بدون أزرار تعديل الحركة.
-  const qrCanModify = Boolean(isLoggedIn && currentUser);
+  const qrCanModify = Boolean(
+    isLoggedIn &&
+      currentUser &&
+      hasPermission(currentUser, "letters")
+  );
 
   /* =====================================================
      QR LETTER - LOAD + AUTO REFRESH
@@ -2107,6 +2112,181 @@ const updatedMovements = qrLetter.movements.map((movement) =>
                     >
                       🧭 خط سير الخطاب
                     </h2>
+
+                    {(qrLetter.movements && qrLetter.movements.length > 0 && (
+                      <div style={{ marginBottom: "22px" }}>
+                        {(() => {
+                          const sortedMoves = [
+                            ...qrLetter.movements,
+                          ].sort(
+                            (a, b) =>
+                              (a.step_order || 0) -
+                              (b.step_order || 0)
+                          );
+                          const activeIdx =
+                            sortedMoves.findIndex(
+                              (m) =>
+                                m.id === qrActiveMovement?.id
+                            );
+                          const currentMove =
+                            activeIdx >= 0
+                              ? sortedMoves[activeIdx]
+                              : null;
+                          const done =
+                            qrEffectiveStatus ===
+                              "completed" ||
+                            qrEffectiveStatus ===
+                              "archived";
+                          const nextMove = done
+                            ? null
+                            : sortedMoves[activeIdx + 1] ||
+                              null;
+
+                          return (
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns:
+                                  "repeat(auto-fit, minmax(200px, 1fr))",
+                                gap: "12px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  padding: "15px",
+                                  background: "#F0FDF4",
+                                  border:
+                                    "1px solid #BBF7D0",
+                                  borderRadius: "14px",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "#15803D",
+                                    fontWeight: "800",
+                                    marginBottom: "6px",
+                                  }}
+                                >
+                                  📍 الموقع الحالي
+                                </div>
+                                <div
+                                  style={{
+                                    fontWeight: "900",
+                                    color: "#0F172A",
+                                    fontSize: "15px",
+                                  }}
+                                >
+                                  {currentMove?.department
+                                    ?.name ||
+                                    "بدون إدارة"}
+                                </div>
+                                {currentMove?.received_at && (
+                                  <div
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#64748B",
+                                      marginTop: "4px",
+                                    }}
+                                  >
+                                    🕐 استلم في{" "}
+                                    {String(
+                                      currentMove.received_at
+                                    )
+                                      .slice(0, 16)
+                                      .replace("T", " ")}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div
+                                style={{
+                                  padding: "15px",
+                                  background: "#EFF6FF",
+                                  border:
+                                    "1px solid #BFDBFE",
+                                  borderRadius: "14px",
+                                }}
+                              >
+                                {done ? (
+                                  <>
+                                    <div
+                                      style={{
+                                        fontSize: "12px",
+                                        color: "#1D4ED8",
+                                        fontWeight: "800",
+                                        marginBottom: "6px",
+                                      }}
+                                    >
+                                      🎯 حالة الخطاب
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontWeight: "900",
+                                        color: "#0F172A",
+                                        fontSize: "15px",
+                                      }}
+                                    >
+                                      {qrEffectiveStatus ===
+                                      "archived"
+                                        ? "تم أرشفة الخطاب"
+                                        : "تم إنجاز الخطاب بالكامل"}
+                                    </div>
+                                  </>
+                                ) : nextMove ? (
+                                  <>
+                                    <div
+                                      style={{
+                                        fontSize: "12px",
+                                        color: "#1D4ED8",
+                                        fontWeight: "800",
+                                        marginBottom: "6px",
+                                      }}
+                                    >
+                                      ⏭ المحطة القادمة
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontWeight: "900",
+                                        color: "#0F172A",
+                                        fontSize: "15px",
+                                      }}
+                                    >
+                                      {nextMove.department
+                                        ?.name ||
+                                        "بدون إدارة"}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div
+                                      style={{
+                                        fontSize: "12px",
+                                        color: "#B45309",
+                                        fontWeight: "800",
+                                        marginBottom: "6px",
+                                      }}
+                                    >
+                                      ⏹ نهاية المسار
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontWeight: "900",
+                                        color: "#0F172A",
+                                        fontSize: "15px",
+                                      }}
+                                    >
+                                      هذه آخر محطة في مسار
+                                      الخطاب
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ))}
 
                     <div
                       style={{

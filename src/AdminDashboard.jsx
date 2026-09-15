@@ -29,6 +29,7 @@ import LettersTrackingPage from "./dashboard/LettersTrackingPage";
 import FacultySalaryArchivePage from "./dashboard/FacultySalaryArchivePage";
 import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
 import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
+import OrgStructurePage from "./dashboard/OrgStructurePage";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -38,6 +39,11 @@ import {
   loadStudyLeaves,
   saveStudyLeaves,
 } from "./dashboard/studyLeaves";
+import {
+  hasAnyPermission,
+  hasPermission,
+  canAccessMenu,
+} from "./utils/permissions";
 
 export default function AdminDashboard({ currentUser }) {
   const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
@@ -84,9 +90,13 @@ export default function AdminDashboard({ currentUser }) {
   const knownNotificationIds = useRef(new Set());
 
   useEffect(() => {
-    loadTasks();
-    loadClaims();
-    setStudyLeaves(loadStudyLeaves());
+    if (hasPermission(currentUser, "entitlements")) {
+      loadTasks();
+      loadClaims();
+      setStudyLeaves(loadStudyLeaves());
+    } else {
+      setAppLoading(false);
+    }
   }, []);
 
   const loadTasks = async () => {
@@ -164,10 +174,16 @@ export default function AdminDashboard({ currentUser }) {
 
   useEffect(() => {
     const notificationSources = [
-      { table: "service_requests", label: "طلب إلكتروني جديد", icon: "📥" },
-      { table: "public_feedback", label: "شكوى أو تقييم جديد", icon: "💬" },
-      { table: "claims", label: "مطالبة جديدة", icon: "📋" },
-      { table: "employee_tasks", label: "مهمة موظف جديدة", icon: "📝" },
+      ...(hasPermission(currentUser, "requests")
+        ? [{ table: "service_requests", label: "طلب إلكتروني جديد", icon: "📥" }]
+        : []),
+      ...(hasPermission(currentUser, "entitlements")
+        ? [
+            { table: "public_feedback", label: "شكوى أو تقييم جديد", icon: "💬" },
+            { table: "claims", label: "مطالبة جديدة", icon: "📋" },
+            { table: "employee_tasks", label: "مهمة موظف جديدة", icon: "📝" },
+          ]
+        : []),
     ];
 
     let channel = null;
@@ -856,6 +872,12 @@ export default function AdminDashboard({ currentUser }) {
     );
   };
 
+  const goTo = (nextMenu) => {
+    if (canAccessMenu(currentUser, nextMenu)) {
+      setActiveMenu(nextMenu);
+    }
+  };
+
   const currentTitle =
     activeMenu === "claims"
       ? "المطالبات"
@@ -906,7 +928,8 @@ export default function AdminDashboard({ currentUser }) {
       <Sidebar
         activeMenu={activeMenu}
         filterType={filterType}
-        setActiveMenu={setActiveMenu}
+        currentUser={currentUser}
+        setActiveMenu={goTo}
         setFilterType={setFilterType}
         setServiceRequestFilter={setServiceRequestFilter}
       />
@@ -1064,9 +1087,11 @@ export default function AdminDashboard({ currentUser }) {
             <button
               style={styles.secondaryButton}
               onClick={() => {
-                loadTasks();
-                loadClaims();
-                setStudyLeaves(loadStudyLeaves());
+                if (hasPermission(currentUser, "entitlements")) {
+                  loadTasks();
+                  loadClaims();
+                  setStudyLeaves(loadStudyLeaves());
+                }
               }}
             >
               🔄 تحديث
@@ -1077,7 +1102,8 @@ export default function AdminDashboard({ currentUser }) {
               activeMenu !== "employee_profiles" &&
               activeMenu !== "letters_tracking" &&
               activeMenu !== "faculty_salary_archive" &&
-              activeMenu !== "employee_salary_archive" && (
+              activeMenu !== "employee_salary_archive" &&
+              hasPermission(currentUser, "entitlements") && (
                 <button
                   style={styles.primaryButton}
                   onClick={() => {
@@ -1155,197 +1181,247 @@ export default function AdminDashboard({ currentUser }) {
         )}
 
         {activeMenu === "home" && (
-          <HomeView
-            stats={stats}
-            performance={performance}
-            tasks={tasks}
-            studyLeavesCount={studyLeaves.length}
-            claimsCount={claims.length}
-            setActiveMenu={setActiveMenu}
-            setFilterType={setFilterType}
-            setSelectedTask={setSelectedTask}
-            onServiceCardClick={(serviceType) => {
-              setServiceRequestFilter(serviceType);
-              setActiveMenu("service_requests");
-            }}
-          />
-        )}
-
-        {activeMenu === "daily" && (
-          <DailyView
-            tasks={filteredTasks}
-            filterType={filterType}
-            setFilterType={setFilterType}
-            filterStatus={filterStatus}
-            setFilterStatus={setFilterStatus}
-            onAdd={() => setShowTaskForm(true)}
-            onSelect={setSelectedTask}
-            onDelete={deleteTask}
-            onUpdate={updateTask}
-          />
-        )}
-
-        {activeMenu === "service_requests" && (
-          <ServiceRequestsView
-            selectedService={serviceRequestFilter}
-            onServiceFilterChange={
-              setServiceRequestFilter
-            }
-          />
-        )}
-
-        {activeMenu === "faculty_salaries" && (
-          <FacultySalariesPage />
-        )}
-
-        {activeMenu === "feedback" && <FeedbackView />}
-
-        {activeMenu === "claims" && (
-          <ClaimsPage
-            claims={filteredClaims}
-            allClaims={claims}
-            sheets={claimSheets}
-            search={claimSearch}
-            setSearch={setClaimSearch}
-            sheetFilter={claimSheetFilter}
-            setSheetFilter={setClaimSheetFilter}
-            loading={claimLoading}
-            error={claimError}
-            onImport={importClaimsExcel}
-            onAddManual={() => {
-              setClaimForm(createEmptyClaim());
-              setShowClaimForm(true);
-            }}
-          />
-        )}
-
-        {activeMenu === "study_leaves" && (
-          <StudyLeavesPage
-            leaves={studyLeaves}
-            loading={studyLeaveLoading}
-            error={studyLeaveError}
-            onImport={importStudyLeaves}
-            onSave={saveStudyLeave}
-            onDelete={deleteStudyLeave}
-            onStopSalary={stopStudyLeaveSalary}
-          />
-        )}
-
-        {activeMenu === "issues_management" && (
-          <IssuesManagementPage />
-        )}
-
-        {activeMenu === "connection_test" && (
-          <ConnectionTest />
-        )}
-
-        {activeMenu === "letters_tracking" && (
-          <LettersTrackingPage
-            qrCode={qrCodeFromUrl}
-            currentUser={currentUser}
-          />
-        )}
-
-        {activeMenu === "faculty_salary_archive" && (
-          <FacultySalaryArchivePage currentUser={currentUser} />
-        )}
-
-        {activeMenu === "employee_salary_archive" && (
-          <EmployeeSalaryArchivePage currentUser={currentUser} />
-        )}
-
-        {activeMenu === "executive_orders_add" && (
-          <ExecutiveOrdersPage
-            currentUser={currentUser}
-            view="add"
-            onNavigate={setActiveMenu}
-          />
-        )}
-
-        {activeMenu === "executive_orders_archive" && (
-          <ExecutiveOrdersPage
-            currentUser={currentUser}
-            view="archive"
-            onNavigate={setActiveMenu}
-          />
-        )}
-
-        {activeMenu === "weekly" && (
-          <div style={styles.card}>
-            <PerformanceView
-              title="التقييم الأسبوعي"
-              period="هذا الأسبوع"
-              performance={performance}
+          hasAnyPermission(currentUser, [
+            "letters",
+            "entitlements",
+            "requests",
+            "reports",
+            "user_management",
+            "org_structure",
+            "system_settings",
+          ]) ? (
+            <HomeView
               stats={stats}
+              performance={performance}
+              tasks={tasks}
+              studyLeavesCount={studyLeaves.length}
+              claimsCount={claims.length}
+              setActiveMenu={goTo}
+              setFilterType={setFilterType}
+              setSelectedTask={setSelectedTask}
+              onServiceCardClick={(serviceType) => {
+                if (canAccessMenu(currentUser, "service_requests")) {
+                  setServiceRequestFilter(serviceType);
+                  setActiveMenu("service_requests");
+                }
+              }}
             />
-          </div>
+          ) : (
+            <div style={styles.card}>
+              <div style={styles.errorBox}>
+                ⛔ لا تملك أي صلاحية حتى الآن — يرجى التواصل مع
+                المسؤول لتحديد صلاحياتك.
+              </div>
+            </div>
+          )
         )}
 
-        {activeMenu === "monthly" && (
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <div>
-                <h2 style={styles.cardTitle}>
-                  التقييم الشهري
-                </h2>
+        {activeMenu === "daily" &&
+          canAccessMenu(currentUser, "daily") && (
+            <DailyView
+              tasks={filteredTasks}
+              filterType={filterType}
+              setFilterType={setFilterType}
+              filterStatus={filterStatus}
+              setFilterStatus={setFilterStatus}
+              onAdd={() => setShowTaskForm(true)}
+              onSelect={setSelectedTask}
+              onDelete={deleteTask}
+              onUpdate={updateTask}
+            />
+          )}
 
-                <p style={styles.cardSub}>
-                  تقرير أداء القسم خلال الشهر المحدد
-                </p>
-              </div>
+        {activeMenu === "service_requests" &&
+          canAccessMenu(currentUser, "service_requests") && (
+            <ServiceRequestsView
+              selectedService={serviceRequestFilter}
+              onServiceFilterChange={
+                setServiceRequestFilter
+              }
+            />
+          )}
 
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) =>
-                  setSelectedMonth(e.target.value)
-                }
-                style={styles.monthInput}
+        {activeMenu === "faculty_salaries" &&
+          canAccessMenu(currentUser, "faculty_salaries") && (
+            <FacultySalariesPage />
+          )}
+
+        {activeMenu === "feedback" &&
+          canAccessMenu(currentUser, "feedback") && (
+            <FeedbackView />
+          )}
+
+        {activeMenu === "claims" &&
+          canAccessMenu(currentUser, "claims") && (
+            <ClaimsPage
+              claims={filteredClaims}
+              allClaims={claims}
+              sheets={claimSheets}
+              search={claimSearch}
+              setSearch={setClaimSearch}
+              sheetFilter={claimSheetFilter}
+              setSheetFilter={setClaimSheetFilter}
+              loading={claimLoading}
+              error={claimError}
+              onImport={importClaimsExcel}
+              onAddManual={() => {
+                setClaimForm(createEmptyClaim());
+                setShowClaimForm(true);
+              }}
+            />
+          )}
+
+        {activeMenu === "study_leaves" &&
+          canAccessMenu(currentUser, "study_leaves") && (
+            <StudyLeavesPage
+              leaves={studyLeaves}
+              loading={studyLeaveLoading}
+              error={studyLeaveError}
+              onImport={importStudyLeaves}
+              onSave={saveStudyLeave}
+              onDelete={deleteStudyLeave}
+              onStopSalary={stopStudyLeaveSalary}
+            />
+          )}
+
+        {activeMenu === "issues_management" &&
+          canAccessMenu(currentUser, "issues_management") && (
+            <IssuesManagementPage />
+          )}
+
+        {activeMenu === "connection_test" &&
+          canAccessMenu(currentUser, "connection_test") && (
+            <ConnectionTest />
+          )}
+
+        {activeMenu === "letters_tracking" &&
+          canAccessMenu(currentUser, "letters_tracking") && (
+            <LettersTrackingPage
+              qrCode={qrCodeFromUrl}
+              currentUser={currentUser}
+            />
+          )}
+
+        {activeMenu === "faculty_salary_archive" &&
+          canAccessMenu(currentUser, "faculty_salary_archive") && (
+            <FacultySalaryArchivePage currentUser={currentUser} />
+          )}
+
+        {activeMenu === "employee_salary_archive" &&
+          canAccessMenu(currentUser, "employee_salary_archive") && (
+            <EmployeeSalaryArchivePage currentUser={currentUser} />
+          )}
+
+        {activeMenu === "executive_orders_add" &&
+          canAccessMenu(currentUser, "executive_orders_add") && (
+            <ExecutiveOrdersPage
+              currentUser={currentUser}
+              view="add"
+              onNavigate={setActiveMenu}
+            />
+          )}
+
+        {activeMenu === "executive_orders_archive" &&
+          canAccessMenu(currentUser, "executive_orders_archive") && (
+            <ExecutiveOrdersPage
+              currentUser={currentUser}
+              view="archive"
+              onNavigate={setActiveMenu}
+            />
+          )}
+
+        {activeMenu === "weekly" &&
+          canAccessMenu(currentUser, "weekly") && (
+            <div style={styles.card}>
+              <PerformanceView
+                title="التقييم الأسبوعي"
+                period="هذا الأسبوع"
+                performance={performance}
+                stats={stats}
               />
             </div>
+          )}
 
-            <PerformanceView
-              title=""
-              period={selectedMonth}
-              performance={performance}
-              stats={stats}
+        {activeMenu === "monthly" &&
+          canAccessMenu(currentUser, "monthly") && (
+            <div style={styles.card}>
+              <div style={styles.cardHeader}>
+                <div>
+                  <h2 style={styles.cardTitle}>
+                    التقييم الشهري
+                  </h2>
+
+                  <p style={styles.cardSub}>
+                    تقرير أداء القسم خلال الشهر المحدد
+                  </p>
+                </div>
+
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) =>
+                    setSelectedMonth(e.target.value)
+                  }
+                  style={styles.monthInput}
+                />
+              </div>
+
+              <PerformanceView
+                title=""
+                period={selectedMonth}
+                performance={performance}
+                stats={stats}
+              />
+            </div>
+          )}
+
+        {activeMenu === "criteria" &&
+          canAccessMenu(currentUser, "criteria") && (
+            <CriteriaView />
+          )}
+
+        {activeMenu === "employee_performance" &&
+          canAccessMenu(currentUser, "employee_performance") && (
+            <EmployeePerformance />
+          )}
+
+        {activeMenu === "performance_dashboard" &&
+          canAccessMenu(currentUser, "performance_dashboard") && (
+            <EmployeePerformanceDashboard />
+          )}
+
+        {activeMenu === "employee_profiles" &&
+          canAccessMenu(currentUser, "employee_profiles") && (
+            <EmployeeProfilePage
+              onManageTasks={() =>
+                setActiveMenu("employee_performance")
+              }
             />
-          </div>
-        )}
+          )}
 
-        {activeMenu === "criteria" && <CriteriaView />}
-
-        {activeMenu === "employee_performance" && (
-          <EmployeePerformance />
-        )}
-
-        {activeMenu === "performance_dashboard" && (
-          <EmployeePerformanceDashboard />
-        )}
-
-        {activeMenu === "employee_profiles" && (
-          <EmployeeProfilePage
-            onManageTasks={() =>
-              setActiveMenu("employee_performance")
-            }
-          />
-        )}
-
-        {activeMenu === "training_courses" && (
-          <TrainingCourses />
-        )}
+        {activeMenu === "training_courses" &&
+          canAccessMenu(currentUser, "training_courses") && (
+            <TrainingCourses />
+          )}
 
         {activeMenu === "user_management" &&
-          ([
-            "creator",
-            "super_admin",
-            "admin",
-          ].includes(currentUser?.role) ? (
+          (canAccessMenu(currentUser, "user_management") ? (
             <UserManagement currentUser={currentUser} />
           ) : (
             <div style={styles.card}>
               <div style={styles.errorBox}>
                 ⛔ غير مصرح لك بالوصول إلى إدارة المستخدمين
+              </div>
+            </div>
+          ))}
+
+        {activeMenu === "org_structure" &&
+          (canAccessMenu(currentUser, "org_structure") ? (
+            <OrgStructurePage />
+          ) : (
+            <div style={styles.card}>
+              <div style={styles.errorBox}>
+                ⛔ غير مصرح لك بالوصول إلى الهيكل التنظيمي
               </div>
             </div>
           ))}

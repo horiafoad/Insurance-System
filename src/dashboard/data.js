@@ -181,6 +181,11 @@ export const MENU_ITEMS = [
     icon: "👤",
   },
   {
+    id: "org_structure",
+    title: "الهيكل التنظيمي",
+    icon: "🏛️",
+  },
+  {
     id: "connection_test",
     title: "اختبار الاتصال",
     icon: "🔧",
