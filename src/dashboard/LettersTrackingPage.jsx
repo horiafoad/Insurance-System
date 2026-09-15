@@ -57,6 +57,21 @@ function getCurrentMovement(movements = []) {
   return completedOnes[completedOnes.length - 1] || sorted[0] || null;
 }
 
+// المحطة التالية = أول محطة waiting تبدأ بعد المحطة الحالية في ترتيب المسار.
+function getNextMovement(movements = []) {
+  const sorted = sortByStep(movements);
+  const current = getCurrentMovement(sorted);
+  if (!current) return null;
+
+  return (
+    sorted.find(
+      (movement) =>
+        movement.step_order > (current.step_order || 0) &&
+        movement.status === "waiting"
+    ) || null
+  );
+}
+
 function isLetterLate(letter, thresholdDays = LATE_THRESHOLD_DAYS) {
   if (!letter || letter.status === "completed" || letter.status === "archived") {
     return false;
@@ -1998,6 +2013,8 @@ export default function LettersTrackingPage({ qrCode = "", currentUser = null })
   const [search, setSearch] = useState("");
   const [letterFilters, setLetterFilters] = useState({});
   const [departments, setDepartments] = useState([]);
+  const [departmentsCount, setDepartmentsCount] = useState(0);
+  const [employeesCount, setEmployeesCount] = useState(0);
 
   const [printCodes, setPrintCodes] = useState([]);
   const [selectedLetter, setSelectedLetter] = useState(null);
@@ -2528,10 +2545,32 @@ const startQrScanner = async () => {
     }
   };
 
+  // عدد الإدارات النشطة وعدد الموظفين لعرضها في بطاقات الإحصائيات الحية.
+  const loadOrgStats = async () => {
+    const [departmentsRes, employeesRes] = await Promise.all([
+      supabase
+        .from("letter_departments")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true),
+      supabase
+        .from("users")
+        .select("id", { count: "exact", head: true }),
+    ]);
+
+    if (!departmentsRes.error && departmentsRes.count != null) {
+      setDepartmentsCount(departmentsRes.count);
+    }
+
+    if (!employeesRes.error && employeesRes.count != null) {
+      setEmployeesCount(employeesRes.count);
+    }
+  };
+
   useEffect(() => {
     loadQRCodes();
     loadLetters();
     loadLetterTemplates();
+    loadOrgStats();
 
     return () => {
       stopQrScanner();
@@ -2545,6 +2584,7 @@ const startQrScanner = async () => {
       loadQRCodes(),
       loadLetters(),
       loadLetterTemplates(),
+      loadOrgStats(),
     ]);
 
     setRefreshingLetters(false);
@@ -2846,6 +2886,8 @@ const startQrScanner = async () => {
       (item) =>
         item.status === "archived"
     ).length;
+
+  const liveStats = computeLetterStats(letters, qrCodes);
 
   const filteredLetters =
     letters.filter((letter) => {
@@ -3574,6 +3616,27 @@ const startQrScanner = async () => {
 
                   <div>
                     <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"المحطة التالية"}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: "900",
+                        color: "#1D4ED8",
+                        fontSize: "16px",
+                      }}
+                    >
+                      {getNextMovement(
+                        scannedLetter.movements || []
+                      )?.department?.name ||
+                        (scannedLetter.status === "completed" ||
+                        scannedLetter.status === "archived"
+                          ? "نهاية المسار"
+                          : "بانتظار الإرسال")}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
                       {"🕐 آخر تحديث"}
                     </div>
                     <div style={{ fontWeight: "800" }}>
@@ -3929,6 +3992,192 @@ const startQrScanner = async () => {
             </span>
           </div>
 
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(155px, 1fr))",
+              gap: "10px",
+              padding: "16px 20px",
+              borderBottom: "1px solid #EEF2F7",
+              background: "#F8FAFC",
+            }}
+          >
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #DBEAFE",
+                borderRadius: "14px",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                📨 الخطابات الجارية
+              </div>
+              <div
+                style={{
+                  fontSize: "23px",
+                  fontWeight: "900",
+                  color: "#1D4ED8",
+                  marginTop: "3px",
+                }}
+              >
+                {liveStats.inProgress}
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #FED7AA",
+                borderRadius: "14px",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                ⏳ الخطابات المتأخرة
+              </div>
+              <div
+                style={{
+                  fontSize: "23px",
+                  fontWeight: "900",
+                  color: "#EA580C",
+                  marginTop: "3px",
+                }}
+              >
+                {liveStats.late}
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #A7F3D0",
+                borderRadius: "14px",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                ✅ الخطابات المكتملة
+              </div>
+              <div
+                style={{
+                  fontSize: "23px",
+                  fontWeight: "900",
+                  color: "#047857",
+                  marginTop: "3px",
+                }}
+              >
+                {liveStats.completed}
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #FBCFE8",
+                borderRadius: "14px",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                🔄 الخطابات المرتجعة
+              </div>
+              <div
+                style={{
+                  fontSize: "23px",
+                  fontWeight: "900",
+                  color: "#BE185D",
+                  marginTop: "3px",
+                }}
+              >
+                {liveStats.needsRevision}
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #DDD6FE",
+                borderRadius: "14px",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                🏢 عدد الإدارات
+              </div>
+              <div
+                style={{
+                  fontSize: "23px",
+                  fontWeight: "900",
+                  color: "#6D28D9",
+                  marginTop: "3px",
+                }}
+              >
+                {departmentsCount}
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #C7D2FE",
+                borderRadius: "14px",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                👥 عدد الموظفين
+              </div>
+              <div
+                style={{
+                  fontSize: "23px",
+                  fontWeight: "900",
+                  color: "#4338CA",
+                  marginTop: "3px",
+                }}
+              >
+                {employeesCount}
+              </div>
+            </div>
+          </div>
+
           {loadingLetters ? (
             <div
               style={{
@@ -4039,7 +4288,7 @@ const startQrScanner = async () => {
                     <th
                       style={thStyle}
                     >
-                      🏢 القسم الحالي
+                      📍 المحطة الحالية/التالية
                     </th>
 
                     <th
@@ -4268,11 +4517,54 @@ const startQrScanner = async () => {
                             tdStyle
                           }
                         >
-                          {getCurrentMovement(
-                            letter.movements ||
-                              []
-                          )?.department
-                            ?.name || "—"}
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "flex-start",
+                              gap: "4px",
+                              minWidth: "140px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: "#0F766E",
+                                fontSize: "12px",
+                                fontWeight: "900",
+                              }}
+                            >
+                              📍{" "}
+                              {getCurrentMovement(
+                                letter.movements ||
+                                  []
+                              )?.department
+                                ?.name || "—"}
+                            </span>
+
+                            <span
+                              style={{
+                                color: "#1D4ED8",
+                                fontSize: "11px",
+                                fontWeight: "700",
+                                direction: "rtl",
+                                whiteSpace:
+                                  "nowrap",
+                              }}
+                            >
+                              ⏭{" "}
+                              {getNextMovement(
+                                letter.movements ||
+                                  []
+                              )?.department
+                                ?.name ||
+                                (letter.status ===
+                                  "completed" ||
+                                letter.status ===
+                                  "archived"
+                                  ? "نهاية المسار"
+                                  : "بانتظار الإرسال")}
+                            </span>
+                          </div>
                         </td>
 
                         <td
@@ -5798,6 +6090,68 @@ function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
                 : getLetterStatusText(
                     letter.status
                   )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              background:
+                "linear-gradient(135deg,#EFF6FF,#DBEAFE)",
+              border: "1px solid #BFDBFE",
+              borderRadius: "17px",
+              padding: "17px",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                fontSize: "65px",
+                opacity: 0.07,
+                left: "-5px",
+                bottom: "-15px",
+              }}
+            >
+              ⏭
+            </div>
+
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#64748B",
+                fontWeight: "700",
+                marginBottom: "6px",
+              }}
+            >
+              ⏭ المحطة التالية
+            </div>
+
+            <div
+              style={{
+                fontSize: "18px",
+                fontWeight: "800",
+                color: "#1D4ED8",
+              }}
+            >
+              {getNextMovement(movements)
+                ?.department?.name ||
+                (letter.status === "completed" ||
+                letter.status === "archived"
+                  ? "نهاية المسار"
+                  : "لا توجد محطة تالية")}
+            </div>
+
+            <div
+              style={{
+                marginTop: "5px",
+                fontSize: "12px",
+                color: "#64748B",
+              }}
+            >
+              {getNextMovement(movements)
+                ? "بانتظار الاستلام في المحطة التالية"
+                : "المسار مكتمل أو لم يُحدد بعد"}
             </div>
           </div>
 
