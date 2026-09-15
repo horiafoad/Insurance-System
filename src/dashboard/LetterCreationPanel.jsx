@@ -114,6 +114,7 @@ export default function LetterCreationPanel() {
   const routePickerRef = useRef(null);
   const dragIndexRef = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [toastMessage, setToastMessage] = useState("");
 
   const [showNewSender, setShowNewSender] = useState(false);
   const [newSenderName, setNewSenderName] = useState("");
@@ -399,6 +400,11 @@ supabase
     return grouped;
   }, [departments, sectors, routeSearch]);
 
+  const showToast = (message) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(""), 3000);
+  };
+
   const isRouteStationAdded = (departmentId) =>
     route.some((item) => String(item.id) === String(departmentId));
 
@@ -432,25 +438,10 @@ supabase
       { id: department.id, name: department.name },
     ]);
     setRouteSearch("");
+    showToast(`✅ تمت إضافة "${department.name}" للمسار`);
   };
 
-  const handleAddSectorDepartments = (sectorId) => {
-    const sectorDepartments = departments.filter(
-      (d) =>
-        d.sector_id != null &&
-        String(d.sector_id) === String(sectorId)
-    );
-    if (sectorDepartments.length === 0) return;
-    setEditingIndex(null);
-    setRoute((prev) => [
-      ...prev,
-      ...sectorDepartments.map((d) => ({
-        id: d.id,
-        name: d.name,
-      })),
-    ]);
-    setRouteSearch("");
-  };
+
 
   const handleRemoveStation = (index) => {
     setRoute((prev) => prev.filter((_, i) => i !== index));
@@ -783,6 +774,12 @@ supabase
         direction: "rtl",
       }}
     >
+      <style>{`
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       <div
         style={{
           display: "flex",
@@ -1228,7 +1225,7 @@ supabase
                 fontWeight: 800,
               }}
             >
-              🧭 مسار الخطاب
+              🛣️ تحديد مسار الخطاب
             </h3>
 
             <div
@@ -1238,7 +1235,7 @@ supabase
                 fontSize: 13,
               }}
             >
-              أضف الإدارات بالترتيب الذي سيتحرك من خلاله الخطاب
+              حدد الإدارات التي سيمر بها الخطاب بالترتيب
             </div>
           </div>
 
@@ -1311,6 +1308,27 @@ supabase
             </span>
           </button>
 
+          {toastMessage && (
+            <div
+              style={{
+                position: "fixed",
+                bottom: 24,
+                right: 24,
+                zIndex: 9999,
+                background: "#0f172a",
+                color: "#fff",
+                padding: "12px 18px",
+                borderRadius: 12,
+                fontWeight: 800,
+                fontSize: 14,
+                boxShadow: "0 12px 30px rgba(15,23,42,.3)",
+                animation: "toastIn .3s ease",
+              }}
+            >
+              {toastMessage}
+            </div>
+          )}
+
           {routePickerOpen && (
             <div
               style={{
@@ -1375,7 +1393,6 @@ supabase
                   {routePickerGroups.map((group) => {
                     const isExpanded =
                       routeSearch.trim() ||
-                      expandedSectorIds.length === 0 ||
                       expandedSectorIds.includes(group.id);
 
                     return (
@@ -1489,53 +1506,6 @@ supabase
                               </div>
                             ) : (
                               <>
-                                {group.type === "sector" && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleAddSectorDepartments(
-                                        group.id
-                                      )
-                                    }
-                                    title="أضف كل إدارات هذا القطاع دفعة واحدة"
-                                    style={{
-                                      width: "100%",
-                                      boxSizing: "border-box",
-                                      textAlign: "right",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent:
-                                        "space-between",
-                                      gap: 10,
-                                      marginTop: 8,
-                                      padding: "12px 16px",
-                                      borderRadius: 12,
-                                      border:
-                                        "2px solid #c7d2fe",
-                                      background: "linear-gradient(135deg, #eef2ff, #dbeafe)",
-                                      color: "#4338ca",
-                                      fontSize: 14,
-                                      fontWeight: 800,
-                                      cursor: "pointer",
-                                      boxShadow: "0 4px 12px rgba(67,56,202,0.1)",
-                                      transition: "all 0.2s",
-                                    }}
-                                  >
-                                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                      <span style={{ fontSize: "16px" }}>🏛️</span>
-                                      <span>إضافة كل إدارات القطاع</span>
-                                    </span>
-                                    <span style={{
-                                      background: "rgba(255,255,255,0.5)",
-                                      padding: "4px 10px",
-                                      borderRadius: 8,
-                                      fontSize: 12,
-                                    }}>
-                                      ({group.items.length})
-                                    </span>
-                                  </button>
-                                )}
-
                                 <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                                 {group.items.map(
                               (department) => {
@@ -1644,30 +1614,57 @@ supabase
           <div
             style={{
               textAlign: "center",
-              padding: "28px 16px",
+              padding: "32px 20px",
               borderRadius: 14,
-              border: "1px dashed #cbd5e1",
+              border: "2px dashed #cbd5e1",
               background: "#fff",
               color: "#64748b",
               fontSize: 14,
             }}
           >
-            📭 لم يتم إضافة أي محطة بعد.
+            <div style={{ fontSize: "48px", marginBottom: "12px" }}>
+              📭
+            </div>
+            لم يتم تحديد مسار الخطاب بعد
             <br />
             <br />
-            اختر الإدارات التي سيمر بها الخطاب بالترتيب.
-            <br />
-            يمكنك اختيار إدارات من قطاعات مختلفة تمامًا، وحتى تكرار
-            نفس الإدارة في أكثر من محطة.
+            <span style={{ fontSize: 13, fontWeight: 700 }}>
+              اختر الإدارات التي سيمر بها الخطاب بالترتيب
+            </span>
           </div>
         ) : (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 0,
-            }}
-          >
+          <>
+            <div
+              style={{
+                marginTop: 24,
+                marginBottom: 16,
+                padding: "16px 20px",
+                borderRadius: 14,
+                background: "linear-gradient(135deg, #FEF3C7, #FDE68A)",
+                border: "2px solid #FCD34D",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  color: "#92400E",
+                  fontSize: 15,
+                  fontWeight: 800,
+                }}
+              >
+                🛣️ مسار الخطاب الحالي
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 0,
+              }}
+            >
             {route.map((department, index) => {
               const isFirst = index === 0;
               const config = isFirst
@@ -1913,6 +1910,7 @@ supabase
               );
             })}
           </div>
+          </>
         )}
 
         {route.length > 0 && (
