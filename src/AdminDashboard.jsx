@@ -952,9 +952,8 @@ export default function AdminDashboard({ currentUser }) {
       />
 
       <main style={styles.main}>
-        {!isArchivePage && (
+        {!isArchivePage && activeMenu !== "letters_tracking" && (
           <header style={styles.header}>
-            {activeMenu !== "letters_tracking" && (
             <div>
               <div style={styles.breadcrumb}>
                 قسم الاستحقاقات / {currentTitle}
@@ -970,7 +969,6 @@ export default function AdminDashboard({ currentUser }) {
                   : "متابعة الأعمال وتقييم الأداء بصورة يومية وأسبوعية وشهرية"}
               </p>
             </div>
-            )}
 
           <div
             style={{
