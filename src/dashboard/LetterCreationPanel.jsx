@@ -1,7 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 import {
-  buildFinalText,
+  extractTemplateKeys,
+  replaceTemplateVariables,
   resolveNextLetterNumber,
 } from "../utils/letterTemplateHelpers";
 
@@ -91,6 +92,7 @@ export default function LetterCreationPanel() {
   const [senders, setSenders] = useState([]);
   const [qrCodes, setQrCodes] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [sectors, setSectors] = useState([]);
   const [templates, setTemplates] = useState([]);
 
   const [letterDate, setLetterDate] = useState(creationToday);
@@ -118,7 +120,7 @@ export default function LetterCreationPanel() {
   const loadData = async () => {
     setLoading(true);
 
-    const [sendersResult, qrResult, departmentsResult, templatesResult] =
+    const [sendersResult, qrResult, departmentsResult, templatesResult, sectorsResult] =
       await Promise.all([
         supabase
           .from("letter_senders")
@@ -139,9 +141,15 @@ export default function LetterCreationPanel() {
           .eq("is_active", true)
           .order("name"),
 
+supabase
+          .from("letter_departments")
+          .select("id,name,is_active,sector_id")
+          .eq("is_active", true)
+          .order("name"),
+
         supabase
-          .from("letter_templates")
-          .select("id, name, letter_type, department_name, title, fixed_text, variable_fields, is_active, default_route")
+          .from("letter_sectors")
+          .select("id,name,is_active")
           .eq("is_active", true)
           .order("name"),
       ]);
@@ -162,7 +170,29 @@ export default function LetterCreationPanel() {
     if (!departmentsResult.error) {
       setDepartments(departmentsResult.data || []);
     } else {
-      console.error("تعذر تحميل الإدارات:", departmentsResult.error);
+      // عمود sector_id غير مفعّل بعد (لم يُشغّل سكربت القطاعات)؟
+      // حمّل الإدارات بدون القطاعات حتى لا يتعطل إنشاء الخطابات.
+      const fallback = await supabase
+        .from("letter_departments")
+        .select("id,name,is_active")
+        .eq("is_active", true)
+        .order("name");
+
+      if (!fallback.error) {
+        setDepartments(fallback.data || []);
+        console.warn(
+          "عمود sector_id غير موجود — تُحمَّل الإدارات بدون قطاعات:",
+          departmentsResult.error
+        );
+      } else {
+        console.error("تعذر تحميل الإدارات:", fallback.error);
+      }
+    }
+
+    if (!sectorsResult.error) {
+      setSectors(sectorsResult.data || []);
+    } else if (sectorsResult.error?.code !== "42P01") {
+      console.warn("تعذر تحميل القطاعات:", sectorsResult.error);
     }
 
     // القوالب لم تُهاجر بعد؟ نكمل عمل النظام القديم بالكامل
@@ -177,6 +207,7 @@ export default function LetterCreationPanel() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, []);
 
@@ -196,21 +227,46 @@ export default function LetterCreationPanel() {
     (template) => String(template.id) === String(templateId)
   );
 
-  const templateKeys = useMemo(() => {
+  // الحقول المتغيرة تُستخرج تلقائيًا من النص الثابت {{...}}،
+  // مع الحفاظ على الأسماء/الأنواع المُعرّفة في "الاسم الظاهر" عند الحاجة.
+  const variableFields = useMemo(() => {
     if (!selectedTemplate) return [];
+
+    let declared = [];
     const raw = selectedTemplate.variable_fields || [];
-    if (Array.isArray(raw)) return raw.map((field) => String(field.key));
-    try {
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      return Array.isArray(parsed) ? parsed.map((field) => String(field.key)) : [];
-    } catch {
-      return [];
+    if (Array.isArray(raw)) {
+      declared = raw;
+    } else {
+      try {
+        const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (Array.isArray(parsed)) declared = parsed;
+      } catch {
+        declared = [];
+      }
     }
+
+    const byKey = new Map();
+    declared.forEach((field) => {
+      const key = String(field?.key || "").trim();
+      if (key) byKey.set(key, field);
+    });
+
+    const keys = extractTemplateKeys(selectedTemplate.fixed_text || "");
+    return keys.map((key) => {
+      const declaredField = byKey.get(key) || {};
+      const prettyLabel = String(key).replace(/[_-]+/g, " ").trim();
+      return {
+        key: String(key),
+        label: declaredField.label || prettyLabel,
+        type: declaredField.type === "textarea" ? "textarea" : "text",
+        placeholder: declaredField.placeholder || "",
+      };
+    });
   }, [selectedTemplate]);
 
   const finalPreview = useMemo(() => {
     if (!selectedTemplate) return "";
-    return buildFinalText(selectedTemplate, variableValues);
+    return replaceTemplateVariables(selectedTemplate.fixed_text, variableValues);
   }, [selectedTemplate, variableValues]);
 
   const normalizeRoute = (raw) => {
@@ -254,8 +310,70 @@ export default function LetterCreationPanel() {
       )
   );
 
+  // تجميع الإدارات تحت قطاعاتها لعرضها في القائمة، مع إدارة عامة لمن لا قطاع له
+  const departmentGroups = useMemo(() => {
+    const grouped = [];
+
+    sectors.forEach((sector) => {
+      const items = availableDepartments.filter(
+        (department) =>
+          department.sector_id !== null &&
+          String(department.sector_id) === String(sector.id)
+      );
+
+      if (items.length > 0) {
+        grouped.push({
+          type: "sector",
+          id: sector.id,
+          name: sector.name,
+          items,
+        });
+      }
+    });
+
+    const general = availableDepartments.filter(
+      (department) =>
+        department.sector_id === null ||
+        department.sector_id === undefined
+    );
+
+    if (general.length > 0) {
+      grouped.push({
+        type: "general",
+        id: 0,
+        name: "إدارات عامة (بدون قطاع)",
+        items: general,
+      });
+    }
+
+    return grouped;
+  }, [availableDepartments, sectors]);
+
   const addDepartmentToRoute = () => {
     if (!selectedDepartmentId) return;
+
+    // اختيار قطاع كامل (كلية كاملة): إرسال الخطاب لكل إدارات القطاع دفعة واحدة
+    if (selectedDepartmentId.startsWith("sector:")) {
+      const sectorId = selectedDepartmentId.replace("sector:", "");
+
+      const sectorDepartments = availableDepartments.filter(
+        (department) =>
+          String(department.sector_id) === String(sectorId)
+      );
+
+      if (sectorDepartments.length > 0) {
+        setRoute((prev) => [
+          ...prev,
+          ...sectorDepartments.map((department) => ({
+            id: department.id,
+            name: department.name,
+          })),
+        ]);
+      }
+
+      setSelectedDepartmentId("");
+      return;
+    }
 
     const department = departments.find(
       (item) => String(item.id) === String(selectedDepartmentId)
@@ -379,13 +497,20 @@ export default function LetterCreationPanel() {
     }
 
     if (selectedTemplate) {
-      const missingKeys = templateKeys.filter((key) => {
-        const value = variableValues[key];
+      const missingFields = variableFields.filter((field) => {
+        const value = variableValues[field.key];
         return !value || !String(value).trim();
       });
 
-      if (missingKeys.length > 0) {
-        alert("من فضلك أكمل الحقول المتغيرة للقالب");
+      if (missingFields.length > 0) {
+        alert(
+          "من فضلك أكمل الحقول المتغيرة للقالب:\n" +
+            missingFields
+              .map(
+                (field, index) => (index + 1) + ". " + field.label
+              )
+              .join("\n")
+        );
         return;
       }
     } else if (!subject.trim()) {
@@ -405,7 +530,7 @@ export default function LetterCreationPanel() {
     );
 
     // الترقيم التلقائي: من العدّاد في قاعدة البيانات (فريد ولا يُعاد استخدامه)
-    let letterNumber = "";
+    let letterNumber;
 
     try {
       letterNumber = await resolveNextLetterNumber(supabase);
@@ -417,7 +542,7 @@ export default function LetterCreationPanel() {
     }
 
     const finalText = selectedTemplate
-      ? buildFinalText(selectedTemplate, variableValues)
+      ? replaceTemplateVariables(selectedTemplate.fixed_text, variableValues)
       : null;
 
     const payload = {
@@ -547,18 +672,6 @@ export default function LetterCreationPanel() {
     setVariableValues({});
 
     window.location.reload();
-  };
-
-  const getVariableFields = () => {
-    if (!selectedTemplate) return [];
-    const raw = selectedTemplate.variable_fields || [];
-    if (Array.isArray(raw)) return raw;
-    try {
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
   };
 
   return (
@@ -703,7 +816,7 @@ export default function LetterCreationPanel() {
           </div>
         )}
 
-        {selectedTemplate && getVariableFields().length === 0 && (
+        {selectedTemplate && variableFields.length === 0 && (
           <div
             style={{
               marginTop: 10,
@@ -712,13 +825,14 @@ export default function LetterCreationPanel() {
               fontWeight: 700,
             }}
           >
-            ⚠️ هذا القالب لا يحتوي على حقول متغيرة.
+            ⚠️ هذا القالب لا يحتوي على حقول متغيرة. اكتب {"{{key}}"} داخل
+            النص الثابت لإنشاء الحقول تلقائيًا.
           </div>
         )}
       </div>
 
       {/* الحقول المتغيرة للقالب */}
-      {selectedTemplate && getVariableFields().length > 0 && (
+      {selectedTemplate && variableFields.length > 0 && (
         <div
           style={{
             marginBottom: 18,
@@ -747,7 +861,7 @@ export default function LetterCreationPanel() {
               gap: 14,
             }}
           >
-            {getVariableFields().map((field) => {
+            {variableFields.map((field) => {
               const key = String(field.key);
               const isTextarea = field.type === "textarea";
 
@@ -1067,13 +1181,30 @@ export default function LetterCreationPanel() {
             <option value="">
               {availableDepartments.length === 0
                 ? "تمت إضافة كل الإدارات"
-                : "اختر الإدارة لإضافتها إلى المسار..."}
+                : "اختر الإدارة أو القطاع لإضافته إلى المسار..."}
             </option>
 
-            {availableDepartments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
+            {departmentGroups.map((group) => (
+              <optgroup
+                key={group.type + "-" + group.id}
+                label={group.name}
+              >
+                {group.type === "sector" && (
+                  <option value={"sector:" + group.id}>
+                    🏛️ إرسال لكل إدارات {group.name} (
+                    {group.items.length})
+                  </option>
+                )}
+
+                {group.items.map((department) => (
+                  <option
+                    key={department.id}
+                    value={department.id}
+                  >
+                    {department.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
 
@@ -1114,7 +1245,8 @@ export default function LetterCreationPanel() {
           >
             لم تتم إضافة أي إدارة بعد.
             <br />
-            اختر الإدارات من القائمة بالأعلى لبناء مسار الخطاب.
+            اختر الإدارات من القائمة بالأعلى، أو اختر "إرسال لكل
+            إدارات القطاع" لإضافة كلية/قطاع كامل دفعة واحدة.
           </div>
         ) : (
           <div

@@ -52,6 +52,7 @@ export default function LetterTemplatesManager({
   const [errorMsg, setErrorMsg] = useState("");
   const [routeDepartments, setRouteDepartments] = useState([]);
   const [routeSelectedId, setRouteSelectedId] = useState("");
+  const [sectors, setSectors] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -59,12 +60,33 @@ export default function LetterTemplatesManager({
     const loadDepartments = async () => {
       const { data, error } = await supabase
         .from("letter_departments")
+        .select("id,name,is_active,sector_id")
+        .eq("is_active", true)
+        .order("name");
+
+      if (!error) {
+        if (mounted) setRouteDepartments(data || []);
+      } else {
+        // عمود sector_id غير مفعّل بعد؟ حمّل الإدارات بدون القطاعات
+        const fallback = await supabase
+          .from("letter_departments")
+          .select("id,name,is_active")
+          .eq("is_active", true)
+          .order("name");
+
+        if (mounted && !fallback.error) {
+          setRouteDepartments(fallback.data || []);
+        }
+      }
+
+      const { data: sectorsData, error: sectorsError } = await supabase
+        .from("letter_sectors")
         .select("id,name,is_active")
         .eq("is_active", true)
         .order("name");
 
-      if (mounted && !error) {
-        setRouteDepartments(data || []);
+      if (mounted && !sectorsError) {
+        setSectors(sectorsData || []);
       }
     };
 
@@ -135,8 +157,82 @@ export default function LetterTemplatesManager({
     }));
   };
 
+  const availableRouteDepartments = (form?.route || []).length
+    ? routeDepartments.filter(
+        (department) =>
+          !form.route.some(
+            (item) => String(item.id) === String(department.id)
+          )
+      )
+    : routeDepartments;
+
+  // تجميع الإدارات تحت قطاعاتها، مع إدارة عامة لمن لا قطاع له
+  const routeDepartmentGroups = (() => {
+    const grouped = [];
+
+    sectors.forEach((sector) => {
+      const items = availableRouteDepartments.filter(
+        (department) =>
+          department.sector_id !== null &&
+          String(department.sector_id) === String(sector.id)
+      );
+
+      if (items.length > 0) {
+        grouped.push({
+          type: "sector",
+          id: sector.id,
+          name: sector.name,
+          items,
+        });
+      }
+    });
+
+    const general = availableRouteDepartments.filter(
+      (department) =>
+        department.sector_id === null ||
+        department.sector_id === undefined
+    );
+
+    if (general.length > 0) {
+      grouped.push({
+        type: "general",
+        id: 0,
+        name: "إدارات عامة (بدون قطاع)",
+        items: general,
+      });
+    }
+
+    return grouped;
+  })();
+
   const addRouteStation = () => {
     if (!routeSelectedId) return;
+
+    // اختيار قطاع كامل: إضافة كل إدارات القطاع دفعة واحدة
+    if (routeSelectedId.startsWith("sector:")) {
+      const sectorId = routeSelectedId.replace("sector:", "");
+
+      const sectorDepartments = availableRouteDepartments.filter(
+        (department) =>
+          String(department.sector_id) === String(sectorId)
+      );
+
+      if (sectorDepartments.length > 0) {
+        setForm((prev) => ({
+          ...prev,
+          route: [
+            ...prev.route,
+            ...sectorDepartments.map((department) => ({
+              id: department.id,
+              name: department.name,
+            })),
+          ],
+        }));
+      }
+
+      setRouteSelectedId("");
+      return;
+    }
 
     const department = routeDepartments.find(
       (item) => String(item.id) === String(routeSelectedId)
@@ -593,14 +689,32 @@ export default function LetterTemplatesManager({
             style={inputStyle}
           >
             <option value="">
-              {routeDepartments.length === 0
-                ? "لا توجد إدارات متاحة"
-                : "اختر الإدارة لإضافتها إلى المسار..."}
+              {availableRouteDepartments.length === 0
+                ? "تمت إضافة كل الإدارات"
+                : "اختر الإدارة أو القطاع لإضافته إلى المسار..."}
             </option>
-            {routeDepartments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
+
+            {routeDepartmentGroups.map((group) => (
+              <optgroup
+                key={group.type + "-" + group.id}
+                label={group.name}
+              >
+                {group.type === "sector" && (
+                  <option value={"sector:" + group.id}>
+                    🏛️ إرسال لكل إدارات {group.name} (
+                    {group.items.length})
+                  </option>
+                )}
+
+                {group.items.map((department) => (
+                  <option
+                    key={department.id}
+                    value={department.id}
+                  >
+                    {department.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
 

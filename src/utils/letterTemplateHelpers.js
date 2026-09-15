@@ -1,23 +1,39 @@
 export const LETTER_NUMBER_PREFIX = "خطاب ";
 
-export const TEMPLATE_PLACEHOLDER_REGEX = /\{\{\s*([\w\u0600-\u06FF-]+)\s*\}\}/g;
+export const TEMPLATE_PLACEHOLDER_REGEX = /\{\{\s*([^{}]+?)\s*\}\}/g;
 
+// يستخرج كل المفاتيح الموجودة داخل {{ }} في النص الثابت.
+// يدعم أسماء المفاتيح العربية والإنجليزية مع المسافات والنقط والشرطات.
 export function extractTemplateKeys(fixedText = "") {
   const keys = [];
-  let match;
   const regex = new RegExp(TEMPLATE_PLACEHOLDER_REGEX.source, "g");
-  while ((match = regex.exec(fixedText)) !== null) {
-    keys.push(match[1]);
+  let match;
+  while ((match = regex.exec(String(fixedText || ""))) !== null) {
+    const key = String(match[1]).trim();
+    if (key) {
+      keys.push(key);
+      // تجنّب حلقة لا نهائية إذا احتوى المفتاح على تطابق فارغ
+      if (match.index === regex.lastIndex) regex.lastIndex += 1;
+    }
   }
   return [...new Set(keys)];
 }
 
+// الدالة الموحّدة لاستبدال المتغيرات داخل النص الثابت بالقيَم المُدخلة.
+// أي متغير بلا قيمة أو بقيمة فارغة يُستبدل بنص فارغ (لا يُكتب undefined أو null).
+export function replaceTemplateVariables(fixedText = "", variableValues = {}) {
+  return String(fixedText || "").replace(TEMPLATE_PLACEHOLDER_REGEX, (match, key) => {
+    const value = variableValues[String(key).trim()];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+    return "";
+  });
+}
+
 export function buildFinalText(template, variableValues = {}) {
   const source = (template && template.fixed_text) || "";
-  return source.replace(TEMPLATE_PLACEHOLDER_REGEX, (match, key) => {
-    const value = variableValues[key];
-    return value !== undefined && value !== null ? String(value).trim() : "";
-  });
+  return replaceTemplateVariables(source, variableValues);
 }
 
 export function getNextLetterNumberRpc(supabase) {
