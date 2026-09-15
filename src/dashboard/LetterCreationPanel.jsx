@@ -1259,7 +1259,7 @@ supabase
           </div>
         </div>
 
-        <div style={{ marginBottom: 14 }} ref={routePickerRef}>
+        <div style={{ marginBottom: 16 }} ref={routePickerRef}>
           <button
             type="button"
             onClick={() => {
@@ -1273,28 +1273,40 @@ supabase
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: 10,
-              padding: "12px 14px",
-              borderRadius: 12,
-              background: routePickerOpen ? "#eff6ff" : "#fff",
+              gap: 12,
+              padding: "14px 16px",
+              borderRadius: 14,
+              background: routePickerOpen 
+                ? "linear-gradient(135deg, #EFF6FF, #DBEAFE)" 
+                : "#fff",
               border: routePickerOpen
-                ? "1.5px solid #93c5fd"
-                : "1.5px dashed #cbd5e1",
+                ? "2px solid #93c5fd"
+                : "2px dashed #cbd5e1",
               color: departments.length === 0 ? "#94a3b8" : "#1e40af",
-              fontSize: 14,
+              fontSize: 15,
               fontWeight: 800,
               cursor:
                 departments.length === 0
                   ? "not-allowed"
                   : "pointer",
+              boxShadow: routePickerOpen 
+                ? "0 4px 12px rgba(59,130,246,0.15)" 
+                : "0 2px 8px rgba(15,23,42,0.08)",
+              transition: "all 0.2s",
             }}
           >
-            <span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {editingIndex != null
                 ? "✏️ اختر إدارة بديلة للمحطة الحالية"
                 : "➕ اختيار محطة الخطاب"}
             </span>
-            <span style={{ fontSize: 12, opacity: 0.85 }}>
+            <span style={{ 
+              fontSize: 13, 
+              opacity: 0.9,
+              background: "rgba(255,255,255,0.3)",
+              padding: "4px 8px",
+              borderRadius: 8,
+            }}>
               {routePickerOpen ? "إغلاق ▲" : "اختيار ▼"}
             </span>
           </button>
@@ -1302,17 +1314,19 @@ supabase
           {routePickerOpen && (
             <div
               style={{
-                marginTop: 8,
-                borderRadius: 14,
-                border: "1px solid #e2e8f0",
+                marginTop: 12,
+                borderRadius: 16,
+                border: "2px solid #e2e8f0",
                 background: "#fff",
                 overflow: "hidden",
+                boxShadow: "0 8px 25px rgba(15,23,42,0.12)",
               }}
             >
               <div
                 style={{
-                  padding: 10,
-                  borderBottom: "1px solid #f1f5f9",
+                  padding: 12,
+                  borderBottom: "2px solid #f1f5f9",
+                  background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)",
                 }}
               >
                 <input
@@ -1323,12 +1337,14 @@ supabase
                   style={{
                     width: "100%",
                     boxSizing: "border-box",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: 10,
-                    padding: "9px 12px",
-                    fontSize: 13,
+                    border: "2px solid #cbd5e1",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    fontSize: 14,
                     outline: "none",
-                    background: "#f8fafc",
+                    background: "#fff",
+                    color: "#0f172a",
+                    fontWeight: 500,
                   }}
                 />
               </div>
@@ -1336,12 +1352,15 @@ supabase
               {routePickerGroups.length === 0 ? (
                 <div
                   style={{
-                    padding: "22px 16px",
+                    padding: "32px 20px",
                     textAlign: "center",
                     color: "#64748b",
-                    fontSize: 13,
+                    fontSize: 14,
                   }}
                 >
+                  <div style={{ fontSize: "48px", marginBottom: "12px" }}>
+                    🔍
+                  </div>
                   {routeSearch.trim()
                     ? "لا توجد نتائج مطابقة للبحث"
                     : "لا توجد إدارات مفعّلة حاليًا. أضف الإدارات من صفحة الهيكل التنظيمي."}
@@ -1349,7 +1368,7 @@ supabase
               ) : (
                 <div
                   style={{
-                    maxHeight: 320,
+                    maxHeight: 380,
                     overflowY: "auto",
                   }}
                 >
@@ -1379,36 +1398,56 @@ supabase
                             alignItems: "center",
                             justifyContent:
                               "space-between",
-                            gap: 8,
-                            padding: "11px 14px",
-                            background: "#f8fafc",
+                            gap: 10,
+                            padding: "14px 16px",
+                            background: "linear-gradient(135deg, #F8FAFC, #F1F5F9)",
                             cursor: routeSearch.trim()
                               ? "default"
                               : "pointer",
+                            transition: "background 0.2s",
                           }}
                         >
-                          <span
-                            style={{
-                              color: "#334155",
-                              fontSize: 13,
-                              fontWeight: 900,
-                            }}
-                          >
-                            {group.icon} {group.name}
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{
+                              width: "36px",
+                              height: "36px",
+                              borderRadius: "10px",
+                              background: "linear-gradient(135deg, #DBEAFE, #EFF6FF)",
+                              border: "1px solid #BFDBFE",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "18px",
+                            }}>
+                              {group.icon}
+                            </div>
                             <span
                               style={{
-                                color: "#94a3b8",
-                                fontWeight: 700,
-                                marginRight: 6,
+                                color: "#0f172a",
+                                fontSize: 15,
+                                fontWeight: 900,
                               }}
                             >
-                              ({group.items.length})
+                              {group.name}
                             </span>
-                          </span>
+                            <span
+                              style={{
+                                background: "#dbeafe",
+                                color: "#1e40af",
+                                padding: "4px 10px",
+                                borderRadius: "999px",
+                                fontSize: 12,
+                                fontWeight: 800,
+                              }}
+                            >
+                              {group.items.length}
+                            </span>
+                          </div>
                           <span
                             style={{
-                              color: "#94a3b8",
-                              fontSize: 12,
+                              color: "#64748b",
+                              fontSize: 14,
+                              fontWeight: 700,
                             }}
                           >
                             {isExpanded ? "▲" : "▼"}
@@ -1424,8 +1463,8 @@ supabase
                             transition:
                               "max-height 0.35s ease-in-out",
                             padding: isExpanded
-                              ? "4px 8px 8px"
-                              : "0 8px",
+                              ? "8px 12px 12px"
+                              : "0 12px",
                           }}
                         >
                             {group.items.length === 0 ? (
@@ -1433,13 +1472,13 @@ supabase
                                 style={{
                                   width: "100%",
                                   boxSizing: "border-box",
-                                  marginTop: 4,
-                                  padding: "9px 12px",
-                                  borderRadius: 10,
-                                  border: "1px dashed #cbd5e1",
+                                  marginTop: 8,
+                                  padding: "14px 16px",
+                                  borderRadius: 12,
+                                  border: "2px dashed #cbd5e1",
                                   background: "#f8fafc",
                                   color: "#94a3b8",
-                                  fontSize: 12,
+                                  fontSize: 13,
                                   fontWeight: 700,
                                   textAlign: "center",
                                 }}
@@ -1467,24 +1506,37 @@ supabase
                                       alignItems: "center",
                                       justifyContent:
                                         "space-between",
-                                      gap: 8,
-                                      marginTop: 4,
-                                      padding: "9px 12px",
-                                      borderRadius: 10,
+                                      gap: 10,
+                                      marginTop: 8,
+                                      padding: "12px 16px",
+                                      borderRadius: 12,
                                       border:
-                                        "1px dashed #c7d2fe",
-                                      background: "#eef2ff",
+                                        "2px solid #c7d2fe",
+                                      background: "linear-gradient(135deg, #eef2ff, #dbeafe)",
                                       color: "#4338ca",
-                                      fontSize: 12,
+                                      fontSize: 14,
                                       fontWeight: 800,
                                       cursor: "pointer",
+                                      boxShadow: "0 4px 12px rgba(67,56,202,0.1)",
+                                      transition: "all 0.2s",
                                     }}
                                   >
-                                    <span>🏛️ إضافة كل إدارات القطاع</span>
-                                    <span>({group.items.length})</span>
+                                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <span style={{ fontSize: "16px" }}>🏛️</span>
+                                      <span>إضافة كل إدارات القطاع</span>
+                                    </span>
+                                    <span style={{
+                                      background: "rgba(255,255,255,0.5)",
+                                      padding: "4px 10px",
+                                      borderRadius: 8,
+                                      fontSize: 12,
+                                    }}>
+                                      ({group.items.length})
+                                    </span>
                                   </button>
                                 )}
 
+                                <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                                 {group.items.map(
                               (department) => {
                                 const added =
@@ -1514,26 +1566,42 @@ supabase
                                       display: "flex",
                                       alignItems:
                                         "center",
-                                      gap: 8,
+                                      gap: 10,
                                       padding:
-                                        "9px 12px",
-                                      marginTop: 4,
+                                        "12px 14px",
                                       borderRadius: 10,
                                       border: added
-                                        ? "1px solid #bbf7d0"
-                                        : "1px solid transparent",
+                                        ? "2px solid #bbf7d0"
+                                        : "1px solid #e2e8f0",
                                       background: added
-                                        ? "#f0fdf4"
+                                        ? "linear-gradient(135deg, #f0fdf4, #dcfce7)"
                                         : "#fff",
                                       cursor: "pointer",
+                                      transition: "all 0.2s",
+                                      boxShadow: added 
+                                        ? "0 2px 8px rgba(22,163,74,0.1)" 
+                                        : "0 1px 4px rgba(15,23,42,0.05)",
                                     }}
                                   >
-                                    <span>📁</span>
+                                    <span style={{
+                                      width: "32px",
+                                      height: "32px",
+                                      borderRadius: 8,
+                                      background: added 
+                                        ? "#dcfce7" 
+                                        : "#f1f5f9",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: "16px",
+                                    }}>
+                                      📁
+                                    </span>
                                     <span
                                       style={{
                                         flex: 1,
                                         color: "#0f172a",
-                                        fontSize: 13,
+                                        fontSize: 14,
                                         fontWeight: 700,
                                       }}
                                     >
@@ -1543,10 +1611,13 @@ supabase
                                       <span
                                         style={{
                                           color: "#16a34a",
-                                          fontSize: 11,
+                                          fontSize: 12,
                                           fontWeight: 800,
                                           whiteSpace:
                                             "nowrap",
+                                          background: "#dcfce7",
+                                          padding: "4px 8px",
+                                          borderRadius: 6,
                                         }}
                                       >
                                         ✓ في المسار
@@ -1556,6 +1627,7 @@ supabase
                                 );
                               }
                             )}
+                                </div>
                               </>
                             )}
                           </div>
