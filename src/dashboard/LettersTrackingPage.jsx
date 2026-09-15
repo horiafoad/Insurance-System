@@ -3749,62 +3749,64 @@ const startQrScanner = async () => {
         }}
       >
         {/* =========================
-            زر إدارة الخطابات الثابت أعلى الصفحة (للأدمن فقط)
+            عنوان الصفحة الرئيسي (خارج الصورة)
            ========================= */}
-        {isAdmin && (
+        <div
+          style={{
+            marginBottom: "32px",
+          }}
+        >
           <div
             style={{
-              position: "sticky",
-              top: "10px",
-              zIndex: 99975,
-              display: "flex",
-              justifyContent: "flex-end",
-              marginBottom: "14px",
+              fontSize: "clamp(13px, 1.5vw, 16px)",
+              fontWeight: 400,
+              color: "#64748B",
+              marginBottom: "6px",
             }}
           >
-            <button
-              type="button"
-              onClick={() => setQrPanelOpen(true)}
-              title="إدارة الخطابات"
-              className="letters-qa-admin-btn"
-              style={{
-                border: "1px solid #1E40AF",
-                borderRadius: "13px",
-                padding: "11px 18px",
-                background:
-                  "linear-gradient(135deg,#071A3A,#123D78)",
-                color: "#fff",
-                fontSize: "13px",
-                fontWeight: "800",
-                cursor: "pointer",
-                boxShadow:
-                  "0 10px 28px rgba(15,23,42,0.28)",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <span style={{ fontSize: "16px" }}>⚙️</span>
-              <span>إدارة الخطابات</span>
-            </button>
+            قسم الاستحقاقات / متابعة الخطابات
           </div>
-        )}
+
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "clamp(28px, 3vw, 36px)",
+              fontWeight: 700,
+              color: "#071B3A",
+              lineHeight: 1.2,
+            }}
+          >
+            متابعة الخطابات
+          </h2>
+
+          <p
+            style={{
+              margin: "10px 0 0",
+              fontSize: "clamp(15px, 1.8vw, 18px)",
+              fontWeight: 400,
+              color: "#64748B",
+            }}
+          >
+            متابعة حركة الخطابات والأعمال بصورة
+            يومية وأسبوعية وشهرية
+          </p>
+        </div>
 
         {/* =========================
-            Header
+            Hero Header مع صورة المستندات
            ========================= */}
         <div
           style={{
             position: "relative",
             overflow: "hidden",
-            backgroundImage: `linear-gradient(rgba(7,26,58,0.82) 0%, rgba(18,61,120,0.88) 60%, rgba(37,99,235,0.9) 100%), url(${lettersHeaderImage})`,
+            borderRadius: "clamp(24px, 2.5vw, 32px)",
+            height: "clamp(300px, 45vw, 380px)",
+            minHeight: "300px",
+            backgroundImage: `linear-gradient(135deg, rgba(7,27,58,0.88), rgba(11,42,91,0.72), rgba(29,95,209,0.55)), url(${lettersHeaderImage})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
-            borderRadius: "24px",
-            padding: "clamp(24px, 4vw, 44px)",
             marginBottom: "24px",
-            boxShadow:
-              "0 20px 40px rgba(15,23,42,0.2)",
+            boxShadow: "0 20px 40px rgba(15,23,42,0.18)",
             color: "#fff",
           }}
         >
@@ -3814,11 +3816,10 @@ const startQrScanner = async () => {
               width: "200px",
               height: "200px",
               borderRadius: "50%",
-              border:
-                "2px solid rgba(255,255,255,0.1)",
+              border: "2px solid rgba(255,255,255,0.12)",
               left: "-70px",
               top: "-110px",
-              background: "radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%)",
+              background: "radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%)",
             }}
           />
 
@@ -3828,115 +3829,135 @@ const startQrScanner = async () => {
               width: "150px",
               height: "150px",
               borderRadius: "50%",
-              border:
-                "1px solid rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.1)",
               right: "-50px",
               bottom: "-80px",
-              background: "radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%)",
+              background: "radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%)",
             }}
           />
 
           <div
             style={{
               position: "relative",
+              height: "100%",
+              boxSizing: "border-box",
+              padding: "clamp(20px, 3vw, 32px)",
               display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems: "center",
-              gap: "20px",
-              flexWrap: "wrap",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: "16px",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "18px",
-              }}
-            >
+            <div style={{ maxWidth: "620px" }}>
               <div
                 style={{
-                  width: "64px",
-                  height: "64px",
-                  minWidth: "64px",
-                  borderRadius: "18px",
-                  background:
-                    "rgba(255,255,255,0.15)",
-                  border:
-                    "2px solid rgba(255,255,255,0.25)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "32px",
-                  boxShadow: "0 8px 20px rgba(0,0,0,0.15)",
+                  fontSize: "clamp(14px, 1.6vw, 17px)",
+                  fontWeight: 500,
+                  color: "rgba(255,255,255,0.92)",
+                  marginBottom: "10px",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.25)",
                 }}
               >
-                ✉️
+                قسم الاستحقاقات / متابعة الخطابات
               </div>
 
-              <div>
-                <div
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                }}
+              >
+                <span
                   style={{
-                    fontSize: "11px",
-                    fontWeight: "800",
-                    color: "rgba(255,255,255,0.72)",
-                    letterSpacing: "0.5px",
-                    marginBottom: "6px",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.25)",
+                    fontSize: "28px",
+                    lineHeight: 1,
+                    filter:
+                      "drop-shadow(0 2px 4px rgba(0,0,0,0.25))",
                   }}
                 >
-                  قسم الاستحقاقات / متابعة الخطابات
-                </div>
-
-                <h2
+                  ✉️
+                </span>
+                <h1
                   style={{
                     margin: 0,
-                    fontSize: "clamp(20px, 3vw, 28px)",
-                    fontWeight: "800",
-                    textShadow: "0 2px 8px rgba(0,0,0,0.28)",
+                    fontSize: "clamp(30px, 3.2vw, 38px)",
+                    fontWeight: 800,
+                    color: "#FFFFFF",
+                    lineHeight: 1.2,
+                    textShadow: "0 2px 8px rgba(0,0,0,0.25)",
                   }}
                 >
-                  📨 متابعة الخطابات
-                </h2>
-
-                <p
-                  style={{
-                    margin:
-                      "8px 0 0",
-                    fontSize: "clamp(12px, 1.6vw, 14px)",
-                    color:
-                      "rgba(255,255,255,0.9)",
-                    fontWeight: "500",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.25)",
-                  }}
-                >
-                  متابعة حركة الخطابات والأعمال بصورة
-                  يومية وأسبوعية وشهرية
-                </p>
+                  متابعة الخطابات
+                </h1>
               </div>
+
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  fontSize: "clamp(15px, 1.7vw, 19px)",
+                  fontWeight: 400,
+                  color: "#FFFFFF",
+                  lineHeight: 1.6,
+                  textShadow: "0 1px 4px rgba(0,0,0,0.25)",
+                }}
+              >
+                متابعة حركة الخطابات والأعمال بصورة
+                يومية وأسبوعية وشهرية
+              </p>
             </div>
 
             <div
               style={{
                 display: "flex",
-                gap: "12px",
+                gap: "16px",
                 flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "flex-start",
               }}
             >
               <button
                 type="button"
+                onClick={startQrScanner}
+                disabled={scannerOpen}
+                title="مسح QR للخطاب"
+                style={{
+                  ...headerButtonStyle(
+                    scannerOpen ? "#64748B" : "#10B981"
+                  ),
+                  width: "230px",
+                  maxWidth: "100%",
+                  height: "58px",
+                  fontSize: "17px",
+                  fontWeight: 700,
+                  borderRadius: "16px",
+                  border: scannerOpen
+                    ? "1px solid rgba(255,255,255,0.25)"
+                    : "1px solid rgba(16,185,129,0.4)",
+                }}
+              >
+                مسح QR للخطاب
+              </button>
+
+              <button
+                type="button"
                 onClick={refreshLetters}
                 disabled={refreshingLetters}
+                title="تحديث"
                 style={{
                   ...headerButtonStyle(
                     refreshingLetters
                       ? "#64748B"
-                      : "rgba(255,255,255,0.15)"
+                      : "rgba(255,255,255,0.14)"
                   ),
-                  padding: "12px 20px",
-                  fontSize: "14px",
-                  borderRadius: "12px",
-                  border: "1px solid rgba(255,255,255,0.25)",
+                  width: "140px",
+                  maxWidth: "100%",
+                  height: "58px",
+                  fontSize: "17px",
+                  fontWeight: 600,
+                  borderRadius: "16px",
+                  border: "1px solid rgba(255,255,255,0.45)",
                 }}
               >
                 {refreshingLetters
@@ -3944,24 +3965,25 @@ const startQrScanner = async () => {
                   : "🔄 تحديث"}
               </button>
 
-              <button
-                type="button"
-                onClick={startQrScanner}
-                disabled={scannerOpen}
-                style={{
-                  ...headerButtonStyle(
-                    scannerOpen
-                      ? "#64748B"
-                      : "rgba(16,185,129,0.9)"
-                  ),
-                  padding: "12px 20px",
-                  fontSize: "14px",
-                  borderRadius: "12px",
-                  border: "1px solid rgba(16,185,129,0.5)",
-                }}
-              >
-                📷 مسح QR للخطاب
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setQrPanelOpen(true)}
+                  title="إدارة الخطابات"
+                  style={{
+                    ...headerButtonStyle("#0B2A5B"),
+                    width: "190px",
+                    maxWidth: "100%",
+                    height: "56px",
+                    fontSize: "17px",
+                    fontWeight: 700,
+                    borderRadius: "16px",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                  }}
+                >
+                  ⚙️ إدارة الخطابات
+                </button>
+              )}
             </div>
           </div>
         </div>
