@@ -1452,11 +1452,12 @@ function LegacyInactiveLetterCreationPanel() {
       <div
         style={{
           marginTop: 28,
-          padding: 20,
-          borderRadius: 16,
+          padding: 24,
+          borderRadius: 20,
           background:
-            "linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%)",
-          border: "1px solid #dbeafe",
+            "linear-gradient(135deg, linear-gradient(135deg, #071A3A 0%, #123D78 55%, #2563EB 100%)",
+          border: "1px solid #1E40AF",
+          boxShadow: "0 10px 30px rgba(15,23,42,0.15)",
         }}
       >
         <div
@@ -1466,15 +1467,15 @@ function LegacyInactiveLetterCreationPanel() {
             alignItems: "center",
             gap: 12,
             flexWrap: "wrap",
-            marginBottom: 16,
+            marginBottom: 20,
           }}
         >
           <div>
             <h3
               style={{
                 margin: 0,
-                color: "#0f172a",
-                fontSize: 18,
+                color: "#fff",
+                fontSize: 20,
                 fontWeight: 800,
               }}
             >
@@ -1483,9 +1484,9 @@ function LegacyInactiveLetterCreationPanel() {
 
             <div
               style={{
-                marginTop: 5,
-                color: "#64748b",
-                fontSize: 13,
+                marginTop: 6,
+                color: "rgba(255,255,255,0.8)",
+                fontSize: 14,
               }}
             >
               أضف الإدارات بالترتيب الذي سيتحرك من خلاله الخطاب
@@ -1494,12 +1495,12 @@ function LegacyInactiveLetterCreationPanel() {
 
           <div
             style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "#fff",
-              border: "1px solid #dbeafe",
-              color: "#1e40af",
-              fontSize: 13,
+              padding: "10px 16px",
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.15)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: "#fff",
+              fontSize: 14,
               fontWeight: 800,
             }}
           >
@@ -1510,9 +1511,9 @@ function LegacyInactiveLetterCreationPanel() {
         <div
           style={{
             display: "flex",
-            gap: 10,
+            gap: 12,
             alignItems: "stretch",
-            marginBottom: 20,
+            marginBottom: 24,
           }}
         >
           <select
@@ -1525,6 +1526,9 @@ function LegacyInactiveLetterCreationPanel() {
               ...creationPanelInputStyle,
               flex: 1,
               minWidth: 0,
+              background: "rgba(255,255,255,0.95)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              color: "#0f172a",
             }}
           >
             <option value="">
@@ -1549,20 +1553,24 @@ function LegacyInactiveLetterCreationPanel() {
             disabled={!selectedDepartmentId}
             style={{
               border: 0,
-              borderRadius: 11,
-              padding: "0 20px",
+              borderRadius: 12,
+              padding: "0 24px",
               background: selectedDepartmentId
-                ? "#2563eb"
-                : "#cbd5e1",
+                ? "linear-gradient(135deg, #10B981, #059669)"
+                : "rgba(255,255,255,0.2)",
               color: "#fff",
               fontWeight: 800,
               cursor: selectedDepartmentId
                 ? "pointer"
                 : "not-allowed",
               whiteSpace: "nowrap",
+              fontSize: 15,
+              boxShadow: selectedDepartmentId
+                ? "0 4px 15px rgba(16,185,129,0.3)"
+                : "none",
             }}
           >
-            + إضافة
+            ✨ إضافة
           </button>
         </div>
 
@@ -1570,14 +1578,17 @@ function LegacyInactiveLetterCreationPanel() {
           <div
             style={{
               textAlign: "center",
-              padding: "28px 16px",
-              borderRadius: 14,
-              border: "1px dashed #cbd5e1",
-              background: "#fff",
-              color: "#64748b",
-              fontSize: 14,
+              padding: "32px 20px",
+              borderRadius: 16,
+              border: "2px dashed rgba(255,255,255,0.3)",
+              background: "rgba(255,255,255,0.05)",
+              color: "rgba(255,255,255,0.7)",
+              fontSize: 15,
             }}
           >
+            <div style={{ fontSize: "32px", marginBottom: "12px" }}>
+              🏢
+            </div>
             لم تتم إضافة أي إدارة بعد.
             <br />
             اختر الإدارات من القائمة بالأعلى لبناء مسار الخطاب.
@@ -1602,13 +1613,13 @@ function LegacyInactiveLetterCreationPanel() {
                   style={{
                     display: "flex",
                     alignItems: "stretch",
-                    minHeight: 92,
+                    minHeight: 100,
                   }}
                 >
                   <div
                     style={{
-                      width: 52,
-                      minWidth: 52,
+                      width: 56,
+                      minWidth: 56,
                       display: "flex",
                       flexDirection: "column",
                       alignItems: "center",
@@ -1616,19 +1627,20 @@ function LegacyInactiveLetterCreationPanel() {
                   >
                     <div
                       style={{
-                        width: 42,
-                        height: 42,
+                        width: 48,
+                        height: 48,
                         borderRadius: "50%",
                         background: config.background,
-                        border: `3px solid ${config.color}`,
+                        border: `4px solid ${config.color}`,
                         color: config.color,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         fontWeight: 900,
-                        fontSize: 15,
+                        fontSize: 16,
                         boxSizing: "border-box",
                         zIndex: 2,
+                        boxShadow: `0 4px 12px ${config.color}40`,
                       }}
                     >
                       {isFirst ? "▶" : index + 1}
@@ -1637,11 +1649,12 @@ function LegacyInactiveLetterCreationPanel() {
                     {index < route.length - 1 && (
                       <div
                         style={{
-                          width: 3,
+                          width: 4,
                           flex: 1,
-                          minHeight: 42,
+                          minHeight: 45,
                           background:
-                            "linear-gradient(#2563eb,#cbd5e1)",
+                            "linear-gradient(180deg, #2563eb 0%, #cbd5e1 100%)",
+                          borderRadius: 2,
                         }}
                       />
                     )}
@@ -1651,28 +1664,28 @@ function LegacyInactiveLetterCreationPanel() {
                     style={{
                       flex: 1,
                       marginBottom:
-                        index < route.length - 1 ? 10 : 0,
-                      marginRight: 10,
-                      background: "#fff",
+                        index < route.length - 1 ? 12 : 0,
+                      marginRight: 12,
+                      background: "rgba(255,255,255,0.95)",
                       border:
-                        `1px solid ${config.border}`,
-                      borderRadius: 14,
-                      padding: "12px 14px",
+                        `2px solid ${config.border}`,
+                      borderRadius: 16,
+                      padding: "14px 16px",
                       boxShadow:
-                        "0 4px 14px rgba(15,23,42,.05)",
+                        "0 8px 20px rgba(15,23,42,0.1)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
-                      gap: 12,
+                      gap: 14,
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          fontSize: 11,
-                          color: "#94a3b8",
+                          fontSize: 12,
+                          color: "#64748b",
                           fontWeight: 800,
-                          marginBottom: 3,
+                          marginBottom: 4,
                         }}
                       >
                         المحطة {index + 1}
@@ -1681,7 +1694,7 @@ function LegacyInactiveLetterCreationPanel() {
                       <div
                         style={{
                           color: "#0f172a",
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: 900,
                         }}
                       >
@@ -1690,9 +1703,9 @@ function LegacyInactiveLetterCreationPanel() {
 
                       <div
                         style={{
-                          marginTop: 5,
+                          marginTop: 6,
                           color: config.color,
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: 800,
                         }}
                       >
@@ -1703,7 +1716,7 @@ function LegacyInactiveLetterCreationPanel() {
                     <div
                       style={{
                         display: "flex",
-                        gap: 5,
+                        gap: 6,
                         flexWrap: "wrap",
                         justifyContent: "flex-end",
                       }}
@@ -1715,9 +1728,14 @@ function LegacyInactiveLetterCreationPanel() {
                         }
                         disabled={index === 0}
                         title="تحريك لأعلى"
-                        style={creationPanelRouteActionStyle(
-                          index !== 0
-                        )}
+                        style={{
+                          ...creationPanelRouteActionStyle(
+                            index !== 0
+                          ),
+                          width: 36,
+                          height: 36,
+                          fontSize: 14,
+                        }}
                       >
                         ↑
                       </button>
@@ -1731,9 +1749,14 @@ function LegacyInactiveLetterCreationPanel() {
                           index === route.length - 1
                         }
                         title="تحريك لأسفل"
-                        style={creationPanelRouteActionStyle(
-                          index !== route.length - 1
-                        )}
+                        style={{
+                          ...creationPanelRouteActionStyle(
+                            index !== route.length - 1
+                          ),
+                          width: 36,
+                          height: 36,
+                          fontSize: 14,
+                        }}
                       >
                         ↓
                       </button>
@@ -1749,6 +1772,9 @@ function LegacyInactiveLetterCreationPanel() {
                           color: "#dc2626",
                           borderColor: "#fecaca",
                           background: "#fff",
+                          width: 36,
+                          height: 36,
+                          fontSize: 16,
                         }}
                       >
                         ×
@@ -1764,15 +1790,15 @@ function LegacyInactiveLetterCreationPanel() {
         {route.length > 0 && (
           <div
             style={{
-              marginTop: 18,
-              padding: 12,
-              borderRadius: 12,
-              background: "#fff",
-              border: "1px solid #e2e8f0",
+              marginTop: 20,
+              padding: 14,
+              borderRadius: 14,
+              background: "rgba(255,255,255,0.95)",
+              border: "1px solid rgba(255,255,255,0.3)",
               display: "flex",
-              gap: 18,
+              gap: 20,
               flexWrap: "wrap",
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: 800,
             }}
           >
@@ -3771,25 +3797,40 @@ const startQrScanner = async () => {
             position: "relative",
             overflow: "hidden",
             background:
-              "linear-gradient(135deg,#071A3A 0%,#123D78 55%,#2563EB 100%)",
-            borderRadius: "22px",
-            padding: "27px",
-            marginBottom: "20px",
+              "linear-gradient(135deg, #071A3A 0%, #123D78 55%, #2563EB 100%)",
+            borderRadius: "24px",
+            padding: "32px",
+            marginBottom: "24px",
             boxShadow:
-              "0 15px 35px rgba(15,23,42,0.16)",
+              "0 20px 40px rgba(15,23,42,0.2)",
             color: "#fff",
           }}
         >
           <div
             style={{
               position: "absolute",
-              width: "190px",
-              height: "190px",
+              width: "200px",
+              height: "200px",
+              borderRadius: "50%",
+              border:
+                "2px solid rgba(255,255,255,0.1)",
+              left: "-70px",
+              top: "-110px",
+              background: "radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%)",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              width: "150px",
+              height: "150px",
               borderRadius: "50%",
               border:
                 "1px solid rgba(255,255,255,0.08)",
-              left: "-60px",
-              top: "-100px",
+              right: "-50px",
+              bottom: "-80px",
+              background: "radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%)",
             }}
           />
 
@@ -3800,7 +3841,7 @@ const startQrScanner = async () => {
               justifyContent:
                 "space-between",
               alignItems: "center",
-              gap: "18px",
+              gap: "20px",
               flexWrap: "wrap",
             }}
           >
@@ -3808,23 +3849,24 @@ const startQrScanner = async () => {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "15px",
+                gap: "18px",
               }}
             >
               <div
                 style={{
-                  width: "58px",
-                  height: "58px",
-                  minWidth: "58px",
-                  borderRadius: "17px",
+                  width: "64px",
+                  height: "64px",
+                  minWidth: "64px",
+                  borderRadius: "18px",
                   background:
-                    "rgba(255,255,255,0.12)",
+                    "rgba(255,255,255,0.15)",
                   border:
-                    "1px solid rgba(255,255,255,0.20)",
+                    "2px solid rgba(255,255,255,0.25)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "29px",
+                  fontSize: "32px",
+                  boxShadow: "0 8px 20px rgba(0,0,0,0.15)",
                 }}
               >
                 ✉️
@@ -3834,8 +3876,9 @@ const startQrScanner = async () => {
                 <h2
                   style={{
                     margin: 0,
-                    fontSize: "25px",
+                    fontSize: "28px",
                     fontWeight: "800",
+                    textShadow: "0 2px 8px rgba(0,0,0,0.1)",
                   }}
                 >
                   متابعة الخطابات
@@ -3844,10 +3887,11 @@ const startQrScanner = async () => {
                 <p
                   style={{
                     margin:
-                      "7px 0 0",
-                    fontSize: "13px",
+                      "8px 0 0",
+                    fontSize: "14px",
                     color:
-                      "rgba(255,255,255,0.72)",
+                      "rgba(255,255,255,0.85)",
+                    fontWeight: "500",
                   }}
                 >
                   🧭 متابعة رحلة الخطابات
@@ -3859,7 +3903,7 @@ const startQrScanner = async () => {
             <div
               style={{
                 display: "flex",
-                gap: "9px",
+                gap: "12px",
                 flexWrap: "wrap",
               }}
             >
@@ -3867,11 +3911,17 @@ const startQrScanner = async () => {
                 type="button"
                 onClick={refreshLetters}
                 disabled={refreshingLetters}
-                style={headerButtonStyle(
-                  refreshingLetters
-                    ? "#64748B"
-                    : "rgba(255,255,255,0.12)"
-                )}
+                style={{
+                  ...headerButtonStyle(
+                    refreshingLetters
+                      ? "#64748B"
+                      : "rgba(255,255,255,0.15)"
+                  ),
+                  padding: "12px 20px",
+                  fontSize: "14px",
+                  borderRadius: "12px",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                }}
               >
                 {refreshingLetters
                   ? "⏳ جاري التحديث..."
@@ -3882,11 +3932,17 @@ const startQrScanner = async () => {
                 type="button"
                 onClick={startQrScanner}
                 disabled={scannerOpen}
-                style={headerButtonStyle(
-                  scannerOpen
-                    ? "#64748B"
-                    : "#0F766E"
-                )}
+                style={{
+                  ...headerButtonStyle(
+                    scannerOpen
+                      ? "#64748B"
+                      : "rgba(16,185,129,0.9)"
+                  ),
+                  padding: "12px 20px",
+                  fontSize: "14px",
+                  borderRadius: "12px",
+                  border: "1px solid rgba(16,185,129,0.5)",
+                }}
               >
                 📷 مسح QR للخطاب
               </button>
@@ -3899,7 +3955,7 @@ const startQrScanner = async () => {
            ========================= */}
         <div
           style={{
-            marginBottom: "20px",
+            marginBottom: "24px",
           }}
         >
           <LetterCreationPanel />
@@ -3911,33 +3967,34 @@ const startQrScanner = async () => {
         <div
           style={{
             background: "#fff",
-            borderRadius: "20px",
-            marginBottom: "20px",
+            borderRadius: "24px",
+            marginBottom: "24px",
             boxShadow:
-              "0 8px 25px rgba(15,23,42,0.06)",
+              "0 12px 30px rgba(15,23,42,0.08)",
             border:
-              "1px solid #E2E8F0",
+              "2px solid #E2E8F0",
             overflow: "hidden",
           }}
         >
           <div
             style={{
-              padding: "20px",
+              padding: "24px",
               borderBottom:
-                "1px solid #E5E7EB",
+                "2px solid #E5E7EB",
               display: "flex",
               justifyContent:
                 "space-between",
               alignItems: "center",
-              gap: "10px",
+              gap: "12px",
               flexWrap: "wrap",
+              background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
             }}
           >
             <div>
               <h3
                 style={{
                   margin: 0,
-                  fontSize: "18px",
+                  fontSize: "20px",
                   fontWeight: "800",
                   color: "#0F172A",
                 }}
@@ -3964,19 +4021,25 @@ const startQrScanner = async () => {
     style={{
       width: "92%",
       boxSizing: "border-box",
-      padding: "12px 14px",
-      border: "1px solid #CBD5E1",
-      borderRadius: "10px",
+      padding: "14px 16px",
+      border: "2px solid #BFDBFE",
+      borderRadius: "12px",
       fontSize: "14px",
       outline: "none",
       direction: "rtl",
-      background: "#F8FAFC",
+      background: "linear-gradient(135deg, #EFF6FF, #DBEAFE)",
+      color: "#0F172A",
+      fontWeight: "500",
+      transition: "all 0.2s",
     }}
   />
 </div>
 
 <p style={{
-  margin: 0,
+  margin: "10px 0 0",
+  fontSize: "12px",
+  color: "#64748B",
+  fontWeight: "600",
 }}>
   ✨ الخطابات المسجلة ومسار حركتها بين الإدارات
 </p>
@@ -3985,11 +4048,12 @@ const startQrScanner = async () => {
 
             <span
               style={{
-                padding: "7px 12px",
+                padding: "8px 16px",
                 borderRadius: "999px",
-                background: "#EFF6FF",
+                background: "linear-gradient(135deg, #EFF6FF, #DBEAFE)",
+                border: "1px solid #BFDBFE",
                 color: "#1D4ED8",
-                fontSize: "12px",
+                fontSize: "13px",
                 fontWeight: "800",
               }}
             >
@@ -4001,166 +4065,207 @@ const startQrScanner = async () => {
             style={{
               display: "grid",
               gridTemplateColumns:
-                "repeat(auto-fit, minmax(155px, 1fr))",
-              gap: "10px",
-              padding: "16px 20px",
-              borderBottom: "1px solid #EEF2F7",
-              background: "#F8FAFC",
+                "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: "14px",
+              padding: "20px 24px",
+              borderBottom: "1px solid #E5E7EB",
+              background: "linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%)",
             }}
           >
             <div
               style={{
-                background: "#fff",
-                border: "1px solid #DBEAFE",
-                borderRadius: "14px",
-                padding: "12px 14px",
+                background: "linear-gradient(135deg, #DBEAFE 0%, #EFF6FF 100%)",
+                border: "2px solid #BFDBFE",
+                borderRadius: 16,
+                padding: "16px 18px",
+                boxShadow: "0 4px 15px rgba(59,130,246,0.1)",
+                transition: "transform 0.2s",
               }}
             >
               <div
                 style={{
-                  fontSize: "11px",
-                  color: "#64748B",
-                  fontWeight: "700",
+                  fontSize: "12px",
+                  color: "#1E40AF",
+                  fontWeight: "800",
+                  marginBottom: 8,
                 }}
               >
                 📨 الخطابات الجارية
               </div>
               <div
                 style={{
-                  fontSize: "23px",
+                  fontSize: "28px",
                   fontWeight: "900",
                   color: "#1D4ED8",
-                  marginTop: "3px",
+                  marginBottom: 4,
                 }}
               >
                 {liveStats.inProgress}
               </div>
-            </div>
-
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #FED7AA",
-                borderRadius: "14px",
-                padding: "12px 14px",
-              }}
-            >
               <div
                 style={{
                   fontSize: "11px",
                   color: "#64748B",
                   fontWeight: "700",
+                }}
+              >
+                قيد التنفيذ
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "linear-gradient(135deg, #FED7AA 0%, #FFF7ED 100%)",
+                border: "2px solid #FDBA74",
+                borderRadius: 16,
+                padding: "16px 18px",
+                boxShadow: "0 4px 15px rgba(234,88,12,0.1)",
+                transition: "transform 0.2s",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#C2410C",
+                  fontWeight: "800",
+                  marginBottom: 8,
                 }}
               >
                 ⏳ الخطابات المتأخرة
               </div>
               <div
                 style={{
-                  fontSize: "23px",
+                  fontSize: "28px",
                   fontWeight: "900",
                   color: "#EA580C",
-                  marginTop: "3px",
+                  marginBottom: 4,
                 }}
               >
                 {liveStats.late}
               </div>
-            </div>
-
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #A7F3D0",
-                borderRadius: "14px",
-                padding: "12px 14px",
-              }}
-            >
               <div
                 style={{
                   fontSize: "11px",
                   color: "#64748B",
                   fontWeight: "700",
+                }}
+              >
+                تحتاج متابعة
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "linear-gradient(135deg, #A7F3D0 0%, #ECFDF5 100%)",
+                border: "2px solid #6EE7B7",
+                borderRadius: 16,
+                padding: "16px 18px",
+                boxShadow: "0 4px 15px rgba(16,185,129,0.1)",
+                transition: "transform 0.2s",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#047857",
+                  fontWeight: "800",
+                  marginBottom: 8,
                 }}
               >
                 ✅ الخطابات المكتملة
               </div>
               <div
                 style={{
-                  fontSize: "23px",
+                  fontSize: "28px",
                   fontWeight: "900",
-                  color: "#047857",
-                  marginTop: "3px",
+                  color: "#059669",
+                  marginBottom: 4,
                 }}
               >
                 {liveStats.completed}
               </div>
-            </div>
-
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #FBCFE8",
-                borderRadius: "14px",
-                padding: "12px 14px",
-              }}
-            >
               <div
                 style={{
                   fontSize: "11px",
                   color: "#64748B",
                   fontWeight: "700",
+                }}
+              >
+                تم التنفيذ
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "linear-gradient(135deg, #FBCFE8 0%, #FDF2F8 100%)",
+                border: "2px solid #F9A8D4",
+                borderRadius: 16,
+                padding: "16px 18px",
+                boxShadow: "0 4px 15px rgba(219,39,119,0.1)",
+                transition: "transform 0.2s",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#BE185D",
+                  fontWeight: "800",
+                  marginBottom: 8,
                 }}
               >
                 🔄 الخطابات المرتجعة
               </div>
               <div
                 style={{
-                  fontSize: "23px",
+                  fontSize: "28px",
                   fontWeight: "900",
-                  color: "#BE185D",
-                  marginTop: "3px",
+                  color: "#DB2777",
+                  marginBottom: 4,
                 }}
               >
                 {liveStats.needsRevision}
               </div>
-            </div>
-
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #DDD6FE",
-                borderRadius: "14px",
-                padding: "12px 14px",
-              }}
-            >
               <div
                 style={{
                   fontSize: "11px",
                   color: "#64748B",
                   fontWeight: "700",
+                }}
+              >
+                تحتاج تعديل
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "linear-gradient(135deg, #DDD6FE 0%, #F5F3FF 100%)",
+                border: "2px solid #C4B5FD",
+                borderRadius: 16,
+                padding: "16px 18px",
+                boxShadow: "0 4px 15px rgba(139,92,246,0.1)",
+                transition: "transform 0.2s",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#6D28D9",
+                  fontWeight: "800",
+                  marginBottom: 8,
                 }}
               >
                 🏢 عدد الإدارات
               </div>
               <div
                 style={{
-                  fontSize: "23px",
+                  fontSize: "28px",
                   fontWeight: "900",
-                  color: "#6D28D9",
-                  marginTop: "3px",
+                  color: "#7C3AED",
+                  marginBottom: 4,
                 }}
               >
                 {departmentsCount}
               </div>
-            </div>
-
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #C7D2FE",
-                borderRadius: "14px",
-                padding: "12px 14px",
-              }}
-            >
               <div
                 style={{
                   fontSize: "11px",
@@ -4168,17 +4273,48 @@ const startQrScanner = async () => {
                   fontWeight: "700",
                 }}
               >
+                إدارات نشطة
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "linear-gradient(135deg, #C7D2FE 0%, #EEF2FF 100%)",
+                border: "2px solid #A5B4FC",
+                borderRadius: 16,
+                padding: "16px 18px",
+                boxShadow: "0 4px 15px rgba(99,102,241,0.1)",
+                transition: "transform 0.2s",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#4338CA",
+                  fontWeight: "800",
+                  marginBottom: 8,
+                }}
+              >
                 👥 عدد الموظفين
               </div>
               <div
                 style={{
-                  fontSize: "23px",
+                  fontSize: "28px",
                   fontWeight: "900",
-                  color: "#4338CA",
-                  marginTop: "3px",
+                  color: "#6366F1",
+                  marginBottom: 4,
                 }}
               >
                 {employeesCount}
+              </div>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                موظفين مسجلين
               </div>
             </div>
           </div>
@@ -4186,27 +4322,7 @@ const startQrScanner = async () => {
           {loadingLetters ? (
             <div
               style={{
-                padding: "55px 20px",
-                textAlign: "center",
-                color: "#64748B",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "40px",
-                  marginBottom: "10px",
-                }}
-              >
-                ⏳
-              </div>
-
-              جاري تحميل الخطابات...
-            </div>
-          ) : filteredLetters.length ===
-            0 ? (
-            <div
-              style={{
-                padding: "55px 20px",
+                padding: "60px 20px",
                 textAlign: "center",
                 color: "#64748B",
               }}
@@ -4214,7 +4330,35 @@ const startQrScanner = async () => {
               <div
                 style={{
                   fontSize: "48px",
-                  marginBottom: "12px",
+                  marginBottom: "16px",
+                }}
+              >
+                ⏳
+              </div>
+
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  color: "#475569",
+                }}
+              >
+                جاري تحميل الخطابات...
+              </div>
+            </div>
+          ) : filteredLetters.length ===
+            0 ? (
+            <div
+              style={{
+                padding: "60px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "56px",
+                  marginBottom: "16px",
                 }}
               >
                 📭
@@ -4222,10 +4366,10 @@ const startQrScanner = async () => {
 
               <div
                 style={{
-                  fontSize: "16px",
+                  fontSize: "18px",
                   fontWeight: "800",
                   color: "#334155",
-                  marginBottom: "6px",
+                  marginBottom: "8px",
                 }}
               >
                 لا توجد خطابات مسجلة
@@ -4233,7 +4377,8 @@ const startQrScanner = async () => {
 
               <div
                 style={{
-                  fontSize: "13px",
+                  fontSize: "14px",
+                  color: "#64748B",
                 }}
               >
                 عند حفظ خطاب جديد سيظهر هنا مع رحلة حركته 🧭
@@ -4257,65 +4402,115 @@ const startQrScanner = async () => {
                   <tr
                     style={{
                       background:
-                        "#F8FAFC",
+                        "linear-gradient(135deg, #071A3A 0%, #123D78 100%)",
                     }}
                   >
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       📄 رقم الخطاب
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       📅 التاريخ
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       🏢 الجهة المرسلة
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       📝 الموضوع
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       🏷️ QR
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       📍 المحطة الحالية/التالية
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       📊 الحالة
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       🧭 المسار
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       ⏱️ آخر حركة
                     </th>
 
                     <th
-                      style={thStyle}
+                      style={{
+                        ...thStyle,
+                        color: "#fff",
+                        padding: "16px 12px",
+                        fontSize: "13px",
+                      }}
                     >
                       👁️ الإجراء
                     </th>
@@ -4324,23 +4519,26 @@ const startQrScanner = async () => {
 
                 <tbody>
                   {filteredLetters.map(
-                    (letter) => (
+                    (letter, index) => (
                       <tr
                         key={letter.id}
                         style={{
                           transition:
                             "background 0.2s",
+                          background: index % 2 === 0 ? "#F8FAFC" : "#fff",
                         }}
                       >
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
                           <strong
                             style={{
                               color:
                                 "#0F172A",
+                              fontSize: "14px",
                             }}
                           >
                             📄{" "}
@@ -4350,24 +4548,40 @@ const startQrScanner = async () => {
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
-                          {formatDate(
-                            letter.letter_date
-                          )}
+                          <span
+                            style={{
+                              fontSize: "13px",
+                              color: "#475569",
+                            }}
+                          >
+                            {formatDate(
+                              letter.letter_date
+                            )}
+                          </span>
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
-                          🏢{" "}
-                          {letter.sender
-                            ?.name ||
-                            "—"}
+                          <span
+                            style={{
+                              fontSize: "13px",
+                              color: "#475569",
+                            }}
+                          >
+                            🏢{" "}
+                            {letter.sender
+                              ?.name ||
+                              "—"}
+                          </span>
                         </td>
 
                         <td
@@ -4379,16 +4593,22 @@ const startQrScanner = async () => {
                               "180px",
                             maxWidth:
                               "260px",
+                            padding: "14px 12px",
                           }}
                         >
                           <div
                             style={{
                               display: "flex",
                               flexDirection: "column",
-                              gap: "5px",
+                              gap: "6px",
                             }}
                           >
-                            <span>
+                            <span
+                              style={{
+                                fontSize: "13px",
+                                color: "#475569",
+                              }}
+                            >
                               📝{" "}
                               {letter.subject ||
                                 "—"}
@@ -4400,24 +4620,24 @@ const startQrScanner = async () => {
                                 style={{
                                   display: "flex",
                                   flexWrap: "wrap",
-                                  gap: "4px",
+                                  gap: "5px",
                                 }}
                               >
                                 {letter.letter_type && (
                                   <span
                                     style={{
                                       padding:
-                                        "2px 8px",
+                                        "3px 10px",
                                       borderRadius:
                                         "999px",
                                       background:
-                                        "#EFF6FF",
+                                        "linear-gradient(135deg, #DBEAFE, #EFF6FF)",
                                       border:
                                         "1px solid #BFDBFE",
                                       color:
                                         "#1D4ED8",
                                       fontSize:
-                                        "10px",
+                                        "11px",
                                       fontWeight:
                                         "800",
                                     }}
@@ -4430,17 +4650,17 @@ const startQrScanner = async () => {
                                   <span
                                     style={{
                                       padding:
-                                        "2px 8px",
+                                        "3px 10px",
                                       borderRadius:
                                         "999px",
                                       background:
-                                        "#FAF5FF",
+                                        "linear-gradient(135deg, #F5F3FF, #FAF5FF)",
                                       border:
                                         "1px solid #E9D5FF",
                                       color:
                                         "#7C3AED",
                                       fontSize:
-                                        "10px",
+                                        "11px",
                                       fontWeight:
                                         "800",
                                     }}
@@ -4454,16 +4674,17 @@ const startQrScanner = async () => {
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
                           <div
                             style={{
                               display: "flex",
                               flexDirection: "column",
                               alignItems: "flex-start",
-                              gap: "6px",
+                              gap: "8px",
                             }}
                           >
                             <strong
@@ -4474,6 +4695,7 @@ const startQrScanner = async () => {
                                   "ltr",
                                 display:
                                   "inline-block",
+                                fontSize: "13px",
                               }}
                             >
                               🏷️{" "}
@@ -4496,9 +4718,9 @@ const startQrScanner = async () => {
                                   borderRadius:
                                     "8px",
                                   padding:
-                                    "4px 10px",
+                                    "5px 12px",
                                   background:
-                                    "#EFF6FF",
+                                    "linear-gradient(135deg, #EFF6FF, #DBEAFE)",
                                   color:
                                     "#1D4ED8",
                                   fontSize:
@@ -4518,23 +4740,24 @@ const startQrScanner = async () => {
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
                           <div
                             style={{
                               display: "flex",
                               flexDirection: "column",
                               alignItems: "flex-start",
-                              gap: "4px",
+                              gap: "6px",
                               minWidth: "140px",
                             }}
                           >
                             <span
                               style={{
                                 color: "#0F766E",
-                                fontSize: "12px",
+                                fontSize: "13px",
                                 fontWeight: "900",
                               }}
                             >
@@ -4549,7 +4772,7 @@ const startQrScanner = async () => {
                             <span
                               style={{
                                 color: "#1D4ED8",
-                                fontSize: "11px",
+                                fontSize: "12px",
                                 fontWeight: "700",
                                 direction: "rtl",
                                 whiteSpace:
@@ -4573,9 +4796,10 @@ const startQrScanner = async () => {
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
                           <span
                             style={{
@@ -4585,19 +4809,19 @@ const startQrScanner = async () => {
                                 "center",
                               justifyContent:
                                 "center",
-                              gap: "5px",
+                              gap: "6px",
                               padding:
-                                "6px 11px",
+                                "7px 13px",
                               borderRadius:
                                 "999px",
                               background:
                                 letter.status ===
                                 "completed"
-                                  ? "#ECFDF5"
+                                  ? "linear-gradient(135deg, #ECFDF5, #D1FAE5)"
                                   : letter.status ===
                                     "needs_revision"
-                                  ? "#FFF7ED"
-                                  : "#EFF6FF",
+                                  ? "linear-gradient(135deg, #FFF7ED, #FED7AA)"
+                                  : "linear-gradient(135deg, #EFF6FF, #DBEAFE)",
                               color:
                                 letter.status ===
                                 "completed"
@@ -4619,9 +4843,10 @@ const startQrScanner = async () => {
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
                           <span
                             style={{
@@ -4631,13 +4856,13 @@ const startQrScanner = async () => {
                                 "center",
                               justifyContent:
                                 "center",
-                              gap: "5px",
+                              gap: "6px",
                               padding:
-                                "6px 11px",
+                                "7px 13px",
                               borderRadius:
                                 "999px",
                               background:
-                                "#EFF6FF",
+                                "linear-gradient(135deg, #EFF6FF, #DBEAFE)",
                               color:
                                 "#1D4ED8",
                               fontSize:
@@ -4656,26 +4881,35 @@ const startQrScanner = async () => {
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
-                          {formatDateTime(
-                            getCurrentMovement(
-                              letter.movements ||
-                                []
-                            )?.sent_at ||
+                          <span
+                            style={{
+                              fontSize: "12px",
+                              color: "#64748B",
+                            }}
+                          >
+                            {formatDateTime(
+                              getCurrentMovement(
+                                letter.movements ||
+                                  []
+                              )?.sent_at ||
                               getCurrentMovement(
                                 letter.movements ||
                                   []
                               )?.received_at
-                          )}
+                            )}
+                          </span>
                         </td>
 
                         <td
-                          style={
-                            tdStyle
-                          }
+                          style={{
+                            ...tdStyle,
+                            padding: "14px 12px",
+                          }}
                         >
                           <button
                             type="button"
@@ -4690,9 +4924,9 @@ const startQrScanner = async () => {
                               borderRadius:
                                 "10px",
                               padding:
-                                "8px 13px",
+                                "9px 15px",
                               background:
-                                "#EFF6FF",
+                                "linear-gradient(135deg, #EFF6FF, #DBEAFE)",
                               color:
                                 "#1D4ED8",
                               fontSize:
@@ -7538,24 +7772,25 @@ function headerButtonStyle(
 ) {
   return {
     border:
-      "1px solid rgba(255,255,255,0.18)",
+      "1px solid rgba(255,255,255,0.25)",
     borderRadius:
-      "11px",
+      "12px",
     padding:
-      "10px 15px",
+      "12px 18px",
     background,
     color: "#fff",
     fontSize:
-      "13px",
+      "14px",
     fontWeight:
-      "700",
+      "800",
     cursor:
       background ===
       "#64748B"
         ? "not-allowed"
         : "pointer",
     backdropFilter:
-      "blur(8px)",
+      "blur(10px)",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
   };
 }
 
@@ -7651,11 +7886,11 @@ function formatFullDateTime(
 
 const thStyle = {
   padding:
-    "14px 16px",
+    "16px 14px",
   textAlign:
     "right",
   fontSize:
-    "12px",
+    "13px",
   fontWeight:
     "800",
   color:
@@ -7668,7 +7903,7 @@ const thStyle = {
 
 const tdStyle = {
   padding:
-    "14px 16px",
+    "16px 14px",
   fontSize:
     "13px",
   color:
