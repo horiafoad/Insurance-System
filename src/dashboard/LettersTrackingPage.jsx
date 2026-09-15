@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { supabase } from "../supabaseClient";
 import LetterCreationPanel from "./LetterCreationPanel";
 import LetterTemplatesManager from "./LetterTemplatesManager";
+import lettersHeaderImage from "../assets/letters-header.jpg";
 
 
 // --- letterHelpers.js ---
@@ -3796,10 +3797,11 @@ const startQrScanner = async () => {
           style={{
             position: "relative",
             overflow: "hidden",
-            background:
-              "linear-gradient(135deg, #071A3A 0%, #123D78 55%, #2563EB 100%)",
+            backgroundImage: `linear-gradient(rgba(7,26,58,0.82) 0%, rgba(18,61,120,0.88) 60%, rgba(37,99,235,0.9) 100%), url(${lettersHeaderImage})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
             borderRadius: "24px",
-            padding: "32px",
+            padding: "clamp(24px, 4vw, 44px)",
             marginBottom: "24px",
             boxShadow:
               "0 20px 40px rgba(15,23,42,0.2)",
@@ -3873,29 +3875,43 @@ const startQrScanner = async () => {
               </div>
 
               <div>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: "800",
+                    color: "rgba(255,255,255,0.72)",
+                    letterSpacing: "0.5px",
+                    marginBottom: "6px",
+                    textShadow: "0 1px 4px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  قسم الاستحقاقات / متابعة الخطابات
+                </div>
+
                 <h2
                   style={{
                     margin: 0,
-                    fontSize: "28px",
+                    fontSize: "clamp(20px, 3vw, 28px)",
                     fontWeight: "800",
-                    textShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    textShadow: "0 2px 8px rgba(0,0,0,0.28)",
                   }}
                 >
-                  متابعة الخطابات
+                  📨 متابعة الخطابات
                 </h2>
 
                 <p
                   style={{
                     margin:
                       "8px 0 0",
-                    fontSize: "14px",
+                    fontSize: "clamp(12px, 1.6vw, 14px)",
                     color:
-                      "rgba(255,255,255,0.85)",
+                      "rgba(255,255,255,0.9)",
                     fontWeight: "500",
+                    textShadow: "0 1px 4px rgba(0,0,0,0.25)",
                   }}
                 >
-                  🧭 متابعة رحلة الخطابات
-                  وحركة المراسلات بين الإدارات
+                  متابعة حركة الخطابات والأعمال بصورة
+                  يومية وأسبوعية وشهرية
                 </p>
               </div>
             </div>
