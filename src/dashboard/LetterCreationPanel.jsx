@@ -1259,7 +1259,7 @@ supabase
           </div>
         </div>
 
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 14 }} ref={routePickerRef}>
           <button
             type="button"
             onClick={() => {
