@@ -115,6 +115,10 @@ export default function LetterCreationPanel() {
   const dragIndexRef = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [toastMessage, setToastMessage] = useState("");
+  const [activeSectorId, setActiveSectorId] = useState(null);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalSearchTerm, setGlobalSearchTerm] = useState("");
+  const [deleteConfirmIndex, setDeleteConfirmIndex] = useState(null);
 
   const [showNewSender, setShowNewSender] = useState(false);
   const [newSenderName, setNewSenderName] = useState("");
@@ -350,7 +354,6 @@ supabase
   };
 
   const routePickerGroups = useMemo(() => {
-    const term = routeSearch.trim().toLowerCase();
     const grouped = [];
 
     sectors.forEach((sector) => {
@@ -360,45 +363,69 @@ supabase
           String(department.sector_id) === String(sector.id)
       );
 
-      const matched = term
-        ? items.filter(
-            (d) =>
-              d.name.toLowerCase().includes(term) ||
-              sector.name.toLowerCase().includes(term)
-          )
-        : items;
-
-      if (!term || matched.length > 0) {
-        grouped.push({
-          type: "sector",
-          id: sector.id,
-          name: sector.name,
-          icon: sectorIconFor(sector.name),
-          items: matched,
-        });
-      }
+      grouped.push({
+        type: "sector",
+        id: sector.id,
+        name: sector.name,
+        icon: sectorIconFor(sector.name),
+        items: items,
+      });
     });
 
     const general = departments.filter(
       (d) => d.sector_id == null
     );
 
-    const matchedGeneral = term
-      ? general.filter((d) => d.name.toLowerCase().includes(term))
-      : general;
-
-    if (matchedGeneral.length > 0) {
+    if (general.length > 0) {
       grouped.push({
         type: "general",
         id: "__general__",
         name: "إدارات عامة (بدون قطاع)",
         icon: "🏛️",
-        items: matchedGeneral,
+        items: general,
       });
     }
 
     return grouped;
-  }, [departments, sectors, routeSearch]);
+  }, [departments, sectors]);
+
+  const globalSearchResults = useMemo(() => {
+    const term = globalSearchTerm.trim().toLowerCase();
+    if (!term) return [];
+
+    const results = [];
+    sectors.forEach((sector) => {
+      const items = departments.filter(
+        (department) =>
+          department.sector_id != null &&
+          String(department.sector_id) === String(sector.id) &&
+          (department.name.toLowerCase().includes(term) ||
+           sector.name.toLowerCase().includes(term))
+      );
+
+      items.forEach((item) => {
+        results.push({
+          ...item,
+          sectorName: sector.name,
+          sectorIcon: sectorIconFor(sector.name),
+        });
+      });
+    });
+
+    const general = departments.filter(
+      (d) => d.sector_id == null && d.name.toLowerCase().includes(term)
+    );
+
+    general.forEach((item) => {
+      results.push({
+        ...item,
+        sectorName: "إدارات عامة",
+        sectorIcon: "🏛️",
+      });
+    });
+
+    return results;
+  }, [departments, sectors, globalSearchTerm]);
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -430,6 +457,18 @@ supabase
       setEditingIndex(null);
       setRoutePickerOpen(false);
       setRouteSearch("");
+      setActiveSectorId(null);
+      setGlobalSearchOpen(false);
+      setGlobalSearchTerm("");
+      return;
+    }
+
+    if (isRouteStationAdded(department.id)) {
+      showToast(`⚠️ "${department.name}" موجودة بالفعل في المسار`);
+      setRouteSearch("");
+      setActiveSectorId(null);
+      setGlobalSearchOpen(false);
+      setGlobalSearchTerm("");
       return;
     }
 
@@ -438,17 +477,28 @@ supabase
       { id: department.id, name: department.name },
     ]);
     setRouteSearch("");
+    setActiveSectorId(null);
+    setGlobalSearchOpen(false);
+    setGlobalSearchTerm("");
     showToast(`✅ تمت إضافة "${department.name}" للمسار`);
   };
 
 
 
   const handleRemoveStation = (index) => {
+    setDeleteConfirmIndex(index);
+  };
+
+  const confirmDeleteStation = () => {
+    const index = deleteConfirmIndex;
+    if (index == null) return;
+
     setRoute((prev) => prev.filter((_, i) => i !== index));
     if (editingIndex === index) setEditingIndex(null);
     else if (editingIndex != null && index < editingIndex) {
       setEditingIndex((prev) => prev - 1);
     }
+    setDeleteConfirmIndex(null);
   };
 
   const handleMoveStation = (index, direction) => {
@@ -778,6 +828,14 @@ supabase
         @keyframes toastIn {
           from { opacity: 0; transform: translateY(12px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes panelSlideIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes panelFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
       `}</style>
       <div
@@ -1235,78 +1293,361 @@ supabase
                 fontSize: 13,
               }}
             >
-              حدد الإدارات التي سيمر بها الخطاب بالترتيب
+              اضغط على قطاع ثم اختر إدارة — تُضاف مباشرة إلى المسار
             </div>
-          </div>
-
-          <div
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "#fff",
-              border: "1px solid #dbeafe",
-              color: "#1e40af",
-              fontSize: 13,
-              fontWeight: 800,
-              whiteSpace: "nowrap",
-            }}
-          >
-            🔢 {route.length}{" "}
-            {route.length === 1 ? "محطة" : "محطات"}
           </div>
         </div>
 
-        <div style={{ marginBottom: 16 }} ref={routePickerRef}>
-          <button
-            type="button"
-            onClick={() => {
-              if (editingIndex != null) setEditingIndex(null);
-              setRoutePickerOpen((prev) => !prev);
-            }}
-            disabled={departments.length === 0}
+        <div style={{ marginBottom: 20 }} ref={routePickerRef}>
+          {/* Horizontal Sector Tabs */}
+          <div
             style={{
-              width: "100%",
-              boxSizing: "border-box",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              padding: "14px 16px",
-              borderRadius: 14,
-              background: routePickerOpen 
-                ? "linear-gradient(135deg, #EFF6FF, #DBEAFE)" 
-                : "#fff",
-              border: routePickerOpen
-                ? "2px solid #93c5fd"
-                : "2px dashed #cbd5e1",
-              color: departments.length === 0 ? "#94a3b8" : "#1e40af",
-              fontSize: 15,
-              fontWeight: 800,
-              cursor:
-                departments.length === 0
-                  ? "not-allowed"
-                  : "pointer",
-              boxShadow: routePickerOpen 
-                ? "0 4px 12px rgba(59,130,246,0.15)" 
-                : "0 2px 8px rgba(15,23,42,0.08)",
-              transition: "all 0.2s",
+              gap: 10,
+              overflowX: "auto",
+              paddingBottom: 8,
+              marginBottom: 12,
+              scrollbarWidth: "thin",
             }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {editingIndex != null
-                ? "✏️ اختر إدارة بديلة للمحطة الحالية"
-                : "➕ اختيار محطة الخطاب"}
-            </span>
-            <span style={{ 
-              fontSize: 13, 
-              opacity: 0.9,
-              background: "rgba(255,255,255,0.3)",
-              padding: "4px 8px",
-              borderRadius: 8,
-            }}>
-              {routePickerOpen ? "إغلاق ▲" : "اختيار ▼"}
-            </span>
-          </button>
+            {routePickerGroups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => {
+                  if (activeSectorId === group.id) {
+                    setActiveSectorId(null);
+                  } else {
+                    setActiveSectorId(group.id);
+                    setGlobalSearchOpen(false);
+                  }
+                }}
+                style={{
+                  flex: "0 0 auto",
+                  minWidth: "140px",
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  border: activeSectorId === group.id
+                    ? "2px solid #2563eb"
+                    : "1px solid #e2e8f0",
+                  background: activeSectorId === group.id
+                    ? "linear-gradient(135deg, #EFF6FF, #DBEAFE)"
+                    : "#fff",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  boxShadow: activeSectorId === group.id
+                    ? "0 4px 12px rgba(37,99,235,0.15)"
+                    : "0 1px 4px rgba(15,23,42,0.05)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "22px",
+                    marginBottom: 5,
+                  }}
+                >
+                  {group.icon}
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: "#0f172a",
+                  }}
+                >
+                  {group.name}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Global Search Button */}
+          <div style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setGlobalSearchOpen(!globalSearchOpen);
+                setActiveSectorId(null);
+              }}
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                borderRadius: 10,
+                border: globalSearchOpen
+                  ? "2px solid #2563eb"
+                  : "1px dashed #cbd5e1",
+                background: globalSearchOpen
+                  ? "linear-gradient(135deg, #EFF6FF, #DBEAFE)"
+                  : "#f8fafc",
+                color: "#1e40af",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: "pointer",
+                transition: "all 0.2s",
+              }}
+            >
+              🔎 البحث في جميع الإدارات
+            </button>
+          </div>
+
+          {/* Active Sector Panel */}
+          {activeSectorId && (() => {
+            const activeGroup = routePickerGroups.find(
+              (g) => g.id === activeSectorId
+            );
+            if (!activeGroup) return null;
+
+            return (
+              <div
+                style={{
+                  marginTop: 12,
+                  borderRadius: 14,
+                  border: "2px solid #e2e8f0",
+                  background: "#fff",
+                  overflow: "hidden",
+                  boxShadow: "0 8px 25px rgba(15,23,42,0.12)",
+                  animation: "panelSlideIn 0.3s ease",
+                }}
+              >
+                <div
+                  style={{
+                    padding: 12,
+                    borderBottom: "2px solid #f1f5f9",
+                    background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)",
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={routeSearch}
+                    onChange={(e) => setRouteSearch(e.target.value)}
+                    placeholder={`🔎 ابحث في ${activeGroup.name}...`}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      border: "2px solid #cbd5e1",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      fontSize: 13,
+                      outline: "none",
+                      background: "#fff",
+                      color: "#0f172a",
+                      fontWeight: 500,
+                    }}
+                  />
+                </div>
+
+                <div style={{ padding: 12 }}>
+                  {(() => {
+                    const filteredItems = routeSearch.trim()
+                      ? activeGroup.items.filter(
+                          (d) =>
+                            d.name.toLowerCase().includes(routeSearch.trim().toLowerCase())
+                        )
+                      : activeGroup.items;
+
+                    if (filteredItems.length === 0) {
+                      return (
+                        <div
+                          style={{
+                            textAlign: "center",
+                            padding: "24px 16px",
+                            color: "#64748b",
+                            fontSize: 13,
+                          }}
+                        >
+                          لا توجد إدارات مطابقة للبحث
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {filteredItems.map((department) => (
+                          <button
+                            key={department.id}
+                            type="button"
+                            onClick={() => handleAddDepartmentToRoute(department)}
+                            style={{
+                              width: "100%",
+                              textAlign: "right",
+                              boxSizing: "border-box",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              padding: "12px 14px",
+                              borderRadius: 10,
+                              border: "1px solid #e2e8f0",
+                              background: "#fff",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                              boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#f8fafc";
+                              e.currentTarget.style.borderColor = "#cbd5e1";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#fff";
+                              e.currentTarget.style.borderColor = "#e2e8f0";
+                            }}
+                          >
+                            <span style={{
+                              width: "32px",
+                              height: "32px",
+                              borderRadius: 8,
+                              background: "#f1f5f9",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "16px",
+                            }}>
+                              📁
+                            </span>
+                            <span
+                              style={{
+                                flex: 1,
+                                color: "#0f172a",
+                                fontSize: 14,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {department.name}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Global Search Panel */}
+          {globalSearchOpen && (
+            <div
+              style={{
+                marginTop: 12,
+                borderRadius: 14,
+                border: "2px solid #e2e8f0",
+                background: "#fff",
+                overflow: "hidden",
+                boxShadow: "0 8px 25px rgba(15,23,42,0.12)",
+                animation: "panelSlideIn 0.3s ease",
+              }}
+            >
+              <div
+                style={{
+                  padding: 12,
+                  borderBottom: "2px solid #f1f5f9",
+                  background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)",
+                }}
+              >
+                <input
+                  type="text"
+                  value={globalSearchTerm}
+                  onChange={(e) => setGlobalSearchTerm(e.target.value)}
+                  placeholder="🔎 ابحث عن إدارة في جميع القطاعات..."
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    border: "2px solid #cbd5e1",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    outline: "none",
+                    background: "#fff",
+                    color: "#0f172a",
+                    fontWeight: 500,
+                  }}
+                />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                {globalSearchResults.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "24px 16px",
+                      color: "#64748b",
+                      fontSize: 13,
+                    }}
+                  >
+                    {globalSearchTerm.trim()
+                      ? "لا توجد نتائج مطابقة للبحث"
+                      : "اكتب للبحث في جميع الإدارات"}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {globalSearchResults.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleAddDepartmentToRoute(item)}
+                        style={{
+                          width: "100%",
+                          textAlign: "right",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "12px 14px",
+                          borderRadius: 10,
+                          border: "1px solid #e2e8f0",
+                          background: "#fff",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          boxShadow: "0 1px 4px rgba(15,23,42,0.05)",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#f8fafc";
+                          e.currentTarget.style.borderColor = "#cbd5e1";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#fff";
+                          e.currentTarget.style.borderColor = "#e2e8f0";
+                        }}
+                      >
+                        <span style={{
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: 8,
+                          background: "#f1f5f9",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "16px",
+                        }}>
+                          📁
+                        </span>
+                        <div style={{ flex: 1 }}>
+                          <div
+                            style={{
+                              color: "#0f172a",
+                              fontSize: 14,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {item.name}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "#64748b",
+                              fontWeight: 700,
+                              marginTop: 2,
+                            }}
+                          >
+                            {item.sectorIcon} {item.sectorName}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {toastMessage && (
             <div
@@ -1328,293 +1669,52 @@ supabase
               {toastMessage}
             </div>
           )}
+        </div>
 
-          {routePickerOpen && (
-            <div
-              style={{
-                marginTop: 12,
-                borderRadius: 16,
-                border: "2px solid #e2e8f0",
-                background: "#fff",
-                overflow: "hidden",
-                boxShadow: "0 8px 25px rgba(15,23,42,0.12)",
-              }}
-            >
-              <div
-                style={{
-                  padding: 12,
-                  borderBottom: "2px solid #f1f5f9",
-                  background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)",
-                }}
-              >
-                <input
-                  type="text"
-                  value={routeSearch}
-                  onChange={(e) => setRouteSearch(e.target.value)}
-                  placeholder="🔎 ابحث عن إدارة في كل القطاعات..."
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    border: "2px solid #cbd5e1",
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    fontSize: 14,
-                    outline: "none",
-                    background: "#fff",
-                    color: "#0f172a",
-                    fontWeight: 500,
-                  }}
-                />
-              </div>
+        {/* مسار الخطاب */}
+        <div
+          style={{
+            marginTop: 24,
+            marginBottom: 14,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <h3
+            style={{
+              margin: 0,
+              color: "#0f172a",
+              fontSize: 17,
+              fontWeight: 900,
+            }}
+          >
+            🛣️ مسار الخطاب
+          </h3>
 
-              {routePickerGroups.length === 0 ? (
-                <div
-                  style={{
-                    padding: "32px 20px",
-                    textAlign: "center",
-                    color: "#64748b",
-                    fontSize: 14,
-                  }}
-                >
-                  <div style={{ fontSize: "48px", marginBottom: "12px" }}>
-                    🔍
-                  </div>
-                  {routeSearch.trim()
-                    ? "لا توجد نتائج مطابقة للبحث"
-                    : "لا توجد إدارات مفعّلة حاليًا. أضف الإدارات من صفحة الهيكل التنظيمي."}
-                </div>
-              ) : (
-                <div
-                  style={{
-                    maxHeight: 380,
-                    overflowY: "auto",
-                  }}
-                >
-                  {routePickerGroups.map((group) => {
-                    const isExpanded =
-                      routeSearch.trim() ||
-                      expandedSectorIds.includes(group.id);
-
-                    return (
-                      <div
-                        key={
-                          group.type + "-" + group.id
-                        }
-                        style={{
-                          borderBottom:
-                            "1px solid #f1f5f9",
-                        }}
-                      >
-                        <div
-                          onClick={() => {
-                            if (!routeSearch.trim())
-                              handleToggleSector(group.id);
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent:
-                              "space-between",
-                            gap: 10,
-                            padding: "14px 16px",
-                            background: "linear-gradient(135deg, #F8FAFC, #F1F5F9)",
-                            cursor: routeSearch.trim()
-                              ? "default"
-                              : "pointer",
-                            transition: "background 0.2s",
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{
-                              width: "36px",
-                              height: "36px",
-                              borderRadius: "10px",
-                              background: "linear-gradient(135deg, #DBEAFE, #EFF6FF)",
-                              border: "1px solid #BFDBFE",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: "18px",
-                            }}>
-                              {group.icon}
-                            </div>
-                            <span
-                              style={{
-                                color: "#0f172a",
-                                fontSize: 15,
-                                fontWeight: 900,
-                              }}
-                            >
-                              {group.name}
-                            </span>
-                            <span
-                              style={{
-                                background: "#dbeafe",
-                                color: "#1e40af",
-                                padding: "4px 10px",
-                                borderRadius: "999px",
-                                fontSize: 12,
-                                fontWeight: 800,
-                              }}
-                            >
-                              {group.items.length}
-                            </span>
-                          </div>
-                          <span
-                            style={{
-                              color: "#64748b",
-                              fontSize: 14,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {isExpanded ? "▲" : "▼"}
-                          </span>
-                        </div>
-
-                        <div
-                          style={{
-                            maxHeight: isExpanded
-                              ? "2000px"
-                              : "0",
-                            overflow: "hidden",
-                            transition:
-                              "max-height 0.35s ease-in-out",
-                            padding: isExpanded
-                              ? "8px 12px 12px"
-                              : "0 12px",
-                          }}
-                        >
-                            {group.items.length === 0 ? (
-                              <div
-                                style={{
-                                  width: "100%",
-                                  boxSizing: "border-box",
-                                  marginTop: 8,
-                                  padding: "14px 16px",
-                                  borderRadius: 12,
-                                  border: "2px dashed #cbd5e1",
-                                  background: "#f8fafc",
-                                  color: "#94a3b8",
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {routeSearch.trim()
-                                  ? "لا توجد إدارات مطابقة للبحث"
-                                  : "لا توجد إدارات في هذا القطاع بعد — أضفها من صفحة «الهيكل التنظيمي»"}
-                              </div>
-                            ) : (
-                              <>
-                                <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                                {group.items.map(
-                              (department) => {
-                                const added =
-                                  isRouteStationAdded(
-                                    department.id
-                                  );
-
-                                return (
-                                  <button
-                                    key={department.id}
-                                    type="button"
-                                    onClick={() =>
-                                      handleAddDepartmentToRoute(
-                                        department
-                                      )
-                                    }
-                                    title={
-                                      added
-                                        ? "أضف مرة أخرى (يُسمح بتكرار الإدارة في المسار)"
-                                        : "أضف إلى المسار"
-                                    }
-                                    style={{
-                                      width: "100%",
-                                      textAlign: "right",
-                                      boxSizing:
-                                        "border-box",
-                                      display: "flex",
-                                      alignItems:
-                                        "center",
-                                      gap: 10,
-                                      padding:
-                                        "12px 14px",
-                                      borderRadius: 10,
-                                      border: added
-                                        ? "2px solid #bbf7d0"
-                                        : "1px solid #e2e8f0",
-                                      background: added
-                                        ? "linear-gradient(135deg, #f0fdf4, #dcfce7)"
-                                        : "#fff",
-                                      cursor: "pointer",
-                                      transition: "all 0.2s",
-                                      boxShadow: added 
-                                        ? "0 2px 8px rgba(22,163,74,0.1)" 
-                                        : "0 1px 4px rgba(15,23,42,0.05)",
-                                    }}
-                                  >
-                                    <span style={{
-                                      width: "32px",
-                                      height: "32px",
-                                      borderRadius: 8,
-                                      background: added 
-                                        ? "#dcfce7" 
-                                        : "#f1f5f9",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      fontSize: "16px",
-                                    }}>
-                                      📁
-                                    </span>
-                                    <span
-                                      style={{
-                                        flex: 1,
-                                        color: "#0f172a",
-                                        fontSize: 14,
-                                        fontWeight: 700,
-                                      }}
-                                    >
-                                      {department.name}
-                                    </span>
-                                    {added && (
-                                      <span
-                                        style={{
-                                          color: "#16a34a",
-                                          fontSize: 12,
-                                          fontWeight: 800,
-                                          whiteSpace:
-                                            "nowrap",
-                                          background: "#dcfce7",
-                                          padding: "4px 8px",
-                                          borderRadius: 6,
-                                        }}
-                                      >
-                                        ✓ في المسار
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              }
-                            )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          <span
+            style={{
+              padding: "7px 14px",
+              borderRadius: 999,
+              background: route.length > 0 ? "#eff6ff" : "#f8fafc",
+              border: `1px solid ${route.length > 0 ? "#bfdbfe" : "#e2e8f0"}`,
+              color: route.length > 0 ? "#1e40af" : "#64748b",
+              fontSize: 13,
+              fontWeight: 900,
+              whiteSpace: "nowrap",
+            }}
+          >
+            🔢 {route.length} {route.length === 1 ? "محطة" : "محطات"}
+          </span>
         </div>
 
         {route.length === 0 ? (
           <div
             style={{
               textAlign: "center",
-              padding: "32px 20px",
+              padding: "28px 20px",
               borderRadius: 14,
               border: "2px dashed #cbd5e1",
               background: "#fff",
@@ -1622,49 +1722,24 @@ supabase
               fontSize: 14,
             }}
           >
-            <div style={{ fontSize: "48px", marginBottom: "12px" }}>
+            <div style={{ fontSize: "44px", marginBottom: "10px" }}>
               📭
             </div>
-            لم يتم تحديد مسار الخطاب بعد
+            لم يتم تحديد محطات بعد
             <br />
             <br />
             <span style={{ fontSize: 13, fontWeight: 700 }}>
-              اختر الإدارات التي سيمر بها الخطاب بالترتيب
+              اضغط على قطاع ثم اختر الإدارة لتُضاف مباشرة إلى المسار
             </span>
           </div>
         ) : (
-          <>
-            <div
-              style={{
-                marginTop: 24,
-                marginBottom: 16,
-                padding: "16px 20px",
-                borderRadius: 14,
-                background: "linear-gradient(135deg, #FEF3C7, #FDE68A)",
-                border: "2px solid #FCD34D",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  color: "#92400E",
-                  fontSize: 15,
-                  fontWeight: 800,
-                }}
-              >
-                🛣️ مسار الخطاب الحالي
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 0,
-              }}
-            >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
             {route.map((department, index) => {
               const isFirst = index === 0;
               const config = isFirst
@@ -1686,124 +1761,73 @@ supabase
                   title="اسحب لإعادة الترتيب"
                   style={{
                     display: "flex",
-                    alignItems: "stretch",
-                    minHeight: 92,
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 14px",
+                    borderRadius: 14,
+                    background:
+                      editingIndex === index ? "#eff6ff" : "#fff",
+                    border:
+                      editingIndex === index
+                        ? "1.5px solid #60a5fa"
+                        : `1px solid ${config.border}`,
+                    boxShadow: "0 3px 12px rgba(15,23,42,.05)",
                     opacity: dragOverIndex === index ? 0.55 : 1,
                     outline:
                       dragOverIndex === index
                         ? "2px dashed #2563eb"
                         : "none",
                     outlineOffset: 2,
-                    borderRadius: 8,
+                    transition: "all .2s",
+                    flexWrap: "wrap",
                   }}
                 >
                   <div
                     style={{
-                      width: 52,
-                      minWidth: 52,
+                      width: 36,
+                      height: 36,
+                      minWidth: 36,
+                      borderRadius: "50%",
+                      background: config.background,
+                      border: `2px solid ${config.color}`,
+                      color: config.color,
                       display: "flex",
-                      flexDirection: "column",
                       alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 900,
+                      fontSize: 14,
+                      boxSizing: "border-box",
                     }}
                   >
-                    <div
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: "50%",
-                        background: config.background,
-                        border: `3px solid ${config.color}`,
-                        color: config.color,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontWeight: 900,
-                        fontSize: 15,
-                        boxSizing: "border-box",
-                        zIndex: 2,
-                      }}
-                    >
-                      {isFirst ? "▶" : index + 1}
-                    </div>
-
-                    {index < route.length - 1 && (
-                      <div
-                        style={{
-                          width: 3,
-                          flex: 1,
-                          minHeight: 42,
-                          background:
-                            "linear-gradient(#2563eb,#cbd5e1)",
-                        }}
-                      />
-                    )}
+                    {isFirst ? "▶" : index + 1}
                   </div>
 
-                  <div
-                    style={{
-                      flex: 1,
-                      marginBottom:
-                        index < route.length - 1 ? 10 : 0,
-                      marginRight: 10,
-                      background:
-                        editingIndex === index
-                          ? "#eff6ff"
-                          : "#fff",
-                      border:
-                        editingIndex === index
-                          ? `1.5px solid #60a5fa`
-                          : `1px solid ${config.border}`,
-                      borderRadius: 14,
-                      padding: "12px 14px",
-                      boxShadow: "0 4px 14px rgba(15,23,42,.05)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#94a3b8",
-                          fontWeight: 800,
-                          marginBottom: 3,
-                        }}
-                      >
-                        المحطة {index + 1}
-                        {editingIndex === index && (
-                          <span
-                            style={{
-                              color: "#2563eb",
-                              fontWeight: 900,
-                            }}
-                          >
-                            {" "}
-                            — جاري التعديل
-                          </span>
-                        )}
-                      </div>
-
-                      <div
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span
                         style={{
                           color: "#0f172a",
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: 900,
+                          wordBreak: "break-word",
                         }}
                       >
-                        {department.name}
-                      </div>
+                        📁 {department.name}
+                      </span>
 
                       {(() => {
                         const stationSector =
-                          getDepartmentSectorById(
-                            department.id
-                          );
+                          getDepartmentSectorById(department.id);
                         return stationSector ? (
-                          <div
+                          <span
                             style={{
-                              marginTop: 4,
                               display: "inline-flex",
                               alignItems: "center",
                               gap: 4,
@@ -1814,124 +1838,104 @@ supabase
                               color: "#475569",
                               fontSize: 11,
                               fontWeight: 800,
+                              whiteSpace: "nowrap",
                             }}
                           >
                             {sectorIconFor(stationSector.name)}{" "}
                             {stationSector.name}
-                          </div>
+                          </span>
                         ) : null;
                       })()}
+                    </div>
 
+                    {editingIndex === index && (
                       <div
                         style={{
-                          marginTop: 5,
-                          color: config.color,
-                          fontSize: 12,
+                          color: "#2563eb",
+                          fontSize: 11,
                           fontWeight: 800,
+                          marginTop: 3,
                         }}
                       >
-                        {config.icon} {config.label}
+                        — جاري التعديل
                       </div>
-                    </div>
+                    )}
+                  </div>
 
-                    <div
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 5,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
                       style={{
-                        display: "flex",
-                        gap: 5,
-                        flexWrap: "wrap",
-                        justifyContent: "flex-end",
-                        alignItems: "center",
+                        fontSize: 17,
+                        color: "#94a3b8",
+                        cursor: "grab",
+                        padding: "0 2px",
                       }}
                     >
-                      <span
-                        style={{
-                          fontSize: 18,
-                          color: "#94a3b8",
-                          cursor: "grab",
-                          padding: "0 2px",
-                        }}
-                      >
-                        ⠿
-                      </span>
+                      ⠿
+                    </span>
 
-                      <button
-                        type="button"
-                        onClick={() => handleEditStation(index)}
-                        title="تعديل المحطة"
-                        style={{
-                          ...creationPanelRouteActionStyle(true),
-                          color: "#1d4ed8",
-                          borderColor: "#bfdbfe",
-                          background: "#eff6ff",
-                          fontSize: 13,
-                        }}
-                      >
-                        ✏️
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEditStation(index)}
+                      title="تعديل المحطة"
+                      style={{
+                        ...creationPanelRouteActionStyle(true),
+                        color: "#1d4ed8",
+                        borderColor: "#bfdbfe",
+                        background: "#eff6ff",
+                        fontSize: 12,
+                      }}
+                    >
+                      ✏️
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleMoveStation(index, -1)}
-                        disabled={index === 0}
-                        title="تحريك لأعلى"
-                        style={creationPanelRouteActionStyle(index !== 0)}
-                      >
-                        ↑
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveStation(index, -1)}
+                      disabled={index === 0}
+                      title="تحريك لأعلى"
+                      style={creationPanelRouteActionStyle(index !== 0)}
+                    >
+                      ↑
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleMoveStation(index, 1)}
-                        disabled={index === route.length - 1}
-                        title="تحريك لأسفل"
-                        style={creationPanelRouteActionStyle(
-                          index !== route.length - 1
-                        )}
-                      >
-                        ↓
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveStation(index, 1)}
+                      disabled={index === route.length - 1}
+                      title="تحريك لأسفل"
+                      style={creationPanelRouteActionStyle(
+                        index !== route.length - 1
+                      )}
+                    >
+                      ↓
+                    </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveStation(index)}
-                        title="حذف من المسار"
-                        style={{
-                          ...creationPanelRouteActionStyle(true),
-                          color: "#dc2626",
-                          borderColor: "#fecaca",
-                          background: "#fff",
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveStation(index)}
+                      title="حذف من المسار"
+                      style={{
+                        ...creationPanelRouteActionStyle(true),
+                        color: "#dc2626",
+                        borderColor: "#fecaca",
+                        background: "#fff",
+                      }}
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
               );
             })}
-          </div>
-          </>
-        )}
-
-        {route.length > 0 && (
-          <div
-            style={{
-              marginTop: 18,
-              padding: 12,
-              borderRadius: 12,
-              background: "#fff",
-              border: "1px solid #e2e8f0",
-              display: "flex",
-              gap: 18,
-              flexWrap: "wrap",
-              fontSize: 12,
-              fontWeight: 800,
-            }}
-          >
-            <span style={{ color: "#16a34a" }}>🟢 تم التنفيذ</span>
-            <span style={{ color: "#2563eb" }}>🔵 جاري التنفيذ</span>
-            <span style={{ color: "#64748b" }}>⚪ في الانتظار</span>
-            <span style={{ color: "#94a3b8" }}>⠿ اسحب المحطة لإعادة الترتيب</span>
           </div>
         )}
       </div>
@@ -1965,6 +1969,98 @@ supabase
             : "💾 حفظ الخطاب"}
         </button>
       </div>
+
+      {deleteConfirmIndex != null && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: "min(380px,100%)",
+              background: "#fff",
+              borderRadius: 18,
+              padding: 24,
+              boxShadow: "0 25px 70px rgba(0,0,0,.25)",
+              textAlign: "center",
+              animation: "panelFadeIn .2s ease",
+            }}
+          >
+            <div style={{ fontSize: 40, marginBottom: 10 }}>
+              ⚠️
+            </div>
+            <h3
+              style={{
+                margin: "0 0 6px",
+                color: "#0f172a",
+                fontSize: 17,
+                fontWeight: 900,
+              }}
+            >
+              هل تريد حذف هذه المحطة؟
+            </h3>
+            <p
+              style={{
+                margin: "0 0 18px",
+                color: "#64748b",
+                fontSize: 13,
+              }}
+            >
+              {route[deleteConfirmIndex]?.name
+                ? `سيتم حذف "${route[deleteConfirmIndex].name}" من مسار الخطاب.`
+                : "سيتم حذف المحطة من مسار الخطاب."}
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={confirmDeleteStation}
+                style={{
+                  border: 0,
+                  borderRadius: 11,
+                  padding: "10px 22px",
+                  background: "#dc2626",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                حذف
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmIndex(null)}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 11,
+                  padding: "10px 22px",
+                  background: "#fff",
+                  color: "#475569",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showNewSender && (
         <div
