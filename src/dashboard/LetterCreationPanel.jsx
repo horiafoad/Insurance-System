@@ -367,7 +367,7 @@ supabase
           )
         : items;
 
-      if (matched.length > 0) {
+      if (!term || matched.length > 0) {
         grouped.push({
           type: "sector",
           id: sector.id,
@@ -1428,42 +1428,64 @@ supabase
                               : "0 8px",
                           }}
                         >
-                            {group.type === "sector" && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleAddSectorDepartments(
-                                    group.id
-                                  )
-                                }
-                                title="أضف كل إدارات هذا القطاع دفعة واحدة"
+                            {group.items.length === 0 ? (
+                              <div
                                 style={{
                                   width: "100%",
                                   boxSizing: "border-box",
-                                  textAlign: "right",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent:
-                                    "space-between",
-                                  gap: 8,
                                   marginTop: 4,
                                   padding: "9px 12px",
                                   borderRadius: 10,
-                                  border:
-                                    "1px dashed #c7d2fe",
-                                  background: "#eef2ff",
-                                  color: "#4338ca",
+                                  border: "1px dashed #cbd5e1",
+                                  background: "#f8fafc",
+                                  color: "#94a3b8",
                                   fontSize: 12,
-                                  fontWeight: 800,
-                                  cursor: "pointer",
+                                  fontWeight: 700,
+                                  textAlign: "center",
                                 }}
                               >
-                                <span>🏛️ إضافة كل إدارات القطاع</span>
-                                <span>({group.items.length})</span>
-                              </button>
-                            )}
+                                {routeSearch.trim()
+                                  ? "لا توجد إدارات مطابقة للبحث"
+                                  : "لا توجد إدارات في هذا القطاع بعد — أضفها من صفحة «الهيكل التنظيمي»"}
+                              </div>
+                            ) : (
+                              <>
+                                {group.type === "sector" && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleAddSectorDepartments(
+                                        group.id
+                                      )
+                                    }
+                                    title="أضف كل إدارات هذا القطاع دفعة واحدة"
+                                    style={{
+                                      width: "100%",
+                                      boxSizing: "border-box",
+                                      textAlign: "right",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent:
+                                        "space-between",
+                                      gap: 8,
+                                      marginTop: 4,
+                                      padding: "9px 12px",
+                                      borderRadius: 10,
+                                      border:
+                                        "1px dashed #c7d2fe",
+                                      background: "#eef2ff",
+                                      color: "#4338ca",
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <span>🏛️ إضافة كل إدارات القطاع</span>
+                                    <span>({group.items.length})</span>
+                                  </button>
+                                )}
 
-                            {group.items.map(
+                                {group.items.map(
                               (department) => {
                                 const added =
                                   isRouteStationAdded(
@@ -1533,6 +1555,8 @@ supabase
                                   </button>
                                 );
                               }
+                            )}
+                              </>
                             )}
                           </div>
                       </div>
