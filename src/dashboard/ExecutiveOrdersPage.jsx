@@ -248,6 +248,16 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
+  /* ---- مسحوحات السكانر الواردة (scanner-inbox) ---- */
+  const [inboxRows, setInboxRows] = useState([]);
+  const [inboxModal, setInboxModal] = useState(null);
+  const [inboxNameQuery, setInboxNameQuery] = useState("");
+  const [inboxPerson, setInboxPerson] = useState(null);
+  const [inboxNewMode, setInboxNewMode] = useState(false);
+  const [inboxNewName, setInboxNewName] = useState("");
+  const [inboxNote, setInboxNote] = useState("");
+  const [inboxSaving, setInboxSaving] = useState(false);
+
   /* ---- أرشيف ---- */
   const [archiveQuery, setArchiveQuery] = useState("");
   const [archiveSearchFocus, setArchiveSearchFocus] = useState(false);
@@ -300,9 +310,39 @@ useEffect(() => {
     loadPersons();
   }, []);
 
+  const refreshInbox = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("scanner_inbox")
+        .select(
+          "id, file_path, file_url, file_name, file_mime, file_size, status, scanned_at"
+        )
+        .eq("status", "pending")
+        .order("scanned_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setInboxRows(data || []);
+    } catch (err) {
+      console.error("refreshInbox:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (view !== "add") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshInbox();
+    const t = setInterval(refreshInbox, 4000);
+    return () => clearInterval(t);
+  }, [view]);
+
   const searchResults = useMemo(
     () => (searchQuery.trim() ? searchPersons(persons, searchQuery) : []),
     [persons, searchQuery]
+  );
+
+  const inboxSearchResults = useMemo(
+    () => (inboxNameQuery.trim() ? searchPersons(persons, inboxNameQuery) : []),
+    [persons, inboxNameQuery]
   );
 
   const archiveResults = useMemo(
@@ -489,6 +529,58 @@ useEffect(() => {
   const handleConfirmAdd = () => {
     if (!selectedPerson || !asset) return;
     setConfirmOpen(true);
+  };
+
+  /* ---------------- استقبال مسحوبة السكانر وربطها بأمر تنفيذي ---------------- */
+
+  const attachInboxScan = async (row, person, note) => {
+    setInboxSaving(true);
+    setError("");
+    try {
+      const { data: blob, error: dlErr } = await supabase.storage
+        .from("scanner-inbox")
+        .download(row.file_path);
+      if (dlErr || !blob) throw dlErr || new Error("تعذر تحميل المسحوبة من التخزين.");
+
+      const isPdf =
+        /\.pdf$/i.test(row.file_name || "") ||
+        String(row.file_mime || "").toLowerCase() === "application/pdf";
+      const mime = isPdf ? "application/pdf" : row.file_mime || "image/jpeg";
+      const file = new File([blob], row.file_name || "scan.pdf", { type: mime });
+      const asset = { file, preview: "", isPdf, name: row.file_name || "scan.pdf" };
+
+      let target = person;
+      if (!target || target.__new) {
+        const rawName = (target && target.name) || (note && note.trim()) || "بلا اسم";
+        target = await createPerson(rawName);
+        setPersons((prev) => [...prev, target]);
+      }
+
+      await saveOrder(target, asset, note || "");
+
+      const { error: upErr } = await supabase
+        .from("scanner_inbox")
+        .update({
+          status: "done",
+          processed_at: new Date().toISOString(),
+          processed_by: createdBy,
+        })
+        .eq("id", row.id);
+      if (upErr) throw upErr;
+
+      setInboxModal(null);
+      setInboxNameQuery("");
+      setInboxPerson(null);
+      setInboxNewMode(false);
+      setInboxNewName("");
+      setInboxNote("");
+      await refreshInbox();
+    } catch (err) {
+      console.error("attachInboxScan:", err);
+      setError(migrationHint(err));
+    } finally {
+      setInboxSaving(false);
+    }
   };
 
   /* ---------------- استيراد الأرشيف القديم (PDFs) ---------------- */
@@ -1354,6 +1446,110 @@ useEffect(() => {
 
       {view === "add" && (
         <>
+          {/* ---------- 0) مسحوحات السكانر الواردة ---------- */}
+          <div style={styles.card}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 10,
+                marginBottom: 6,
+              }}
+            >
+              <h2 style={{ ...styles.cardTitle, margin: 0 }}>📠 مسحوحات السكانر الواردة</h2>
+              {inboxRows.length > 0 && (
+                <span
+                  style={{
+                    background: "#EFF6FF",
+                    color: "#1D4ED8",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    padding: "4px 12px",
+                    borderRadius: 999,
+                  }}
+                >
+                  {inboxRows.length} مسحوبة بانتظار الاستقبال
+                </span>
+              )}
+            </div>
+            <p style={styles.cardSub}>
+              الورق اللي يتسكان على السكانر (HP) بيوصل هنا تلقائيًا. اضغطي «استقبال»،
+              اكتبي اسم صاحب الأمر، ولو موجود يضاف لملفه — ولو مش موجود يتعمل له ملف جديد.
+            </p>
+
+            {inboxRows.length === 0 ? (
+              <div style={styles.empty}>
+                لا توجد مسحوحات جديدة حاليًا — ضعي الورقة في السكانر وانتظري وصولها.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {inboxRows.map((r) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      background: "#F8FAFC",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: 10,
+                      padding: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 10,
+                        background: "#EFF6FF",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 22,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {/\.pdf$/i.test(r.file_name || "") ? "📄" : "🖼️"}
+                    </div>
+                    <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                      <b
+                        style={{
+                          fontSize: 13.5,
+                          display: "block",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {r.file_name || "مسحوبة"}
+                      </b>
+                      <small style={{ color: "#64748B" }}>
+                        {r.scanned_at ? formatDate(r.scanned_at) : ""}
+                        {r.file_size ? ` • ${Math.round(r.file_size / 1024)} KB` : ""}
+                      </small>
+                    </div>
+                    <button
+                      style={styles.primaryButton}
+                      onClick={() => {
+                        setInboxModal(r);
+                        setInboxNameQuery("");
+                        setInboxPerson(null);
+                        setInboxNewMode(false);
+                        setInboxNewName("");
+                        setInboxNote("");
+                      }}
+                    >
+                      📥 استقبال
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* ---------- 1) تصوير / رفع ---------- */}
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>📷 تصوير أو رفع الأمر التنفيذي</h2>
@@ -1628,6 +1824,173 @@ useEffect(() => {
                     إلغاء
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ---------- مودال استقبال مسحوبة السكانر ---------- */}
+          {inboxModal && (
+            <div style={styles.overlay}>
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: 15,
+                  width: "min(560px, 100%)",
+                  padding: 22,
+                  boxSizing: "border-box",
+                }}
+              >
+                <div style={styles.modalHeader}>
+                  <h2 style={styles.modalTitle}>📥 استقبال مسحوبة السكانر</h2>
+                  <button
+                    style={styles.closeButton}
+                    disabled={inboxSaving}
+                    onClick={() => setInboxModal(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div style={styles.infoBox}>
+                  الملف الوارد: <b>{inboxModal.file_name || "مسحوبة"}</b>
+                  {" — "}اكتبي اسم صاحب الأمر من الورقة للبحث في الأرشيف.
+                </div>
+
+                {!inboxPerson && (
+                  <>
+                    <input
+                      style={{ ...styles.searchInput, margin: "12px 0 0" }}
+                      placeholder="🔎 اسم صاحب الأمر (يكفي جزء — مثال: شهاب)"
+                      value={inboxNameQuery}
+                      onChange={(e) => setInboxNameQuery(e.target.value)}
+                      autoFocus
+                    />
+                    {inboxNameQuery.trim() &&
+                      (inboxSearchResults.length > 0 ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 8,
+                            marginTop: 10,
+                          }}
+                        >
+                          {inboxSearchResults.map((p) => (
+                            <button
+                              key={p.id}
+                              onClick={() => {
+                                setInboxPerson(p);
+                                setInboxNameQuery("");
+                              }}
+                              style={{
+                                width: "100%",
+                                border: "1px solid #E2E8F0",
+                                background: "#fff",
+                                borderRadius: 10,
+                                padding: "12px 14px",
+                                cursor: "pointer",
+                                textAlign: "right",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 12,
+                                fontSize: 14,
+                              }}
+                            >
+                              <span style={styles.workIcon}>👤</span>
+                              <span style={styles.workInfo}>
+                                <b>{p.full_name}</b>
+                                <small style={{ color: "#64748B" }}>
+                                  عدد الأوامر: {p.order_count || 0} • عدد الصفحات:{" "}
+                                  {p.page_count || 0}
+                                </small>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : inboxNewMode ? (
+                        <div style={{ marginTop: 12 }}>
+                          <input
+                            style={styles.input}
+                            placeholder="الاسم كاملًا"
+                            value={inboxNewName}
+                            onChange={(e) => setInboxNewName(e.target.value)}
+                          />
+                          <div style={{ marginTop: 10 }}>
+                            <button
+                              style={styles.manualClaimButtonLarge}
+                              onClick={() => {
+                                const n = inboxNewName.trim();
+                                if (!n) {
+                                  alert("اكتبي الاسم أولًا.");
+                                  return;
+                                }
+                                setInboxPerson({ __new: true, name: n });
+                              }}
+                            >
+                              💾 إضافة وإنشاء ملف جديد
+                            </button>
+                            <button
+                              style={styles.secondaryButton}
+                              onClick={() => setInboxNewMode(false)}
+                            >
+                              رجوع للبحث
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={styles.errorBox}>
+                            لم يتم العثور على هذا الشخص في الأرشيف
+                          </div>
+                          <button
+                            style={styles.manualClaimButton}
+                            onClick={() => setInboxNewMode(true)}
+                          >
+                            🆕 إنشاء ملف جديد
+                          </button>
+                        </div>
+                      ))}
+                  </>
+                )}
+
+                {inboxPerson && (
+                  <>
+                    <div style={styles.infoBox}>
+                      {inboxPerson.__new
+                        ? `سيُضاف الأمر التنفيذي إلى ملف جديد باسم: ${inboxPerson.name}`
+                        : `سيُضاف الأمر التنفيذي إلى ملف: ${inboxPerson.full_name}`}
+                    </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.formLabel}>وصف الأمر (اختياري)</label>
+                      <input
+                        style={styles.input}
+                        placeholder="مثال: قرار وقف/إعادة عمل، إعارة..."
+                        value={inboxNote}
+                        onChange={(e) => setInboxNote(e.target.value)}
+                      />
+                    </div>
+                    <div style={styles.modalActions}>
+                      <button
+                        style={styles.primaryButton}
+                        disabled={inboxSaving}
+                        onClick={() =>
+                          attachInboxScan(inboxModal, inboxPerson, inboxNote)
+                        }
+                      >
+                        {inboxSaving
+                          ? "⏳ جاري الدمج والحفظ..."
+                          : "🖇️ إضافة إلى الملف"}
+                      </button>
+                      <button
+                        style={styles.secondaryButton}
+                        disabled={inboxSaving}
+                        onClick={() => setInboxPerson(null)}
+                      >
+                        تغيير الشخص
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

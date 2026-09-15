@@ -10,7 +10,8 @@
     "electron": "electron .",
     "dist": "electron-builder",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "scan:watch": "node scanner-bridge/bridge.cjs"
   },
   "build": {
     "appId": "com.insurance.system",
