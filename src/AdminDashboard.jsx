@@ -47,8 +47,25 @@ import {
 
 export default function AdminDashboard({ currentUser }) {
   const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
+
+  // الحسابات القديمة (permissions = null) بوصول كامل ترى لوحة التحكم.
+  // المستخدم المقيّد (مثل: خطابات فقط) يُفتح مباشرة على صفحة الخطابات
+  // ولا يرى لوحة التحكم الرئيسية (بيانات النظام كاملة).
+  const hasDashboardAccess =
+    currentUser?.permissions == null ||
+    (Array.isArray(currentUser.permissions) &&
+      (currentUser.permissions.includes("entitlements") ||
+        currentUser.permissions.includes("reports") ||
+        currentUser.permissions.includes("requests") ||
+        currentUser.permissions.includes("user_management") ||
+        currentUser.permissions.includes("org_structure")));
+
   const [activeMenu, setActiveMenu] = useState(
-    qrCodeFromUrl ? "letters_tracking" : "home"
+    qrCodeFromUrl
+      ? "letters_tracking"
+      : hasDashboardAccess
+        ? "home"
+        : "letters_tracking"
   );
 
   useEffect(() => {
@@ -1182,7 +1199,6 @@ export default function AdminDashboard({ currentUser }) {
 
         {activeMenu === "home" && (
           hasAnyPermission(currentUser, [
-            "letters",
             "entitlements",
             "requests",
             "reports",

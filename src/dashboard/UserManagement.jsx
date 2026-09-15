@@ -673,6 +673,83 @@ export default function UserManagement({ currentUser }) {
 
                 <div
                   style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                    marginTop: "6px",
+                    marginBottom: "10px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        permissions:
+                          PERMISSIONS.map((p) => p.id),
+                      }))
+                    }
+                    style={{
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 999,
+                      padding: "6px 14px",
+                      background: "#f8fafc",
+                      color: "#334155",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    🔓 كل الصلاحيات
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        permissions: ["letters"],
+                      }))
+                    }
+                    style={{
+                      border: "1px solid #bfdbfe",
+                      borderRadius: 999,
+                      padding: "6px 14px",
+                      background: "#eff6ff",
+                      color: "#1d4ed8",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    📨 خطابات فقط
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        permissions: [],
+                      }))
+                    }
+                    style={{
+                      border: "1px solid #fecaca",
+                      borderRadius: 999,
+                      padding: "6px 14px",
+                      background: "#fef2f2",
+                      color: "#b91c1c",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    🧹 بدون صلاحيات
+                  </button>
+                </div>
+
+                <div
+                  style={{
                     display: "grid",
                     gridTemplateColumns:
                       "repeat(auto-fit, minmax(180px, 1fr))",

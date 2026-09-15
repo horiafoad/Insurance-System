@@ -3031,14 +3031,19 @@ const startQrScanner = async () => {
 
       await Promise.all([loadLetters(), loadQRCodes()]);
 
+      const receivedFrom =
+        activeMovement.department?.name || "المحطة الحالية";
+
       if (nextMovement) {
         alert(
-          `تم الاستلام والتحويل تلقائيًا.\n\nالمحطة التالية:\n${
+          `تم استلام الخطاب من إدارة: ${receivedFrom}\nوالتحويل تلقائيًا.\n\nالمحطة التالية:\n${
             nextMovement.department?.name || "المحطة التالية"
           }`
         );
       } else {
-        alert("تم استلام الخطاب وإغلاق حركته بالكامل بنجاح.");
+        alert(
+          `تم استلام الخطاب من إدارة: ${receivedFrom}\nوإغلاق حركته بالكامل بنجاح.`
+        );
       }
     } catch (error) {
       console.error("Error receiving letter:", error);
