@@ -335,7 +335,7 @@ supabase
 
   function sectorIconFor(name = "") {
     const n = name.trim();
-    if (n.includes("عميد")) return "👨‍💼";
+    if (n.includes("عميد")) return "🏛️";
     if (n.includes("أمين")) return "🏢";
     if (n.includes("خدمة المجتمع")) return "🌱";
     if (n.includes("التعليم")) return "🎓";
@@ -1491,18 +1491,18 @@ supabase
                               e.currentTarget.style.borderColor = "#e2e8f0";
                             }}
                           >
-                            <span style={{
-                              width: "32px",
-                              height: "32px",
-                              borderRadius: 8,
-                              background: "#f1f5f9",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: "16px",
-                            }}>
-                              📁
-                            </span>
+<span style={{
+                                  width: "32px",
+                                  height: "32px",
+                                  borderRadius: 8,
+                                  background: "#f1f5f9",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "16px",
+                                }}>
+                                  {sectorIconFor(getDepartmentSector(department)?.name || "")}
+                                </span>
                             <span
                               style={{
                                 flex: 1,
@@ -1608,18 +1608,18 @@ supabase
                           e.currentTarget.style.borderColor = "#e2e8f0";
                         }}
                       >
-                        <span style={{
-                          width: "32px",
-                          height: "32px",
-                          borderRadius: 8,
-                          background: "#f1f5f9",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "16px",
-                        }}>
-                          📁
-                        </span>
+<span style={{
+                            width: "32px",
+                            height: "32px",
+                            borderRadius: 8,
+                            background: "#f1f5f9",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "16px",
+                          }}>
+                            {item.sectorIcon}
+                          </span>
                         <div style={{ flex: 1 }}>
                           <div
                             style={{
@@ -1819,7 +1819,7 @@ supabase
                           wordBreak: "break-word",
                         }}
                       >
-                        📁 {department.name}
+                        {sectorIconFor(getDepartmentSectorById(department.id)?.name || "")} {department.name}
                       </span>
 
                       {(() => {

@@ -3752,18 +3752,9 @@ const startQrScanner = async () => {
             Hero Header مع صورة المستندات
            ========================= */}
         <div
+          className="ltt-hero"
           style={{
-            position: "relative",
-            overflow: "hidden",
-            borderRadius: "clamp(24px, 2.5vw, 32px)",
-            height: "clamp(300px, 45vw, 380px)",
-            minHeight: "300px",
-            backgroundImage: `linear-gradient(135deg, rgba(7,27,58,0.88), rgba(11,42,91,0.72), rgba(29,95,209,0.55)), url(${lettersHeaderImage})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            marginBottom: "24px",
-            boxShadow: "0 20px 40px rgba(15,23,42,0.18)",
-            color: "#fff",
+            backgroundImage: `linear-gradient(135deg, rgba(7,27,58,0.90), rgba(11,42,91,0.78), rgba(29,95,209,0.55)), url(${lettersHeaderImage})`,
           }}
         >
           <div
@@ -3792,128 +3783,84 @@ const startQrScanner = async () => {
             }}
           />
 
-          <div
-            style={{
-              position: "relative",
-              height: "100%",
-              boxSizing: "border-box",
-              padding: "clamp(20px, 3vw, 32px)",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              gap: "16px",
-            }}
-          >
-            <div style={{ maxWidth: "620px" }}>
-              <div
-                style={{
-                  fontSize: "clamp(14px, 1.6vw, 17px)",
-                  fontWeight: 500,
-                  color: "rgba(255,255,255,0.92)",
-                  marginBottom: "10px",
-                  textShadow: "0 1px 4px rgba(0,0,0,0.25)",
-                }}
-              >
-                قسم الاستحقاقات / متابعة الخطابات
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "28px",
-                    lineHeight: 1,
-                    filter:
-                      "drop-shadow(0 2px 4px rgba(0,0,0,0.25))",
-                  }}
+          <div className="ltt-hero-inner">
+            <div className="ltt-hero-head">
+              <div className="ltt-hero-title-row">
+                <svg
+                  className="ltt-hero-icon"
+                  viewBox="0 0 64 64"
+                  fill="none"
+                  aria-hidden="true"
                 >
-                  ✉️
-                </span>
-                <h1
-                  style={{
-                    margin: 0,
-                    fontSize: "clamp(30px, 3.2vw, 38px)",
-                    fontWeight: 800,
-                    color: "#FFFFFF",
-                    lineHeight: 1.2,
-                    textShadow: "0 2px 8px rgba(0,0,0,0.25)",
-                  }}
-                >
-                  متابعة الخطابات
+                  <rect
+                    x="13"
+                    y="10"
+                    width="30"
+                    height="40"
+                    rx="4"
+                    fill="rgba(96,165,250,0.16)"
+                    stroke="#60A5FA"
+                    strokeWidth="3"
+                  />
+                  <path
+                    d="M19 20h16M19 27h13M19 34h9"
+                    stroke="#60A5FA"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="45" cy="45" r="8" fill="#93C5FD" />
+                  <circle
+                    cx="45"
+                    cy="45"
+                    r="13"
+                    fill="none"
+                    stroke="#93C5FD"
+                    strokeWidth="5"
+                    strokeDasharray="5 4"
+                  />
+                  <circle cx="45" cy="45" r="3.5" fill="#0B2A5B" />
+                </svg>
+                <h1 className="ltt-hero-title">
+                  النظام الإلكتروني للمعاملات الإدارية
                 </h1>
               </div>
 
-              <p
-                style={{
-                  margin: "10px 0 0",
-                  fontSize: "clamp(15px, 1.7vw, 19px)",
-                  fontWeight: 400,
-                  color: "#FFFFFF",
-                  lineHeight: 1.6,
-                  textShadow: "0 1px 4px rgba(0,0,0,0.25)",
-                }}
-              >
-                متابعة حركة الخطابات والأعمال بصورة
-                يومية وأسبوعية وشهرية
+              <p className="ltt-hero-college">
+                كلية الهندسة – جامعة عين شمس
               </p>
+
+              <div className="ltt-hero-divider">
+                <span className="ltt-hero-line" />
+                <span className="ltt-hero-diamond" />
+                <span className="ltt-hero-line" />
+              </div>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: "16px",
-                flexWrap: "wrap",
-                alignItems: "center",
-                justifyContent: "flex-start",
-              }}
-            >
-              <button
-                type="button"
-                onClick={startQrScanner}
-                disabled={scannerOpen}
-                title="مسح QR للخطاب"
-                style={{
-                  ...headerButtonStyle(
-                    scannerOpen ? "#64748B" : "#10B981"
-                  ),
-                  width: "230px",
-                  maxWidth: "100%",
-                  height: "58px",
-                  fontSize: "17px",
-                  fontWeight: 700,
-                  borderRadius: "16px",
-                  border: scannerOpen
-                    ? "1px solid rgba(255,255,255,0.25)"
-                    : "1px solid rgba(16,185,129,0.4)",
-                }}
-              >
-                مسح QR للخطاب
-              </button>
+            <div className="ltt-hero-actions">
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="ltt-hero-btn ltt-btn-admin"
+                  onClick={() => setQrPanelOpen(true)}
+                  title="إدارة الخطابات"
+                  style={{
+                    background: "#0B2A5B",
+                  }}
+                >
+                  ⚙️ إدارة الخطابات
+                </button>
+              )}
 
               <button
                 type="button"
+                className="ltt-hero-btn ltt-btn-refresh"
                 onClick={refreshLetters}
                 disabled={refreshingLetters}
                 title="تحديث"
                 style={{
-                  ...headerButtonStyle(
-                    refreshingLetters
-                      ? "#64748B"
-                      : "rgba(255,255,255,0.14)"
-                  ),
-                  width: "140px",
-                  maxWidth: "100%",
-                  height: "58px",
-                  fontSize: "17px",
-                  fontWeight: 600,
-                  borderRadius: "16px",
-                  border: "1px solid rgba(255,255,255,0.45)",
+                  background: refreshingLetters
+                    ? "#64748B"
+                    : "rgba(255,255,255,0.18)",
                 }}
               >
                 {refreshingLetters
@@ -3921,25 +3868,21 @@ const startQrScanner = async () => {
                   : "🔄 تحديث"}
               </button>
 
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setQrPanelOpen(true)}
-                  title="إدارة الخطابات"
-                  style={{
-                    ...headerButtonStyle("#0B2A5B"),
-                    width: "190px",
-                    maxWidth: "100%",
-                    height: "56px",
-                    fontSize: "17px",
-                    fontWeight: 700,
-                    borderRadius: "16px",
-                    border: "1px solid rgba(255,255,255,0.18)",
-                  }}
-                >
-                  ⚙️ إدارة الخطابات
-                </button>
-              )}
+              <button
+                type="button"
+                className="ltt-hero-btn ltt-btn-qr"
+                onClick={startQrScanner}
+                disabled={scannerOpen}
+                title="مسح QR للخطاب"
+                style={{
+                  background: scannerOpen ? "#64748B" : "#10B981",
+                  border: scannerOpen
+                    ? "1px solid rgba(255,255,255,0.25)"
+                    : "1px solid rgba(16,185,129,0.4)",
+                }}
+              >
+                📷 مسح QR للخطاب
+              </button>
             </div>
           </div>
         </div>
@@ -5846,6 +5789,165 @@ fontSize: "20px",
 
       <style>
         {`
+          .ltt-hero {
+            position: relative;
+            overflow: hidden;
+            border-radius: 0 0 24px 24px;
+            background-size: cover;
+            background-position: center;
+            margin-bottom: 24px;
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+            color: #fff;
+            height: 320px;
+          }
+          .ltt-hero-inner {
+            position: relative;
+            height: 100%;
+            box-sizing: border-box;
+            padding: clamp(20px, 3vw, 32px);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+          }
+          .ltt-hero-head {
+            text-align: center;
+            width: 100%;
+            max-width: 900px;
+            margin: clamp(40px, 5vw, 55px) auto 0;
+          }
+          .ltt-hero-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+          }
+          .ltt-hero-icon {
+            width: 58px;
+            height: 58px;
+            flex: 0 0 auto;
+            filter: drop-shadow(0 0 12px rgba(147, 197, 253, 0.55));
+          }
+          .ltt-hero-title {
+            margin: 0;
+            font-size: 46px;
+            font-weight: 800;
+            line-height: 1.35;
+            color: #fff;
+            text-align: center;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+          }
+          .ltt-hero-college {
+            margin: 18px 0 0;
+            font-size: 22px;
+            font-weight: 600;
+            line-height: 1.5;
+            color: #fff;
+            text-align: center;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+          }
+          .ltt-hero-divider {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 55%;
+            max-width: 700px;
+            margin: 24px auto 0;
+          }
+          .ltt-hero-divider .ltt-hero-line {
+            flex: 1;
+            height: 2px;
+            background: #60a5fa;
+            border-radius: 2px;
+            opacity: 0.8;
+          }
+          .ltt-hero-divider .ltt-hero-diamond {
+            width: 10px;
+            height: 10px;
+            background: #60a5fa;
+            border-radius: 2px;
+            transform: rotate(45deg);
+            opacity: 0.95;
+          }
+          .ltt-hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 24px;
+          }
+          .ltt-hero-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: 0;
+            cursor: pointer;
+            color: #fff;
+            border-radius: 18px;
+            font-size: 18px;
+            font-weight: 700;
+            transition: all 0.2s ease;
+          }
+          .ltt-hero-btn:disabled {
+            opacity: 0.85;
+            cursor: not-allowed;
+          }
+          .ltt-btn-qr {
+            width: 310px;
+            height: 58px;
+          }
+          .ltt-btn-refresh {
+            width: 210px;
+            height: 58px;
+            border: 1px solid rgba(255, 255, 255, 0.55) !important;
+          }
+          .ltt-btn-admin {
+            width: 285px;
+            height: 58px;
+            border: 1px solid rgba(255, 255, 255, 0.18) !important;
+          }
+          @media (max-width: 1024px) {
+            .ltt-hero {
+              height: 300px;
+            }
+            .ltt-hero-title {
+              font-size: 38px;
+            }
+          }
+          @media (max-width: 640px) {
+            .ltt-hero {
+              height: 420px;
+              min-height: 420px;
+            }
+            .ltt-hero-title {
+              font-size: 28px;
+              line-height: 1.5;
+            }
+            .ltt-hero-icon {
+              width: 42px;
+              height: 42px;
+            }
+            .ltt-hero-college {
+              font-size: 16px;
+            }
+            .ltt-hero-head {
+              margin-top: 34px;
+            }
+            .ltt-hero-actions {
+              flex-direction: column;
+              gap: 12px;
+            }
+            .ltt-hero-btn {
+              width: 100%;
+              max-width: 330px;
+              height: 54px;
+              font-size: 16px;
+            }
+          }
+
           .qr-print-area {
             display: none;
           }
