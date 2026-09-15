@@ -3749,50 +3749,6 @@ const startQrScanner = async () => {
         }}
       >
         {/* =========================
-            عنوان الصفحة الرئيسي (خارج الصورة)
-           ========================= */}
-        <div
-          style={{
-            marginBottom: "32px",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "clamp(13px, 1.5vw, 16px)",
-              fontWeight: 400,
-              color: "#64748B",
-              marginBottom: "6px",
-            }}
-          >
-            قسم الاستحقاقات / متابعة الخطابات
-          </div>
-
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "clamp(28px, 3vw, 36px)",
-              fontWeight: 700,
-              color: "#071B3A",
-              lineHeight: 1.2,
-            }}
-          >
-            متابعة الخطابات
-          </h2>
-
-          <p
-            style={{
-              margin: "10px 0 0",
-              fontSize: "clamp(15px, 1.8vw, 18px)",
-              fontWeight: 400,
-              color: "#64748B",
-            }}
-          >
-            متابعة حركة الخطابات والأعمال بصورة
-            يومية وأسبوعية وشهرية
-          </p>
-        </div>
-
-        {/* =========================
             Hero Header مع صورة المستندات
            ========================= */}
         <div
