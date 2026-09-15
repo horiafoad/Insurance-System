@@ -24,6 +24,17 @@ export default function UserManagement({ currentUser }) {
   const isSelf = (user) =>
     currentUser?.id === user.id || currentUser?.username === user.username;
 
+  const [permissionsEnabled, setPermissionsEnabled] = useState(false);
+
+  const checkPermissionsColumn = async () => {
+    const { error } = await supabase
+      .from("users")
+      .select("permissions")
+      .limit(1);
+
+    setPermissionsEnabled(!error);
+  };
+
   const loadOrgData = async () => {
     const sectorsRes = await supabase
       .from("letter_sectors")
@@ -74,6 +85,7 @@ export default function UserManagement({ currentUser }) {
   useEffect(() => {
     loadUsers();
     loadOrgData();
+    checkPermissionsColumn();
   }, []);
 
   const handleOpenCreate = () => {
@@ -142,7 +154,9 @@ export default function UserManagement({ currentUser }) {
           department_id: formData.departmentId
             ? Number(formData.departmentId)
             : null,
-          permissions: formData.permissions,
+          ...(permissionsEnabled
+            ? { permissions: formData.permissions }
+            : {}),
         };
         if (formData.password) {
           updatePayload.password = formData.password;
@@ -180,7 +194,9 @@ export default function UserManagement({ currentUser }) {
             department_id: formData.departmentId
               ? Number(formData.departmentId)
               : null,
-            permissions: formData.permissions,
+            ...(permissionsEnabled
+              ? { permissions: formData.permissions }
+              : {}),
           })
           .select()
           .single();
