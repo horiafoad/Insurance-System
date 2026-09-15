@@ -106,7 +106,14 @@ export default function LetterCreationPanel() {
   const [variableValues, setVariableValues] = useState({});
 
   const [route, setRoute] = useState([]);
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
+
+  const [routePickerOpen, setRoutePickerOpen] = useState(false);
+  const [routeSearch, setRouteSearch] = useState("");
+  const [expandedSectorIds, setExpandedSectorIds] = useState([]);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const routePickerRef = useRef(null);
+  const dragIndexRef = useRef(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   const [showNewSender, setShowNewSender] = useState(false);
   const [newSenderName, setNewSenderName] = useState("");
@@ -135,15 +142,15 @@ export default function LetterCreationPanel() {
           .is("letter_id", null)
           .order("id"),
 
-        supabase
-          .from("letter_departments")
-          .select("id,name,is_active")
-          .eq("is_active", true)
-          .order("name"),
-
 supabase
           .from("letter_departments")
           .select("id,name,is_active,sector_id")
+          .eq("is_active", true)
+          .order("name"),
+
+        supabase
+          .from("letter_templates")
+          .select("id,name,title,letter_type,department_name,fixed_text,variable_fields,default_route")
           .eq("is_active", true)
           .order("name"),
 
@@ -210,6 +217,22 @@ supabase
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!routePickerOpen) return;
+    const onClickOutside = (e) => {
+      if (
+        routePickerRef.current !== null &&
+        !routePickerRef.current.contains(e.target)
+      ) {
+        setRoutePickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+    };
+  }, [routePickerOpen]);
 
   const filteredSenders = useMemo(() => {
     const term = senderSearch.trim().toLowerCase();
@@ -303,114 +326,189 @@ supabase
     }
   };
 
-  const availableDepartments = departments.filter(
-    (department) =>
-      !route.some(
-        (item) => String(item.id) === String(department.id)
-      )
-  );
+  // --- helpers for the new grouped route picker ---
 
-  // تجميع الإدارات تحت قطاعاتها لعرضها في القائمة، مع إدارة عامة لمن لا قطاع له
-  const departmentGroups = useMemo(() => {
+  function sectorIconFor(name = "") {
+    const n = name.trim();
+    if (n.includes("عميد")) return "👨‍💼";
+    if (n.includes("أمين")) return "🏢";
+    if (n.includes("خدمة المجتمع")) return "🌱";
+    if (n.includes("التعليم")) return "🎓";
+    if (n.includes("الدراسات")) return "📚";
+    return "🏛️";
+  }
+
+  const getDepartmentSector = (department) => {
+    if (!department.sector_id) return null;
+    return sectors.find((s) => String(s.id) === String(department.sector_id)) || null;
+  };
+
+  const getDepartmentSectorById = (departmentId) => {
+    const dep = departments.find((d) => String(d.id) === String(departmentId));
+    return dep ? getDepartmentSector(dep) : null;
+  };
+
+  const routePickerGroups = useMemo(() => {
+    const term = routeSearch.trim().toLowerCase();
     const grouped = [];
 
     sectors.forEach((sector) => {
-      const items = availableDepartments.filter(
+      const items = departments.filter(
         (department) =>
-          department.sector_id !== null &&
+          department.sector_id != null &&
           String(department.sector_id) === String(sector.id)
       );
 
-      if (items.length > 0) {
+      const matched = term
+        ? items.filter(
+            (d) =>
+              d.name.toLowerCase().includes(term) ||
+              sector.name.toLowerCase().includes(term)
+          )
+        : items;
+
+      if (matched.length > 0) {
         grouped.push({
           type: "sector",
           id: sector.id,
           name: sector.name,
-          items,
+          icon: sectorIconFor(sector.name),
+          items: matched,
         });
       }
     });
 
-    const general = availableDepartments.filter(
-      (department) =>
-        department.sector_id === null ||
-        department.sector_id === undefined
+    const general = departments.filter(
+      (d) => d.sector_id == null
     );
 
-    if (general.length > 0) {
+    const matchedGeneral = term
+      ? general.filter((d) => d.name.toLowerCase().includes(term))
+      : general;
+
+    if (matchedGeneral.length > 0) {
       grouped.push({
         type: "general",
-        id: 0,
+        id: "__general__",
         name: "إدارات عامة (بدون قطاع)",
-        items: general,
+        icon: "🏛️",
+        items: matchedGeneral,
       });
     }
 
     return grouped;
-  }, [availableDepartments, sectors]);
+  }, [departments, sectors, routeSearch]);
 
-  const addDepartmentToRoute = () => {
-    if (!selectedDepartmentId) return;
+  const isRouteStationAdded = (departmentId) =>
+    route.some((item) => String(item.id) === String(departmentId));
 
-    // اختيار قطاع كامل (كلية كاملة): إرسال الخطاب لكل إدارات القطاع دفعة واحدة
-    if (selectedDepartmentId.startsWith("sector:")) {
-      const sectorId = selectedDepartmentId.replace("sector:", "");
+  const handleToggleSector = (sectorId) => {
+    setExpandedSectorIds((prev) => {
+      const set = new Set(prev);
+      if (set.has(sectorId)) set.delete(sectorId);
+      else set.add(sectorId);
+      return Array.from(set);
+    });
+  };
 
-      const sectorDepartments = availableDepartments.filter(
-        (department) =>
-          String(department.sector_id) === String(sectorId)
-      );
-
-      if (sectorDepartments.length > 0) {
-        setRoute((prev) => [
-          ...prev,
-          ...sectorDepartments.map((department) => ({
-            id: department.id,
-            name: department.name,
-          })),
-        ]);
-      }
-
-      setSelectedDepartmentId("");
+  const handleAddDepartmentToRoute = (department) => {
+    if (editingIndex != null) {
+      setRoute((prev) => {
+        const next = [...prev];
+        next[editingIndex] = {
+          id: department.id,
+          name: department.name,
+        };
+        return next;
+      });
+      setEditingIndex(null);
+      setRoutePickerOpen(false);
+      setRouteSearch("");
       return;
     }
 
-    const department = departments.find(
-      (item) => String(item.id) === String(selectedDepartmentId)
-    );
-
-    if (!department) return;
-
     setRoute((prev) => [
       ...prev,
-      {
-        id: department.id,
-        name: department.name,
-      },
+      { id: department.id, name: department.name },
     ]);
-
-    setSelectedDepartmentId("");
+    setRouteSearch("");
   };
 
-  const removeDepartmentFromRoute = (index) => {
+  const handleAddSectorDepartments = (sectorId) => {
+    const sectorDepartments = departments.filter(
+      (d) =>
+        d.sector_id != null &&
+        String(d.sector_id) === String(sectorId)
+    );
+    if (sectorDepartments.length === 0) return;
+    setEditingIndex(null);
+    setRoute((prev) => [
+      ...prev,
+      ...sectorDepartments.map((d) => ({
+        id: d.id,
+        name: d.name,
+      })),
+    ]);
+    setRouteSearch("");
+  };
+
+  const handleRemoveStation = (index) => {
     setRoute((prev) => prev.filter((_, i) => i !== index));
+    if (editingIndex === index) setEditingIndex(null);
+    else if (editingIndex != null && index < editingIndex) {
+      setEditingIndex((prev) => prev - 1);
+    }
   };
 
-  const moveDepartment = (index, direction) => {
+  const handleMoveStation = (index, direction) => {
     setRoute((prev) => {
       const next = [...prev];
-      const targetIndex = index + direction;
-
-      if (targetIndex < 0 || targetIndex >= next.length) {
-        return prev;
-      }
-
-      const temp = next[index];
-      next[index] = next[targetIndex];
-      next[targetIndex] = temp;
-
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
       return next;
     });
+    if (editingIndex === index) setEditingIndex(index + direction);
+    else if (editingIndex === index + direction) setEditingIndex(index);
+  };
+
+  const handleDragStart = (index) => {
+    dragIndexRef.current = index;
+  };
+
+  const handleDragOver = (index, e) => {
+    e.preventDefault();
+    if (dragOverIndex !== index) setDragOverIndex(index);
+  };
+
+  const handleDrop = (targetIndex) => {
+    const sourceIndex = dragIndexRef.current;
+    dragIndexRef.current = null;
+    setDragOverIndex(null);
+    if (sourceIndex == null || sourceIndex === targetIndex) return;
+
+    setRoute((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+
+    if (editingIndex === sourceIndex) setEditingIndex(targetIndex);
+    else if (editingIndex != null) {
+      const minI = Math.min(sourceIndex, targetIndex);
+      const maxI = Math.max(sourceIndex, targetIndex);
+      if (editingIndex >= minI && editingIndex <= maxI) {
+        setEditingIndex((prev) =>
+          prev + (sourceIndex < targetIndex ? -1 : 1)
+        );
+      }
+    }
+  };
+
+  const handleEditStation = (index) => {
+    setEditingIndex(index);
+    setRoutePickerOpen(true);
   };
 
   const handleCreateSender = async () => {
@@ -667,7 +765,6 @@ supabase
     setNotes("");
     setQrCodeId("");
     setRoute([]);
-    setSelectedDepartmentId("");
     setTemplateId("");
     setVariableValues({});
 
@@ -1041,17 +1138,17 @@ supabase
                       >
                         {sender.name}
                       </button>
-                    ))}
+))}
                   </div>
                 )}
-            </div>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => setShowNewSender(true)}
-              style={creationPanelNewButtonStyle}
-              title="إنشاء جهة جديدة"
-            >
+              <button
+                type="button"
+                onClick={() => setShowNewSender(true)}
+                style={creationPanelNewButtonStyle}
+                title="إنشاء جهة جديدة"
+              >
               +
             </button>
           </div>
@@ -1154,81 +1251,297 @@ supabase
               color: "#1e40af",
               fontSize: 13,
               fontWeight: 800,
-            }}
-          >
-            {route.length} محطة
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "stretch",
-            marginBottom: 20,
-          }}
-        >
-          <select
-            value={selectedDepartmentId}
-            onChange={(e) => setSelectedDepartmentId(e.target.value)}
-            disabled={loading || availableDepartments.length === 0}
-            style={{
-              ...creationPanelInputStyle,
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            <option value="">
-              {availableDepartments.length === 0
-                ? "تمت إضافة كل الإدارات"
-                : "اختر الإدارة أو القطاع لإضافته إلى المسار..."}
-            </option>
-
-            {departmentGroups.map((group) => (
-              <optgroup
-                key={group.type + "-" + group.id}
-                label={group.name}
-              >
-                {group.type === "sector" && (
-                  <option value={"sector:" + group.id}>
-                    🏛️ إرسال لكل إدارات {group.name} (
-                    {group.items.length})
-                  </option>
-                )}
-
-                {group.items.map((department) => (
-                  <option
-                    key={department.id}
-                    value={department.id}
-                  >
-                    {department.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={addDepartmentToRoute}
-            disabled={!selectedDepartmentId}
-            style={{
-              border: 0,
-              borderRadius: 11,
-              padding: "0 20px",
-              background: selectedDepartmentId
-                ? "#2563eb"
-                : "#cbd5e1",
-              color: "#fff",
-              fontWeight: 800,
-              cursor: selectedDepartmentId
-                ? "pointer"
-                : "not-allowed",
               whiteSpace: "nowrap",
             }}
           >
-            + إضافة
+            🔢 {route.length}{" "}
+            {route.length === 1 ? "محطة" : "محطات"}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (editingIndex != null) setEditingIndex(null);
+              setRoutePickerOpen((prev) => !prev);
+            }}
+            disabled={departments.length === 0}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              padding: "12px 14px",
+              borderRadius: 12,
+              background: routePickerOpen ? "#eff6ff" : "#fff",
+              border: routePickerOpen
+                ? "1.5px solid #93c5fd"
+                : "1.5px dashed #cbd5e1",
+              color: departments.length === 0 ? "#94a3b8" : "#1e40af",
+              fontSize: 14,
+              fontWeight: 800,
+              cursor:
+                departments.length === 0
+                  ? "not-allowed"
+                  : "pointer",
+            }}
+          >
+            <span>
+              {editingIndex != null
+                ? "✏️ اختر إدارة بديلة للمحطة الحالية"
+                : "➕ اختيار محطة الخطاب"}
+            </span>
+            <span style={{ fontSize: 12, opacity: 0.85 }}>
+              {routePickerOpen ? "إغلاق ▲" : "اختيار ▼"}
+            </span>
           </button>
+
+          {routePickerOpen && (
+            <div
+              style={{
+                marginTop: 8,
+                borderRadius: 14,
+                border: "1px solid #e2e8f0",
+                background: "#fff",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding: 10,
+                  borderBottom: "1px solid #f1f5f9",
+                }}
+              >
+                <input
+                  type="text"
+                  value={routeSearch}
+                  onChange={(e) => setRouteSearch(e.target.value)}
+                  placeholder="🔎 ابحث عن إدارة في كل القطاعات..."
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: 10,
+                    padding: "9px 12px",
+                    fontSize: 13,
+                    outline: "none",
+                    background: "#f8fafc",
+                  }}
+                />
+              </div>
+
+              {routePickerGroups.length === 0 ? (
+                <div
+                  style={{
+                    padding: "22px 16px",
+                    textAlign: "center",
+                    color: "#64748b",
+                    fontSize: 13,
+                  }}
+                >
+                  {routeSearch.trim()
+                    ? "لا توجد نتائج مطابقة للبحث"
+                    : "لا توجد إدارات مفعّلة حاليًا. أضف الإدارات من صفحة الهيكل التنظيمي."}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    maxHeight: 320,
+                    overflowY: "auto",
+                  }}
+                >
+                  {routePickerGroups.map((group) => {
+                    const isExpanded =
+                      routeSearch.trim() ||
+                      expandedSectorIds.length === 0 ||
+                      expandedSectorIds.includes(group.id);
+
+                    return (
+                      <div
+                        key={
+                          group.type + "-" + group.id
+                        }
+                        style={{
+                          borderBottom:
+                            "1px solid #f1f5f9",
+                        }}
+                      >
+                        <div
+                          onClick={() => {
+                            if (!routeSearch.trim())
+                              handleToggleSector(group.id);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent:
+                              "space-between",
+                            gap: 8,
+                            padding: "11px 14px",
+                            background: "#f8fafc",
+                            cursor: routeSearch.trim()
+                              ? "default"
+                              : "pointer",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "#334155",
+                              fontSize: 13,
+                              fontWeight: 900,
+                            }}
+                          >
+                            {group.icon} {group.name}
+                            <span
+                              style={{
+                                color: "#94a3b8",
+                                fontWeight: 700,
+                                marginRight: 6,
+                              }}
+                            >
+                              ({group.items.length})
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              color: "#94a3b8",
+                              fontSize: 12,
+                            }}
+                          >
+                            {isExpanded ? "▲" : "▼"}
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            maxHeight: isExpanded
+                              ? "2000px"
+                              : "0",
+                            overflow: "hidden",
+                            transition:
+                              "max-height 0.35s ease-in-out",
+                            padding: isExpanded
+                              ? "4px 8px 8px"
+                              : "0 8px",
+                          }}
+                        >
+                            {group.type === "sector" && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleAddSectorDepartments(
+                                    group.id
+                                  )
+                                }
+                                title="أضف كل إدارات هذا القطاع دفعة واحدة"
+                                style={{
+                                  width: "100%",
+                                  boxSizing: "border-box",
+                                  textAlign: "right",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent:
+                                    "space-between",
+                                  gap: 8,
+                                  marginTop: 4,
+                                  padding: "9px 12px",
+                                  borderRadius: 10,
+                                  border:
+                                    "1px dashed #c7d2fe",
+                                  background: "#eef2ff",
+                                  color: "#4338ca",
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <span>🏛️ إضافة كل إدارات القطاع</span>
+                                <span>({group.items.length})</span>
+                              </button>
+                            )}
+
+                            {group.items.map(
+                              (department) => {
+                                const added =
+                                  isRouteStationAdded(
+                                    department.id
+                                  );
+
+                                return (
+                                  <button
+                                    key={department.id}
+                                    type="button"
+                                    onClick={() =>
+                                      handleAddDepartmentToRoute(
+                                        department
+                                      )
+                                    }
+                                    title={
+                                      added
+                                        ? "أضف مرة أخرى (يُسمح بتكرار الإدارة في المسار)"
+                                        : "أضف إلى المسار"
+                                    }
+                                    style={{
+                                      width: "100%",
+                                      textAlign: "right",
+                                      boxSizing:
+                                        "border-box",
+                                      display: "flex",
+                                      alignItems:
+                                        "center",
+                                      gap: 8,
+                                      padding:
+                                        "9px 12px",
+                                      marginTop: 4,
+                                      borderRadius: 10,
+                                      border: added
+                                        ? "1px solid #bbf7d0"
+                                        : "1px solid transparent",
+                                      background: added
+                                        ? "#f0fdf4"
+                                        : "#fff",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <span>📁</span>
+                                    <span
+                                      style={{
+                                        flex: 1,
+                                        color: "#0f172a",
+                                        fontSize: 13,
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      {department.name}
+                                    </span>
+                                    {added && (
+                                      <span
+                                        style={{
+                                          color: "#16a34a",
+                                          fontSize: 11,
+                                          fontWeight: 800,
+                                          whiteSpace:
+                                            "nowrap",
+                                        }}
+                                      >
+                                        ✓ في المسار
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              }
+                            )}
+                          </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {route.length === 0 ? (
@@ -1243,10 +1556,13 @@ supabase
               fontSize: 14,
             }}
           >
-            لم تتم إضافة أي إدارة بعد.
+            📭 لم يتم إضافة أي محطة بعد.
             <br />
-            اختر الإدارات من القائمة بالأعلى، أو اختر "إرسال لكل
-            إدارات القطاع" لإضافة كلية/قطاع كامل دفعة واحدة.
+            <br />
+            اختر الإدارات التي سيمر بها الخطاب بالترتيب.
+            <br />
+            يمكنك اختيار إدارات من قطاعات مختلفة تمامًا، وحتى تكرار
+            نفس الإدارة في أكثر من محطة.
           </div>
         ) : (
           <div
@@ -1265,10 +1581,27 @@ supabase
               return (
                 <div
                   key={`${department.id}-${index}`}
+                  draggable
+                  onDragStart={() => handleDragStart(index)}
+                  onDragOver={(e) => handleDragOver(index, e)}
+                  onDragLeave={() =>
+                    setDragOverIndex((prev) =>
+                      prev === index ? null : prev
+                    )
+                  }
+                  onDrop={() => handleDrop(index)}
+                  title="اسحب لإعادة الترتيب"
                   style={{
                     display: "flex",
                     alignItems: "stretch",
                     minHeight: 92,
+                    opacity: dragOverIndex === index ? 0.55 : 1,
+                    outline:
+                      dragOverIndex === index
+                        ? "2px dashed #2563eb"
+                        : "none",
+                    outlineOffset: 2,
+                    borderRadius: 8,
                   }}
                 >
                   <div
@@ -1319,8 +1652,14 @@ supabase
                       marginBottom:
                         index < route.length - 1 ? 10 : 0,
                       marginRight: 10,
-                      background: "#fff",
-                      border: `1px solid ${config.border}`,
+                      background:
+                        editingIndex === index
+                          ? "#eff6ff"
+                          : "#fff",
+                      border:
+                        editingIndex === index
+                          ? `1.5px solid #60a5fa`
+                          : `1px solid ${config.border}`,
                       borderRadius: 14,
                       padding: "12px 14px",
                       boxShadow: "0 4px 14px rgba(15,23,42,.05)",
@@ -1340,6 +1679,17 @@ supabase
                         }}
                       >
                         المحطة {index + 1}
+                        {editingIndex === index && (
+                          <span
+                            style={{
+                              color: "#2563eb",
+                              fontWeight: 900,
+                            }}
+                          >
+                            {" "}
+                            — جاري التعديل
+                          </span>
+                        )}
                       </div>
 
                       <div
@@ -1351,6 +1701,33 @@ supabase
                       >
                         {department.name}
                       </div>
+
+                      {(() => {
+                        const stationSector =
+                          getDepartmentSectorById(
+                            department.id
+                          );
+                        return stationSector ? (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              padding: "2px 8px",
+                              borderRadius: 999,
+                              background: "#f1f5f9",
+                              border: "1px solid #e2e8f0",
+                              color: "#475569",
+                              fontSize: 11,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {sectorIconFor(stationSector.name)}{" "}
+                            {stationSector.name}
+                          </div>
+                        ) : null;
+                      })()}
 
                       <div
                         style={{
@@ -1370,11 +1747,38 @@ supabase
                         gap: 5,
                         flexWrap: "wrap",
                         justifyContent: "flex-end",
+                        alignItems: "center",
                       }}
                     >
+                      <span
+                        style={{
+                          fontSize: 18,
+                          color: "#94a3b8",
+                          cursor: "grab",
+                          padding: "0 2px",
+                        }}
+                      >
+                        ⠿
+                      </span>
+
                       <button
                         type="button"
-                        onClick={() => moveDepartment(index, -1)}
+                        onClick={() => handleEditStation(index)}
+                        title="تعديل المحطة"
+                        style={{
+                          ...creationPanelRouteActionStyle(true),
+                          color: "#1d4ed8",
+                          borderColor: "#bfdbfe",
+                          background: "#eff6ff",
+                          fontSize: 13,
+                        }}
+                      >
+                        ✏️
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleMoveStation(index, -1)}
                         disabled={index === 0}
                         title="تحريك لأعلى"
                         style={creationPanelRouteActionStyle(index !== 0)}
@@ -1384,7 +1788,7 @@ supabase
 
                       <button
                         type="button"
-                        onClick={() => moveDepartment(index, 1)}
+                        onClick={() => handleMoveStation(index, 1)}
                         disabled={index === route.length - 1}
                         title="تحريك لأسفل"
                         style={creationPanelRouteActionStyle(
@@ -1396,7 +1800,7 @@ supabase
 
                       <button
                         type="button"
-                        onClick={() => removeDepartmentFromRoute(index)}
+                        onClick={() => handleRemoveStation(index)}
                         title="حذف من المسار"
                         style={{
                           ...creationPanelRouteActionStyle(true),
@@ -1433,6 +1837,7 @@ supabase
             <span style={{ color: "#16a34a" }}>🟢 تم التنفيذ</span>
             <span style={{ color: "#2563eb" }}>🔵 جاري التنفيذ</span>
             <span style={{ color: "#64748b" }}>⚪ في الانتظار</span>
+            <span style={{ color: "#94a3b8" }}>⠿ اسحب المحطة لإعادة الترتيب</span>
           </div>
         )}
       </div>
