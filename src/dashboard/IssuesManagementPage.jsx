@@ -1,34 +1,64 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import * as XLSX from "xlsx";
+
+const PAYMENT_STATUS_OPTIONS = [
+  "تم الصرف",
+  "تم التنفيذ",
+  "في انتظار الصرف",
+  "جاري التنفيذ",
+  "مرفوضة",
+];
+
+const CASE_FIELD_ORDER = [
+  "الاسم",
+  "رقم القضيه",
+  "شهر تغير الاساسي",
+  "الاساسي بعد التغيير",
+  "الاجمالي",
+  "الصافي",
+  "حاله الصرف",
+  "تاريخ الصرف",
+];
+
+function cleanFileName(name) {
+  return name
+    .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, "")
+    .replace(/[^\w\s.-]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_{2,}/g, "_")
+    .trim();
+}
 
 export default function IssuesManagementPage() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  
-  // حالة نموذج رفع Excel
+
   const [excelFile, setExcelFile] = useState(null);
   const [excelUploading, setExcelUploading] = useState(false);
-  
-  // حالة نموذج رفع PDF
+
   const [pdfFile, setPdfFile] = useState(null);
   const [caseNumber, setCaseNumber] = useState("");
   const [caseTitle, setCaseTitle] = useState("");
   const [caseDescription, setCaseDescription] = useState("");
   const [pdfUploading, setPdfUploading] = useState(false);
-  const [selectedIssueForPdf, setSelectedIssueForPdf] = useState(null);
-  const [pdfUploadModal, setPdfUploadModal] = useState(false);
-  const [individualPdfFile, setIndividualPdfFile] = useState(null);
-  
-  // البحث والتصفية
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
 
-  // تحميل القضايا عند بدء الصفحة
+  const [editingIssue, setEditingIssue] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
+  const [detailModalIssue, setDetailModalIssue] = useState(null);
+  const [additionalDocs, setAdditionalDocs] = useState([]);
+  const [addDocUploading, setAddDocUploading] = useState(false);
+  const [addDocFile, setAddDocFile] = useState(null);
+
+  const [mainPdfUploading, setMainPdfUploading] = useState(false);
+
   useEffect(() => {
     loadIssues();
   }, []);
@@ -37,71 +67,64 @@ export default function IssuesManagementPage() {
     try {
       setLoading(true);
       setError("");
-      
-      console.log("بدء تحميل القضايا...");
-      
-      const { data, error } = await supabase
+
+      const { data, error: issuesError } = await supabase
         .from("issues")
         .select("*")
         .order("created_at", { ascending: false });
-      
-      if (error) throw error;
-      
-      console.log("تم تحميل القضايا:", data);
-      
-      // لكل قضية، نحاول جلب بيانات Excel إذا كانت موجودة
-      const issuesWithData = await Promise.all(
+
+      if (issuesError) throw issuesError;
+
+      const issuesWithDocs = await Promise.all(
         (data || []).map(async (issue) => {
-          console.log("معالجة القضية:", issue.id, issue.case_type);
-          
+          let excel_data = null;
           if (issue.case_type === "individual") {
-            // محاولة جلب البيانات من issue_details بناءً على case_number
-            const { data: details, error: detailsError } = await supabase
+            const { data: details } = await supabase
               .from("issue_details")
               .select("data")
               .eq("issue_id", issue.id)
               .limit(1);
-            
-            if (detailsError) {
-              console.error("خطأ في جلب التفاصيل:", detailsError);
-            }
-            
-            console.log("تفاصيل القضية:", details);
-            
-            return {
-              ...issue,
-              excel_data: details?.[0]?.data || null
-            };
+            excel_data = details?.[0]?.data || null;
           }
-          return issue;
+
+          const { data: docs } = await supabase
+            .from("case_documents")
+            .select("*")
+            .eq("case_id", issue.id)
+            .order("created_at", { ascending: true });
+
+          return { ...issue, excel_data, additionalDocs: docs || [] };
         })
       );
-      
-      console.log("القضايا مع البيانات:", issuesWithData);
-      setIssues(issuesWithData);
+
+      setIssues(issuesWithDocs);
     } catch (err) {
-      console.error("Error loading issues:", err);
       setError("فشل تحميل القضايا: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleExcelUpload = async (e) => {
+  const loadAdditionalDocs = async (issueId) => {
+    const { data } = await supabase
+      .from("case_documents")
+      .select("*")
+      .eq("case_id", issueId)
+      .order("created_at", { ascending: true });
+    setAdditionalDocs(data || []);
+  };
+
+  const handleExcelUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    
-    // التحقق من نوع الملف
     const validTypes = [
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-excel"
+      "application/vnd.ms-excel",
     ];
-    
     if (!validTypes.includes(file.type)) {
       setError("يرجى اختيار ملف Excel صالح (.xlsx أو .xls)");
       return;
     }
-    
     setExcelFile(file);
     setError("");
   };
@@ -112,72 +135,39 @@ export default function IssuesManagementPage() {
       setError("يرجى اختيار ملف Excel أولاً");
       return;
     }
-    
+
     try {
       setExcelUploading(true);
       setError("");
       setSuccess("");
-      
-      console.log("بدء رفع ملف Excel:", excelFile.name, excelFile.size);
-      
-      // قراءة ملف Excel
-      const data = await excelFile.arrayBuffer();
-      console.log("تم قراءة الملف، الحجم:", data.byteLength);
-      
-      const workbook = XLSX.read(data);
-      console.log("تم قراءة Workbook، عدد الأوراق:", workbook.SheetNames.length);
-      
-      if (workbook.SheetNames.length === 0) {
+
+      const arrayBuf = await excelFile.arrayBuffer();
+      const workbook = XLSX.read(arrayBuf);
+      if (workbook.SheetNames.length === 0)
         throw new Error("الملف لا يحتوي على أي أوراق");
-      }
-      
+
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
-      
-      console.log("تم استخراج البيانات، عدد الصفوف:", jsonData.length);
-      
-      if (jsonData.length === 0) {
+
+      if (jsonData.length === 0)
         throw new Error("الملف فارغ أو لا يحتوي على بيانات");
-      }
-      
-      console.log("عينة من البيانات:", jsonData[0]);
-      
-      // رفع الملف إلى Supabase Storage مباشرة
-      console.log("بدء رفع الملف إلى Storage...");
-      
-      // تنظيف اسم الملف: إزالة الأحرف العربية والرموز الخاصة
-      const cleanFileName = excelFile.name
-        .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '') // إزالة العربية
-        .replace(/[^\w\s.-]/g, '') // إزالة الرموز الخاصة ما عدا النقطة والشرطة
-        .replace(/\s+/g, '_') // استبدال المسافات بشرطات سفلية
-        .replace(/_{2,}/g, '_') // إزالة الشرطات المكررة
-        .trim();
-      
-      const fileName = `excel_${Date.now()}_${cleanFileName}`;
-      console.log("اسم الملف المنظف:", fileName);
-      
-      const { data: uploadData, error: uploadError } = await supabase.storage
+
+      const cleanName = cleanFileName(excelFile.name);
+      const fileName = `excel_${Date.now()}_${cleanName}`;
+
+      const { error: uploadError } = await supabase.storage
         .from("issues-files")
         .upload(fileName, excelFile);
-      
-      if (uploadError) {
-        console.error("خطأ في رفع الملف:", uploadError);
+      if (uploadError)
         throw new Error("فشل رفع الملف إلى Storage: " + uploadError.message);
-      }
-      
-      console.log("تم رفع الملف بنجاح:", uploadData);
-      
-      // الحصول على URL العام
-      const { data: { publicUrl } } = supabase.storage
+
+      const { data: urlData } = supabase.storage
         .from("issues-files")
         .getPublicUrl(fileName);
-      
-      console.log("URL العام:", publicUrl);
-      
-      // إنشاء سجل قضية رئيسي للملف
-      console.log("إنشاء سجل قضية رئيسي للملف...");
-      const { data: mainIssueData, error: mainIssueError } = await supabase
+      const publicUrl = urlData.publicUrl;
+
+      const { data: mainIssue, error: mainErr } = await supabase
         .from("issues")
         .insert({
           case_number: `EXCEL_${Date.now()}`,
@@ -188,271 +178,257 @@ export default function IssuesManagementPage() {
           file_url: publicUrl,
           file_name: excelFile.name,
           file_size: excelFile.size,
-          status: "pending"
+          status: "pending",
         })
         .select()
         .single();
-      
-      if (mainIssueError) {
-        console.error("خطأ في إنشاء سجل القضية الرئيسي:", mainIssueError);
-        throw new Error("فشل إنشاء سجل القضية الرئيسي: " + mainIssueError.message);
-      }
-      
-      console.log("تم إنشاء سجل القضية الرئيسي:", mainIssueData);
-      
-      // إنشاء قضية منفصلة لكل صف في Excel
-      console.log("إنشاء قضايا منفصلة لكل صف في Excel...");
-      const individualIssues = [];
-      
+
+      if (mainErr)
+        throw new Error("فشل إنشاء سجل القضية الرئيسي: " + mainErr.message);
+
+      let created = 0;
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
-        const caseNumber = row['رقم القضية'] || row['Case Number'] || row['رقم'] || `CASE_${Date.now()}_${i + 1}`;
-        const caseTitle = row['عنوان القضية'] || row['Case Title'] || row['العنوان'] || `قضية ${i + 1}`;
-        const caseDescription = row['وصف'] || row['Description'] || row['الوصف'] || '';
-        
-        const { data: issueData, error: issueError } = await supabase
+        const caseNumberVal =
+          row["رقم القضيه"] ||
+          row["رقم القضية"] ||
+          row["Case Number"] ||
+          row["رقم"] ||
+          `CASE_${Date.now()}_${i + 1}`;
+        const caseTitleVal =
+          row["الاسم"] ||
+          row["عنوان القضية"] ||
+          row["Case Title"] ||
+          row["العنوان"] ||
+          `قضية ${i + 1}`;
+
+        const paymentStatusVal =
+          row["حاله الصرف"] || row["حالة الصرف"] || null;
+        const paymentDateVal = row["تاريخ الصرف"] || null;
+
+        const { data: issueData, error: issueErr } = await supabase
           .from("issues")
           .insert({
-            case_number: caseNumber,
-            case_title: caseTitle,
-            case_description: caseDescription,
+            case_number: caseNumberVal,
+            case_title: caseTitleVal,
+            case_description: row["وصف"] || row["Description"] || "",
             case_type: "individual",
             file_type: "excel",
             file_url: publicUrl,
             file_name: excelFile.name,
             file_size: excelFile.size,
-            status: "pending"
+            status: "pending",
+            payment_status: PAYMENT_STATUS_OPTIONS.includes(paymentStatusVal)
+              ? paymentStatusVal
+              : null,
+            payment_date: paymentDateVal || null,
           })
           .select()
           .single();
-        
-        if (issueError) {
-          console.error(`خطأ في إنشاء القضية ${i + 1}:`, issueError);
-          continue;
-        }
-        
-        // حفظ بيانات Excel في issue_details
-        const { error: detailsError } = await supabase
-          .from("issue_details")
-          .insert({
-            issue_id: issueData.id,
-            row_number: i + 1,
-            data: row,
-            status: "pending"
-          });
-        
-        if (detailsError) {
-          console.error(`خطأ في حفظ بيانات القضية ${i + 1}:`, detailsError);
-        }
-        
-        individualIssues.push(issueData);
-        console.log(`تم إنشاء القضية ${i + 1}/${jsonData.length}`);
+
+        if (issueErr) continue;
+
+        await supabase.from("issue_details").insert({
+          issue_id: issueData.id,
+          row_number: i + 1,
+          data: row,
+          status: "pending",
+        });
+
+        created++;
       }
-      
-      console.log(`تم إنشاء ${individualIssues.length} قضية منفصلة`);
-      
-      setSuccess(`تم رفع ملف Excel بنجاح! تم إنشاء ${individualIssues.length} قضية منفصلة. يمكنك الآن رفع ملف PDF لكل قضية.`);
+
+      setSuccess(
+        `تم رفع ملف Excel بنجاح! تم إنشاء ${created} قضية منفصلة.`
+      );
       setExcelFile(null);
       loadIssues();
-      
     } catch (err) {
-      console.error("Error uploading Excel:", err);
       setError("فشل رفع ملف Excel: " + err.message);
-      
-      // رسائل تفصيلية للمشاكل الشائعة
-      if (err.message.includes("Storage") || err.message.includes("bucket")) {
-        setError(err.message + "\n\n💡 حل: نفذ ملف setup_storage_bucket.sql في Supabase SQL Editor");
-      } else if (err.message.includes("row") || err.message.includes("duplicate")) {
-        setError(err.message + "\n\n💡 حل: قد يكون هناك مشكلة في البيانات المكررة");
-      } else if (err.message.includes("permission") || err.message.includes("authorization")) {
-        setError(err.message + "\n\n💡 حل: تحقق من صلاحيات Storage وقاعدة البيانات");
-      }
     } finally {
       setExcelUploading(false);
     }
   };
 
-  const handlePdfUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    if (file.type !== "application/pdf") {
-      setError("يرجى اختيار ملف PDF صالح");
-      return;
-    }
-    
-    setPdfFile(file);
-    setError("");
-  };
-
   const handlePdfSubmit = async (e) => {
     e.preventDefault();
-    
     if (!pdfFile || !caseNumber || !caseTitle) {
       setError("يرجى ملء جميع الحقول المطلوبة واختيار ملف PDF");
       return;
     }
-    
+
     try {
       setPdfUploading(true);
       setError("");
       setSuccess("");
-      
-      console.log("بدء رفع ملف PDF:", pdfFile.name, pdfFile.size);
-      
-      // رفع الملف إلى Supabase Storage مباشرة
-      console.log("بدء رفع الملف إلى Storage...");
-      
-      // تنظيف اسم الملف: إزالة الأحرف العربية والرموز الخاصة
-      const cleanFileName = pdfFile.name
-        .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '') // إزالة العربية
-        .replace(/[^\w\s.-]/g, '') // إزالة الرموز الخاصة ما عدا النقطة والشرطة
-        .replace(/\s+/g, '_') // استبدال المسافات بشرطات سفلية
-        .replace(/_{2,}/g, '_') // إزالة الشرطات المكررة
-        .trim();
-      
-      const fileName = `pdf_${Date.now()}_${cleanFileName}`;
-      console.log("اسم الملف المنظف:", fileName);
-      
-      const { data: uploadData, error: uploadError } = await supabase.storage
+
+      if (pdfFile.type !== "application/pdf") {
+        throw new Error("يرجى اختيار ملف PDF صالح");
+      }
+
+      const fileName = `pdf_${Date.now()}_${cleanFileName(pdfFile.name)}`;
+
+      const { error: uploadError } = await supabase.storage
         .from("issues-files")
         .upload(fileName, pdfFile);
-      
-      if (uploadError) {
-        console.error("خطأ في رفع الملف:", uploadError);
-        throw new Error("فشل رفع الملف إلى Storage: " + uploadError.message);
-      }
-      
-      console.log("تم رفع الملف بنجاح:", uploadData);
-      
-      // الحصول على URL العام
-      const { data: { publicUrl } } = supabase.storage
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
         .from("issues-files")
         .getPublicUrl(fileName);
-      
-      console.log("URL العام:", publicUrl);
-      
-      // إنشاء سجل القضية
-      console.log("إنشاء سجل القضية في قاعدة البيانات...");
-      const { error: issueError } = await supabase
-        .from("issues")
-        .insert({
-          case_number: caseNumber,
-          case_title: caseTitle,
-          case_description: caseDescription,
-          case_type: "individual",
-          file_type: "pdf",
-          file_url: publicUrl,
-          file_name: pdfFile.name,
-          file_size: pdfFile.size,
-          status: "pending"
-        });
-      
-      if (issueError) {
-        console.error("خطأ في إنشاء سجل القضية:", issueError);
-        throw new Error("فشل إنشاء سجل القضية: " + issueError.message);
-      }
-      
-      console.log("تم إنشاء سجل القضية بنجاح");
-      
+
+      const { error: issueError } = await supabase.from("issues").insert({
+        case_number: caseNumber,
+        case_title: caseTitle,
+        case_description: caseDescription,
+        case_type: "individual",
+        file_type: "pdf",
+        file_url: urlData.publicUrl,
+        file_name: pdfFile.name,
+        file_size: pdfFile.size,
+        status: "pending",
+      });
+
+      if (issueError) throw issueError;
+
       setSuccess("تم رفع ملف القضية بنجاح!");
       setPdfFile(null);
       setCaseNumber("");
       setCaseTitle("");
       setCaseDescription("");
       loadIssues();
-      
     } catch (err) {
-      console.error("Error uploading PDF:", err);
       setError("فشل رفع ملف PDF: " + err.message);
-      
-      // رسائل تفصيلية للمشاكل الشائعة
-      if (err.message.includes("Storage") || err.message.includes("bucket")) {
-        setError(err.message + "\n\n💡 حل: نفذ ملف setup_storage_bucket.sql في Supabase SQL Editor");
-      } else if (err.message.includes("permission") || err.message.includes("authorization")) {
-        setError(err.message + "\n\n💡 حل: تحقق من صلاحيات Storage وقاعدة البيانات");
-      }
     } finally {
       setPdfUploading(false);
     }
   };
 
-  const handleIndividualPdfUpload = async (issueId) => {
-    if (!individualPdfFile) {
-      setError("يرجى اختيار ملف PDF أولاً");
+  const handleMainPdfUpload = async (issueId, file) => {
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      setError("يرجى اختيار ملف PDF صالح");
       return;
     }
-    
+
     try {
-      setPdfUploading(true);
+      setMainPdfUploading(true);
       setError("");
-      setSuccess("");
-      
-      console.log("بدء رفع PDF للقضية:", issueId);
-      
-      // تنظيف اسم الملف
-      const cleanFileName = individualPdfFile.name
-        .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, '')
-        .replace(/[^\w\s.-]/g, '')
-        .replace(/\s+/g, '_')
-        .replace(/_{2,}/g, '_')
-        .trim();
-      
-      const fileName = `pdf_issue_${issueId}_${Date.now()}_${cleanFileName}`;
-      
-      const { data: uploadData, error: uploadError } = await supabase.storage
+
+      const fileName = `pdf_main_${issueId}_${Date.now()}_${cleanFileName(file.name)}`;
+
+      const { error: uploadError } = await supabase.storage
         .from("issues-files")
-        .upload(fileName, individualPdfFile);
-      
+        .upload(fileName, file);
       if (uploadError) throw uploadError;
-      
-      const { data: { publicUrl } } = supabase.storage
+
+      const { data: urlData } = supabase.storage
         .from("issues-files")
         .getPublicUrl(fileName);
-      
-      // تحديث القضية بإضافة رابط PDF
+
       const { error: updateError } = await supabase
         .from("issues")
         .update({
           file_type: "pdf",
-          file_url: publicUrl,
-          file_name: individualPdfFile.name,
-          file_size: individualPdfFile.size
+          file_url: urlData.publicUrl,
+          file_name: file.name,
+          file_size: file.size,
         })
         .eq("id", issueId);
-      
+
       if (updateError) throw updateError;
-      
-      setSuccess("تم رفع ملف PDF للقضية بنجاح!");
-      setIndividualPdfFile(null);
-      setPdfUploadModal(false);
+
+      setSuccess("تم تحديث PDF الأساسي بنجاح!");
       loadIssues();
-      
+      if (detailModalIssue && detailModalIssue.id === issueId) {
+        setDetailModalIssue((prev) => ({
+          ...prev,
+          file_url: urlData.publicUrl,
+          file_name: file.name,
+          file_type: "pdf",
+        }));
+      }
     } catch (err) {
-      console.error("Error uploading individual PDF:", err);
-      setError("فشل رفع ملف PDF: " + err.message);
+      setError("فشل رفع PDF الأساسي: " + err.message);
     } finally {
-      setPdfUploading(false);
+      setMainPdfUploading(false);
+    }
+  };
+
+  const handleAdditionalPdfUpload = async () => {
+    if (!addDocFile || !detailModalIssue) return;
+
+    if (addDocFile.type !== "application/pdf") {
+      setError("يرجى اختيار ملف PDF صالح");
+      return;
+    }
+
+    try {
+      setAddDocUploading(true);
+      setError("");
+
+      const fileName = `doc_${detailModalIssue.id}_${Date.now()}_${cleanFileName(addDocFile.name)}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("issues-files")
+        .upload(fileName, addDocFile);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("issues-files")
+        .getPublicUrl(fileName);
+
+      const { error: insertError } = await supabase
+        .from("case_documents")
+        .insert({
+          case_id: detailModalIssue.id,
+          file_name: addDocFile.name,
+          file_url: urlData.publicUrl,
+          file_size: addDocFile.size,
+          doc_type: "additional_pdf",
+        });
+
+      if (insertError) throw insertError;
+
+      setSuccess("تم إضافة الملف بنجاح!");
+      setAddDocFile(null);
+      loadAdditionalDocs(detailModalIssue.id);
+      loadIssues();
+    } catch (err) {
+      setError("فشل إضافة الملف: " + err.message);
+    } finally {
+      setAddDocUploading(false);
+    }
+  };
+
+  const handleDeleteAdditionalDoc = async (docId) => {
+    if (!confirm("هل أنت متأكد من حذف هذا الملف؟")) return;
+    try {
+      const { error } = await supabase
+        .from("case_documents")
+        .delete()
+        .eq("id", docId);
+      if (error) throw error;
+      setSuccess("تم حذف الملف بنجاح");
+      if (detailModalIssue) loadAdditionalDocs(detailModalIssue.id);
+      loadIssues();
+    } catch (err) {
+      setError("فشل حذف الملف: " + err.message);
     }
   };
 
   const handleDeleteIssue = async (issueId) => {
     if (!confirm("هل أنت متأكد من حذف هذه القضية؟")) return;
-    
     try {
       setError("");
       const { error } = await supabase
         .from("issues")
         .delete()
         .eq("id", issueId);
-      
       if (error) throw error;
-      
       setSuccess("تم حذف القضية بنجاح");
       loadIssues();
-      
     } catch (err) {
-      console.error("Error deleting issue:", err);
       setError("فشل حذف القضية: " + err.message);
     }
   };
@@ -464,104 +440,159 @@ export default function IssuesManagementPage() {
         .from("issues")
         .update({ status: newStatus })
         .eq("id", issueId);
-      
       if (error) throw error;
-      
-      setSuccess("تم تحديث حالة القضية بنجاح");
+      setSuccess("تم تحديث الحالة بنجاح");
       loadIssues();
-      
     } catch (err) {
-      console.error("Error updating status:", err);
       setError("فشل تحديث الحالة: " + err.message);
     }
   };
 
-  // تصفية القضايا
-  const filteredIssues = issues.filter(issue => {
-    const matchesSearch = 
-      (issue.case_number || "").toLowerCase().includes(search.toLowerCase()) ||
-      (issue.case_title || "").toLowerCase().includes(search.toLowerCase()) ||
-      (issue.case_description || "").toLowerCase().includes(search.toLowerCase());
-    
-    const matchesStatus = statusFilter === "all" || issue.status === statusFilter;
-    const matchesType = typeFilter === "all" || issue.case_type === typeFilter;
-    
-    return matchesSearch && matchesStatus && matchesType;
-  });
-
-  // استخراج الأعمدة من البيانات (مثل المطالبات)
-  const columns = useMemo(() => {
-    const result = [];
-    
-    console.log("استخراج الأعمدة من القضايا:", issues);
-    
-    issues.forEach(issue => {
-      // إذا كانت القضية من Excel، نعرض بياناتها
-      if (issue.case_type === "individual" && issue.excel_data) {
-        console.log("بيانات Excel للقضية:", issue.excel_data);
-        Object.keys(issue.excel_data).forEach(key => {
-          if (!result.includes(key)) {
-            result.push(key);
-          }
-        });
-      }
-    });
-    
-    console.log("الأعمدة المستخرجة:", result);
-    return result;
-  }, [issues]);
-
-  const getStatusBadge = (status) => {
-    const statusStyles = {
-      pending: { bg: "#FEF3C7", color: "#92400E", text: "قيد المعالجة" },
-      approved: { bg: "#D1FAE5", color: "#047857", text: "تمت الموافقة" },
-      rejected: { bg: "#FEE2E2", color: "#DC2626", text: "مرفوض" },
-      in_progress: { bg: "#DBEAFE", color: "#1D4ED8", text: "جاري التنفيذ" }
-    };
-    
-    const style = statusStyles[status] || statusStyles.pending;
-    return (
-      <span style={{
-        background: style.bg,
-        color: style.color,
-        padding: "4px 12px",
-        borderRadius: "20px",
-        fontSize: "12px",
-        fontWeight: "600"
-      }}>
-        {style.text}
-      </span>
-    );
+  const handleUpdatePaymentStatus = async (issueId, newPaymentStatus) => {
+    try {
+      setError("");
+      const { error } = await supabase
+        .from("issues")
+        .update({ payment_status: newPaymentStatus })
+        .eq("id", issueId);
+      if (error) throw error;
+      setSuccess("تم تحديث حالة الصرف بنجاح");
+      loadIssues();
+    } catch (err) {
+      setError("فشل تحديث حالة الصرف: " + err.message);
+    }
   };
 
-  const getFileTypeBadge = (fileType) => {
-    const typeStyles = {
-      excel: { bg: "#E0F2FE", color: "#0369A1", text: "Excel" },
-      pdf: { bg: "#FEE2E2", color: "#DC2626", text: "PDF" }
+  const openEditModal = (issue) => {
+    const formData = {
+      id: issue.id,
+      case_number: issue.case_number || "",
+      case_title: issue.case_title || "",
+      case_description: issue.case_description || "",
+      status: issue.status || "pending",
+      payment_status: issue.payment_status || "",
+      payment_date: issue.payment_date || "",
     };
-    
-    const style = typeStyles[fileType] || typeStyles.excel;
+    if (issue.excel_data) {
+      CASE_FIELD_ORDER.forEach((field) => {
+        if (!(field in formData)) {
+          formData[field] = issue.excel_data[field] ?? "";
+        }
+      });
+    }
+    setEditingIssue(issue);
+    setEditForm(formData);
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingIssue) return;
+
+    try {
+      setError("");
+      const { id, case_number, case_title, case_description, status, payment_status, payment_date, ...rest } = editForm;
+
+      const { error: updateErr } = await supabase
+        .from("issues")
+        .update({
+          case_number,
+          case_title,
+          case_description,
+          status,
+          payment_status: payment_status || null,
+          payment_date: payment_date || null,
+        })
+        .eq("id", id);
+
+      if (updateErr) throw updateErr;
+
+      if (editingIssue.case_type === "individual") {
+        const { data: existing } = await supabase
+          .from("issue_details")
+          .select("id")
+          .eq("issue_id", id)
+          .limit(1);
+
+        const excelData = {};
+        CASE_FIELD_ORDER.forEach((field) => {
+          if (rest[field] !== undefined) excelData[field] = rest[field];
+        });
+
+        if (existing && existing.length > 0) {
+          await supabase
+            .from("issue_details")
+            .update({ data: excelData })
+            .eq("issue_id", id);
+        } else {
+          await supabase.from("issue_details").insert({
+            issue_id: id,
+            row_number: 1,
+            data: excelData,
+            status: "pending",
+          });
+        }
+      }
+
+      setSuccess("تم حفظ التعديلات بنجاح");
+      setEditingIssue(null);
+      loadIssues();
+    } catch (err) {
+      setError("فشل حفظ التعديلات: " + err.message);
+    }
+  };
+
+  const openDetailModal = (issue) => {
+    setDetailModalIssue(issue);
+    loadAdditionalDocs(issue.id);
+    setAddDocFile(null);
+  };
+
+  const filteredIssues = issues.filter((issue) => {
+    const q = search.toLowerCase();
+    const matchSearch =
+      (issue.case_number || "").toLowerCase().includes(q) ||
+      (issue.case_title || "").toLowerCase().includes(q) ||
+      (issue.case_description || "").toLowerCase().includes(q);
+    const matchStatus =
+      statusFilter === "all" || issue.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const getPaymentBadge = (status) => {
+    if (!status)
+      return (
+        <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>
+      );
+    const map = {
+      "تم الصرف": { bg: "#D1FAE5", color: "#047857" },
+      "تم التنفيذ": { bg: "#DBEAFE", color: "#1D4ED8" },
+      "في انتظار الصرف": { bg: "#FEF3C7", color: "#92400E" },
+      "جاري التنفيذ": { bg: "#E0E7FF", color: "#4338CA" },
+      "مرفوضة": { bg: "#FEE2E2", color: "#DC2626" },
+    };
+    const s = map[status] || { bg: "#F1F5F9", color: "#475569" };
     return (
-      <span style={{
-        background: style.bg,
-        color: style.color,
-        padding: "4px 12px",
-        borderRadius: "20px",
-        fontSize: "12px",
-        fontWeight: "600"
-      }}>
-        {style.text}
+      <span
+        style={{
+          background: s.bg,
+          color: s.color,
+          padding: "3px 10px",
+          borderRadius: "20px",
+          fontSize: 11,
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {status}
       </span>
     );
   };
 
   const stats = {
     total: issues.length,
-    pending: issues.filter(i => i.status === "pending").length,
-    inProgress: issues.filter(i => i.status === "in_progress").length,
-    completed: issues.filter(i => i.status === "approved").length,
-    excel: issues.filter(i => i.file_type === "excel").length,
-    pdf: issues.filter(i => i.file_type === "pdf").length
+    pending: issues.filter((i) => i.status === "pending").length,
+    inProgress: issues.filter((i) => i.status === "in_progress").length,
+    completed: issues.filter((i) => i.status === "approved").length,
   };
 
   return (
@@ -570,18 +601,25 @@ export default function IssuesManagementPage() {
         <div style={styles.pageHeader}>
           <div>
             <h2 style={styles.cardTitle}>⚖️ إدارة القضايا</h2>
-            <p style={styles.cardSub}>رفع وإدارة القضايا مع ملفات Excel و PDF</p>
+            <p style={styles.cardSub}>
+              رفع وإدارة القضايا مع ملفات Excel و PDF
+            </p>
           </div>
         </div>
 
         {error && (
-          <div style={{...styles.errorBox, whiteSpace: "pre-line", lineHeight: 1.6}}>
+          <div
+            style={{
+              ...styles.errorBox,
+              whiteSpace: "pre-line",
+              lineHeight: 1.6,
+            }}
+          >
             {error}
           </div>
         )}
         {success && <div style={styles.successBox}>{success}</div>}
 
-        {/* إحصائيات */}
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
             <div style={styles.statIcon}>📋</div>
@@ -603,23 +641,13 @@ export default function IssuesManagementPage() {
             <div style={styles.statValue}>{stats.completed}</div>
             <div style={styles.statLabel}>مكتملة</div>
           </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>📊</div>
-            <div style={styles.statValue}>{stats.excel}</div>
-            <div style={styles.statLabel}>ملفات Excel</div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>📄</div>
-            <div style={styles.statValue}>{stats.pdf}</div>
-            <div style={styles.statLabel}>ملفات PDF</div>
-          </div>
         </div>
 
-        {/* أقسام الرفع */}
         <div style={styles.uploadSections}>
-          {/* قسم رفع Excel */}
           <div style={styles.uploadSection}>
-            <h3 style={styles.uploadSectionTitle}>📊 رفع قائمة قضايا (Excel)</h3>
+            <h3 style={styles.uploadSectionTitle}>
+              📊 رفع قائمة قضايا (Excel)
+            </h3>
             <form onSubmit={handleExcelSubmit}>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>ملف Excel:</label>
@@ -631,7 +659,10 @@ export default function IssuesManagementPage() {
                     style={{ display: "none" }}
                     id="excel-upload"
                   />
-                  <label htmlFor="excel-upload" style={styles.fileUploadLabel}>
+                  <label
+                    htmlFor="excel-upload"
+                    style={styles.fileUploadLabel}
+                  >
                     {excelFile ? excelFile.name : "اختر ملف Excel"}
                   </label>
                 </div>
@@ -646,9 +677,10 @@ export default function IssuesManagementPage() {
             </form>
           </div>
 
-          {/* قسم رفع PDF */}
           <div style={styles.uploadSection}>
-            <h3 style={styles.uploadSectionTitle}>📄 رفع قضية فردية (PDF)</h3>
+            <h3 style={styles.uploadSectionTitle}>
+              📄 رفع قضية فردية (PDF)
+            </h3>
             <form onSubmit={handlePdfSubmit}>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>رقم القضية *</label>
@@ -662,13 +694,13 @@ export default function IssuesManagementPage() {
                 />
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.formLabel}>عنوان القضية *</label>
+                <label style={styles.formLabel}>اسم صاحب القضية *</label>
                 <input
                   type="text"
                   value={caseTitle}
                   onChange={(e) => setCaseTitle(e.target.value)}
                   style={styles.input}
-                  placeholder="أدخل عنوان القضية"
+                  placeholder="أدخل اسم صاحب القضية"
                   required
                 />
               </div>
@@ -688,11 +720,14 @@ export default function IssuesManagementPage() {
                   <input
                     type="file"
                     accept=".pdf"
-                    onChange={handlePdfUpload}
+                    onChange={(e) => setPdfFile(e.target.files[0])}
                     style={{ display: "none" }}
                     id="pdf-upload"
                   />
-                  <label htmlFor="pdf-upload" style={styles.fileUploadLabel}>
+                  <label
+                    htmlFor="pdf-upload"
+                    style={styles.fileUploadLabel}
+                  >
                     {pdfFile ? pdfFile.name : "اختر ملف PDF"}
                   </label>
                 </div>
@@ -708,14 +743,13 @@ export default function IssuesManagementPage() {
           </div>
         </div>
 
-        {/* البحث والتصفية */}
         {issues.length > 0 && (
           <div style={styles.filterRow}>
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="🔎 بحث برقم القضية أو العنوان"
+              placeholder="🔎 بحث برقم القضية أو الاسم"
               style={styles.searchInput}
             />
             <select
@@ -729,117 +763,133 @@ export default function IssuesManagementPage() {
               <option value="approved">مكتملة</option>
               <option value="rejected">مرفوضة</option>
             </select>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              style={styles.filterSelect}
-            >
-              <option value="all">كل الأنواع</option>
-              <option value="individual">فردية</option>
-              <option value="bulk">جماعية</option>
-            </select>
           </div>
         )}
 
-        {/* جدول القضايا */}
         {filteredIssues.length > 0 ? (
           <div style={styles.tableWrapper}>
             <table style={{ ...styles.table, minWidth: "1200px" }}>
               <thead>
                 <tr>
+                  <th style={styles.th}>الاسم</th>
                   <th style={styles.th}>رقم القضية</th>
-                  <th style={styles.th}>العنوان</th>
-                  {columns.map((column) => (
-                    <th key={column} style={styles.th}>
-                      {column}
-                    </th>
-                  ))}
-                  <th style={styles.th}>النوع</th>
-                  <th style={styles.th}>نوع الملف</th>
+                  <th style={styles.th}>شهر تغيير الأساسي</th>
+                  <th style={styles.th}>الأساسي بعد التغيير</th>
+                  <th style={styles.th}>الإجمالي</th>
+                  <th style={styles.th}>الصافي</th>
+                  <th style={styles.th}>حالة الصرف</th>
+                  <th style={styles.th}>تاريخ الصرف</th>
                   <th style={styles.th}>الحالة</th>
-                  <th style={styles.th}>تاريخ الرفع</th>
                   <th style={styles.th}>إجراءات</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredIssues.slice(0, 300).map((issue) => (
-                  <tr key={issue.id} style={styles.tr}>
-                    <td style={styles.td}>{issue.case_number}</td>
-                    <td style={styles.td}>{issue.case_title}</td>
-                    {columns.length > 0 ? (
-                      columns.map((column) => (
-                        <td key={column} style={styles.td}>
-                          {issue.excel_data ? String(issue.excel_data[column] ?? "") : "-"}
-                        </td>
-                      ))
-                    ) : (
-                      <td style={styles.td} colSpan="5">
-                        <div style={{ 
-                          background: "#FEF3C7", 
-                          color: "#92400E", 
-                          padding: "8px", 
-                          borderRadius: "6px", 
-                          fontSize: "12px",
-                          textAlign: "center"
-                        }}>
-                          لا توجد بيانات Excel محفوظة
-                        </div>
+                {filteredIssues.slice(0, 300).map((issue) => {
+                  const d = issue.excel_data || {};
+                  return (
+                    <tr key={issue.id} style={styles.tr}>
+                      <td style={styles.td}>
+                        {issue.case_title || "-"}
                       </td>
-                    )}
-                    <td style={styles.td}>
-                      {issue.case_type === "individual" ? "فردية" : "جماعية"}
-                    </td>
-                    <td style={styles.td}>{getFileTypeBadge(issue.file_type)}</td>
-                    <td style={styles.td}>{getStatusBadge(issue.status)}</td>
-                    <td style={styles.td}>
-                      {new Date(issue.created_at).toLocaleDateString("ar-EG")}
-                    </td>
-                    <td style={styles.td}>
-                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                        {issue.file_url && (
-                          <a
-                            href={issue.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ ...styles.viewButton, textDecoration: "none" }}
-                          >
-                            👁️ عرض
-                          </a>
-                        )}
-                        {issue.case_type === "individual" && issue.file_type === "excel" && (
+                      <td style={styles.td}>
+                        {issue.case_number || "-"}
+                      </td>
+                      <td style={styles.td}>
+                        {d["شهر تغير الاساسي"] || "-"}
+                      </td>
+                      <td style={styles.td}>
+                        {d["الاساسي بعد التغيير"] || "-"}
+                      </td>
+                      <td style={styles.td}>{d["الاجمالي"] || "-"}</td>
+                      <td style={styles.td}>{d["الصافي"] || "-"}</td>
+                      <td style={styles.td}>
+                        {getPaymentBadge(issue.payment_status)}
+                      </td>
+                      <td style={styles.td}>
+                        {issue.payment_date || "-"}
+                      </td>
+                      <td style={styles.td}>
+                        {getStatusBadge(issue.status)}
+                      </td>
+                      <td style={styles.td}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "4px",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {issue.file_url && (
+                            <a
+                              href={issue.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                ...styles.viewButton,
+                                textDecoration: "none",
+                              }}
+                            >
+                              👁️ عرض
+                            </a>
+                          )}
                           <button
-                            style={{ ...styles.primaryButton, padding: "4px 8px", fontSize: "12px" }}
-                            onClick={() => {
-                              setSelectedIssueForPdf(issue);
-                              setPdfUploadModal(true);
+                            style={{
+                              ...styles.viewButton,
+                              background: "#FEF3C7",
+                              color: "#92400E",
+                              borderColor: "#FDE68A",
+                            }}
+                            onClick={() => openDetailModal(issue)}
+                            title="تفاصيل وملفات القضية"
+                          >
+                            📎 تفاصيل
+                          </button>
+                          <button
+                            style={{
+                              ...styles.viewButton,
+                              background: "#ECFDF5",
+                              color: "#047857",
+                            }}
+                            onClick={() => openEditModal(issue)}
+                            title="تعديل البيانات"
+                          >
+                            ✏️ تعديل
+                          </button>
+                          <select
+                            value={issue.status}
+                            onChange={(e) =>
+                              handleUpdateStatus(issue.id, e.target.value)
+                            }
+                            style={{
+                              ...styles.statusSelect,
+                              padding: "4px 6px",
+                              fontSize: 11,
                             }}
                           >
-                            📄 رفع PDF
+                            <option value="pending">قيد المعالجة</option>
+                            <option value="in_progress">
+                              جاري التنفيذ
+                            </option>
+                            <option value="approved">مكتملة</option>
+                            <option value="rejected">مرفوضة</option>
+                          </select>
+                          <button
+                            style={{
+                              ...styles.deleteButton,
+                              padding: "4px 8px",
+                              fontSize: "12px",
+                            }}
+                            onClick={() => handleDeleteIssue(issue.id)}
+                          >
+                            🗑️
                           </button>
-                        )}
-                        <select
-                          value={issue.status}
-                          onChange={(e) => handleUpdateStatus(issue.id, e.target.value)}
-                          style={{ ...styles.statusSelect, padding: "4px 8px", fontSize: "12px" }}
-                        >
-                          <option value="pending">قيد المعالجة</option>
-                          <option value="in_progress">جاري التنفيذ</option>
-                          <option value="approved">مكتملة</option>
-                          <option value="rejected">مرفوضة</option>
-                        </select>
-                        <button
-                          style={{ ...styles.deleteButton, padding: "4px 8px", fontSize: "12px" }}
-                          onClick={() => handleDeleteIssue(issue.id)}
-                        >
-                          🗑️ حذف
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
-            
             {filteredIssues.length > 300 && (
               <div style={styles.infoBox}>
                 يتم عرض أول 300 سجل في الشاشة فقط.
@@ -859,75 +909,589 @@ export default function IssuesManagementPage() {
         )}
       </div>
 
-      {/* Modal رفع PDF لقضية فردية */}
-      {pdfUploadModal && selectedIssueForPdf && (
+      {/* Modal تعديل البيانات */}
+      {editingIssue && (
         <div
           style={styles.overlay}
-          onClick={() => setPdfUploadModal(false)}
+          onClick={() => setEditingIssue(null)}
         >
           <div
-            style={{ ...styles.loginBox, width: "min(500px, 95%)" }}
+            style={{ ...styles.loginBox, width: "min(650px, 95%)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               style={styles.closeButton}
-              onClick={() => setPdfUploadModal(false)}
+              onClick={() => setEditingIssue(null)}
             >
               ×
             </button>
 
-            <div style={{ fontSize: "38px", marginBottom: "8px" }}>📄</div>
-
-            <h3 style={styles.loginTitle}>رفع ملف PDF للقضية</h3>
-            
-            <div style={{ marginBottom: "20px", textAlign: "right", background: "#F8FAFC", padding: "15px", borderRadius: "8px" }}>
-              <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "5px" }}>
-                رقم القضية: {selectedIssueForPdf.case_number}
-              </div>
-              <div style={{ fontSize: "14px", color: "#64748B" }}>
-                {selectedIssueForPdf.case_title}
-              </div>
+            <div style={{ fontSize: "38px", marginBottom: "8px" }}>
+              ✏️
             </div>
+            <h3 style={styles.loginTitle}>تعديل بيانات القضية</h3>
 
-            <form onSubmit={(e) => { e.preventDefault(); handleIndividualPdfUpload(selectedIssueForPdf.id); }}>
-              <div style={{ marginBottom: "15px", textAlign: "right" }}>
-                <label style={{ fontSize: "13px", fontWeight: "600", marginBottom: "8px", display: "block" }}>
-                  ملف PDF
-                </label>
-                <div style={styles.fileUploadArea}>
+            <form onSubmit={handleSaveEdit}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <label style={styles.formLabel}>رقم القضية</label>
                   <input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setIndividualPdfFile(e.target.files[0])}
-                    style={{ display: "none" }}
-                    id="individual-pdf-upload"
+                    type="text"
+                    value={editForm.case_number || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        case_number: e.target.value,
+                      }))
+                    }
+                    style={styles.input}
                   />
-                  <label htmlFor="individual-pdf-upload" style={styles.fileUploadLabel}>
-                    {individualPdfFile ? individualPdfFile.name : "اختر ملف PDF"}
+                </div>
+                <div>
+                  <label style={styles.formLabel}>اسم صاحب القضية</label>
+                  <input
+                    type="text"
+                    value={editForm.case_title || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        case_title: e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div>
+                  <label style={styles.formLabel}>
+                    شهر تغيير الأساسي
                   </label>
+                  <input
+                    type="text"
+                    value={editForm["شهر تغير الاساسي"] || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        "شهر تغير الاساسي": e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div>
+                  <label style={styles.formLabel}>
+                    الأساسي بعد التغيير
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm["الاساسي بعد التغيير"] || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        "الاساسي بعد التغيير": e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div>
+                  <label style={styles.formLabel}>الإجمالي</label>
+                  <input
+                    type="text"
+                    value={editForm["الاجمالي"] || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        الاجمالي: e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div>
+                  <label style={styles.formLabel}>الصافي</label>
+                  <input
+                    type="text"
+                    value={editForm["الصافي"] || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        الصافي: e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div>
+                  <label style={styles.formLabel}>حالة الصرف</label>
+                  <select
+                    value={editForm.payment_status || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        payment_status: e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  >
+                    <option value="">— اختر —</option>
+                    {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={styles.formLabel}>تاريخ الصرف</label>
+                  <input
+                    type="date"
+                    value={editForm.payment_date || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        payment_date: e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  />
+                </div>
+                <div>
+                  <label style={styles.formLabel}>الحالة</label>
+                  <select
+                    value={editForm.status || "pending"}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        status: e.target.value,
+                      }))
+                    }
+                    style={styles.input}
+                  >
+                    <option value="pending">قيد المعالجة</option>
+                    <option value="in_progress">جاري التنفيذ</option>
+                    <option value="approved">مكتملة</option>
+                    <option value="rejected">مرفوضة</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={styles.formLabel}>وصف القضية</label>
+                  <textarea
+                    value={editForm.case_description || ""}
+                    onChange={(e) =>
+                      setEditForm((p) => ({
+                        ...p,
+                        case_description: e.target.value,
+                      }))
+                    }
+                    style={styles.textarea}
+                    rows="2"
+                  />
                 </div>
               </div>
 
-              <div style={{ marginTop: "20px", display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <div
+                style={{
+                  marginTop: 20,
+                  display: "flex",
+                  gap: 10,
+                  justifyContent: "flex-end",
+                }}
+              >
                 <button
                   type="button"
                   style={styles.secondaryButton}
-                  onClick={() => setPdfUploadModal(false)}
+                  onClick={() => setEditingIssue(null)}
                 >
                   إلغاء
                 </button>
-                <button 
-                  type="submit" 
-                  style={styles.primaryButton}
-                  disabled={pdfUploading || !individualPdfFile}
-                >
-                  {pdfUploading ? "جاري الرفع..." : "📥 رفع PDF"}
+                <button type="submit" style={styles.primaryButton}>
+                  💾 حفظ التعديلات
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Modal تفاصيل القضية + الملفات */}
+      {detailModalIssue && (
+        <div
+          style={styles.overlay}
+          onClick={() => setDetailModalIssue(null)}
+        >
+          <div
+            style={{ ...styles.loginBox, width: "min(750px, 95%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={styles.closeButton}
+              onClick={() => setDetailModalIssue(null)}
+            >
+              ×
+            </button>
+
+            <div style={{ fontSize: "38px", marginBottom: "8px" }}>
+              📎
+            </div>
+            <h3 style={styles.loginTitle}>تفاصيل القضية والملفات</h3>
+
+            <div
+              style={{
+                background: "#F8FAFC",
+                padding: 15,
+                borderRadius: 10,
+                marginBottom: 20,
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                fontSize: 13,
+              }}
+            >
+              <div>
+                <strong>رقم القضية:</strong>{" "}
+                {detailModalIssue.case_number}
+              </div>
+              <div>
+                <strong>الاسم:</strong> {detailModalIssue.case_title}
+              </div>
+              <div>
+                <strong>حالة الصرف:</strong>{" "}
+                {getPaymentBadge(detailModalIssue.payment_status)}
+              </div>
+              <div>
+                <strong>التاريخ:</strong>{" "}
+                {new Date(
+                  detailModalIssue.created_at
+                ).toLocaleDateString("ar-EG")}
+              </div>
+              {detailModalIssue.excel_data && (
+                <>
+                  {CASE_FIELD_ORDER.map((field) => {
+                    const val = detailModalIssue.excel_data[field];
+                    if (!val) return null;
+                    return (
+                      <div key={field}>
+                        <strong>{field}:</strong> {String(val)}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+
+            {/* PDF الأساسي */}
+            <div
+              style={{
+                border: "1px solid #E2E8F0",
+                borderRadius: 10,
+                padding: 15,
+                marginBottom: 16,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 10,
+                }}
+              >
+                <h4 style={{ margin: 0, fontSize: 15 }}>
+                  📄 PDF الأساسي
+                </h4>
+                <label
+                  style={{
+                    ...styles.primaryButton,
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  {mainPdfUploading ? "جاري الرفع..." : "📝 إضافة PDF الأساسي"}
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file)
+                        handleMainPdfUpload(
+                          detailModalIssue.id,
+                          file
+                        );
+                      e.target.value = "";
+                    }}
+                    disabled={mainPdfUploading}
+                  />
+                </label>
+              </div>
+
+              {detailModalIssue.file_url ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "#F0FDF4",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                  }}
+                >
+                  <span>📎</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>
+                      {detailModalIssue.file_name || "PDF الأساسي"}
+                    </div>
+                  </div>
+                  <a
+                    href={detailModalIssue.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      ...styles.viewButton,
+                      textDecoration: "none",
+                    }}
+                  >
+                    👁️ معاينة
+                  </a>
+                  <a
+                    href={detailModalIssue.file_url}
+                    download
+                    style={{
+                      ...styles.viewButton,
+                      textDecoration: "none",
+                      background: "#FEF3C7",
+                      color: "#92400E",
+                    }}
+                  >
+                    ⬇️ تحميل
+                  </a>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    padding: 10,
+                    color: "#94A3B8",
+                    fontSize: 13,
+                  }}
+                >
+                  لا يوجد PDF أساسي مرفق
+                </div>
+              )}
+            </div>
+
+            {/* الملفات الإضافية */}
+            <div
+              style={{
+                border: "1px solid #E2E8F0",
+                borderRadius: 10,
+                padding: 15,
+                marginBottom: 16,
+              }}
+            >
+              <h4 style={{ margin: "0 0 12px", fontSize: 15 }}>
+                📎 ملفات إضافية للقضية
+              </h4>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  marginBottom: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <label
+                  style={{
+                    ...styles.excelButton,
+                    padding: "7px 14px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  📥 إضافة PDF للقضية
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) setAddDocFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {addDocFile && (
+                  <>
+                    <span style={{ fontSize: 12, color: "#475569" }}>
+                      {addDocFile.name}
+                    </span>
+                    <button
+                      style={{
+                        ...styles.primaryButton,
+                        padding: "5px 12px",
+                        fontSize: 11,
+                      }}
+                      onClick={handleAdditionalPdfUpload}
+                      disabled={addDocUploading}
+                    >
+                      {addDocUploading ? "جاري..." : "📥 رفع"}
+                    </button>
+                    <button
+                      style={{
+                        ...styles.deleteButton,
+                        padding: "5px 10px",
+                        fontSize: 11,
+                      }}
+                      onClick={() => setAddDocFile(null)}
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {additionalDocs.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {additionalDocs.map((doc) => (
+                    <div
+                      key={doc.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        background: "#F8FAFC",
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        fontSize: 13,
+                      }}
+                    >
+                      <span>📄</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600 }}>
+                          {doc.file_name}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                          {new Date(doc.created_at).toLocaleDateString(
+                            "ar-EG"
+                          )}
+                        </div>
+                      </div>
+                      <a
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          ...styles.viewButton,
+                          textDecoration: "none",
+                        }}
+                      >
+                        👁️
+                      </a>
+                      <a
+                        href={doc.file_url}
+                        download
+                        style={{
+                          ...styles.viewButton,
+                          textDecoration: "none",
+                          background: "#FEF3C7",
+                          color: "#92400E",
+                        }}
+                      >
+                        ⬇️
+                      </a>
+                      <button
+                        style={{
+                          ...styles.deleteButton,
+                          padding: "4px 8px",
+                        }}
+                        onClick={() =>
+                          handleDeleteAdditionalDoc(doc.id)
+                        }
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    padding: 10,
+                    color: "#94A3B8",
+                    fontSize: 13,
+                  }}
+                >
+                  لا توجد ملفات إضافية مرفقة
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setDetailModalIssue(null)}
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function getStatusBadge(status) {
+  const map = {
+    pending: {
+      bg: "#FEF3C7",
+      color: "#92400E",
+      text: "قيد المعالجة",
+    },
+    approved: {
+      bg: "#D1FAE5",
+      color: "#047857",
+      text: "مكتملة",
+    },
+    rejected: {
+      bg: "#FEE2E2",
+      color: "#DC2626",
+      text: "مرفوضة",
+    },
+    in_progress: {
+      bg: "#DBEAFE",
+      color: "#1D4ED8",
+      text: "جاري التنفيذ",
+    },
+  };
+  const s = map[status] || map.pending;
+  return (
+    <span
+      style={{
+        background: s.bg,
+        color: s.color,
+        padding: "3px 10px",
+        borderRadius: "20px",
+        fontSize: 11,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {s.text}
+    </span>
   );
 }
