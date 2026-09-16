@@ -31,6 +31,7 @@ import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
 import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
 import OrgStructurePage from "./dashboard/OrgStructurePage";
 import PushNotificationsPanel from "./dashboard/PushNotificationsPanel";
+import InstallAppButton from "./dashboard/InstallAppButton";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -1098,6 +1099,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               position: "relative",
             }}
           >
+            <InstallAppButton />
+
             <button
               style={{
                 ...styles.secondaryButton,

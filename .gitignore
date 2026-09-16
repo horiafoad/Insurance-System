@@ -38,3 +38,6 @@ build/icons/
 
 # Generated icon temp files
 _tmp_icon.png
+
+# GitHub token file (used by scripts/release.cjs)
+release.token

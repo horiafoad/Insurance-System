@@ -1,7 +1,7 @@
 {
   "name": "asu-engineering-system",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.3",
   "type": "module",
   "main": "main.js",
   "author": "ASU Engineering",
@@ -13,6 +13,9 @@
     "dist": "electron-builder --win",
     "dist:portable": "electron-builder --win portable",
     "dist:publish": "electron-builder --win --publish always",
+    "release": "node scripts/release.cjs patch",
+    "release:minor": "node scripts/release.cjs minor",
+    "release:major": "node scripts/release.cjs major",
     "lint": "eslint .",
     "preview": "vite preview",
     "scan:watch": "node scanner-bridge/bridge.cjs",
