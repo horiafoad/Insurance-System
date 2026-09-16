@@ -247,6 +247,8 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
   const [newPersonName, setNewPersonName] = useState("");
   const cameraInputRef = useRef(null);
   const uploadInputRef = useRef(null);
+  const multiInputRef = useRef(null);
+  const [multiAssets, setMultiAssets] = useState([]); // [{ key, asset, query, person, note }]
 
   /* ---- مسحوحات السكانر الواردة (scanner-inbox) ---- */
   const [inboxRows, setInboxRows] = useState([]);
@@ -387,6 +389,112 @@ useEffect(() => {
     handleFileChosen(file);
   };
 
+  const handleMultiFilesChosen = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setError("");
+    setSuccess("");
+    const accepted = files.filter((f) => {
+      const type = String(f.type || "").toLowerCase();
+      return (
+        type === "application/pdf" ||
+        /\.pdf$/i.test(f.name) ||
+        type.startsWith("image/") ||
+        !type
+      );
+    });
+    if (!accepted.length) {
+      setError("لا توجد ملفات صالحة. ارفع صورًا أو ملفات PDF.");
+      return;
+    }
+    try {
+      const rows = [];
+      for (const file of accepted) {
+        const type = String(file.type || "").toLowerCase();
+        let preview = "";
+        let isPdf = false;
+        if (type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+          const buf = await file.arrayBuffer();
+          const { images } = await renderPdfBytesToJpegs(buf, 0.6);
+          preview = images[0] || "";
+          isPdf = true;
+        } else {
+          const jpeg = await fileToJpegBlob(file);
+          preview = await blobToDataUrl(jpeg);
+        }
+        rows.push({
+          key: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          asset: { file, preview, isPdf, name: file.name },
+          query: "",
+          person: null,
+          note: "",
+        });
+      }
+      setMultiAssets((prev) => [...prev, ...rows]);
+      setSuccess(`✅ تم اختيار ${rows.length} أمر. حددي اسم كل واحد ثم اضغطي «حفظ الكل».`);
+    } catch (err) {
+      console.error("handleMultiFilesChosen:", err);
+      setError(err?.message || "تعذر قراءة الملفات المختارة.");
+    }
+  };
+
+  const updateMultiRow = (key, patch) => {
+    setMultiAssets((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  };
+
+  const removeMultiRow = (key) => setMultiAssets((prev) => prev.filter((r) => r.key !== key));
+
+  const createPersonForMulti = async (key, name) => {
+    const n = String(name || "").trim();
+    if (!n) {
+      setError("اكتب اسم الشخص أولًا.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const person = await createPerson(n);
+      setPersons((prev) => [...prev, person]);
+      updateMultiRow(key, { person, query: "" });
+    } catch (err) {
+      console.error("createPersonForMulti:", err);
+      setError(migrationHint(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveAllMulti = async () => {
+    const toSave = multiAssets.filter((r) => r.person);
+    if (!toSave.length) {
+      setError("حددي اسمًا لكل أمر قبل الحفظ.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    let ok = 0;
+    let failed = 0;
+    for (const row of toSave) {
+      try {
+        await saveOrder(row.person, row.asset, row.note || "");
+        ok++;
+      } catch (err) {
+        failed++;
+        console.error("saveAllMulti:", err);
+      }
+    }
+    setSaving(false);
+    if (failed === 0) {
+      setSuccess(`✅ تم إضافة ${ok} من ${toSave.length} أوامر إلى ملفات أصحابها بنجاح.`);
+      setMultiAssets([]);
+    } else {
+      setSuccess(`تم إضافة ${ok} بنجاح.`);
+      setError(`فشل إضافة ${failed} أمر. راجعي الأسماء والمحاولة مجددًا.`);
+    }
+    await loadPersons();
+  };
+
   const clearAsset = () => {
     setAsset(null);
     setOrderNote("");
@@ -443,10 +551,8 @@ useEffect(() => {
 
   /* ---------------- حفظ الأمر في ملف الشخص ---------------- */
 
-  const saveOrder = async (person, assetToAdd, note) => {
-    setSaving(true);
-    setError("");
-    setSuccess("");
+  const saveOrder = async (person, assetToAdd, note, silent = false) => {
+    if (!silent) { setSaving(true); setError(""); setSuccess(""); }
 
     try {
       let additionBytes;
@@ -509,20 +615,23 @@ useEffect(() => {
       });
       if (ordErr) throw ordErr;
 
-      setSuccess(
-        `✅ تم إضافة الأمر التنفيذي بنجاح إلى ملف: ${person.full_name} — عدد الأوامر في الملف الآن: ${newCount}`
-      );
-      setAsset(null);
-      setOrderNote("");
-      setSelectedPerson(null);
-      setConfirmOpen(false);
-      setSearchQuery("");
-      await loadPersons();
+      if (!silent) {
+        setSuccess(
+          `✅ تم إضافة الأمر التنفيذي بنجاح إلى ملف: ${person.full_name} — عدد الأوامر في الملف الآن: ${newCount}`
+        );
+        setAsset(null);
+        setOrderNote("");
+        setSelectedPerson(null);
+        setConfirmOpen(false);
+        setSearchQuery("");
+        await loadPersons();
+      }
     } catch (err) {
       console.error("saveOrder:", err);
-      setError(migrationHint(err));
+      if (!silent) setError(migrationHint(err));
+      else throw err;
     } finally {
-      setSaving(false);
+      if (!silent) setSaving(false);
     }
   };
 
@@ -1577,6 +1686,12 @@ useEffect(() => {
               >
                 📄 رفع صورة أو PDF
               </button>
+              <button
+                style={styles.secondaryButton}
+                onClick={() => multiInputRef.current?.click()}
+              >
+                📚 رفع عدة أوامر دفعة واحدة
+              </button>
 
               <input
                 ref={cameraInputRef}
@@ -1600,6 +1715,18 @@ useEffect(() => {
                     if (e.target) e.target.value = "";
                   })
                 }
+              />
+              <input
+                ref={multiInputRef}
+                type="file"
+                accept="image/*,application/pdf,.pdf"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  handleMultiFilesChosen(e.target.files).then(() => {
+                    if (e.target) e.target.value = "";
+                  });
+                }}
               />
             </div>
 
@@ -1651,6 +1778,176 @@ useEffect(() => {
               </div>
             )}
           </div>
+
+          {/* ---------- 1.5) توزيع الأوامر المتعددة على أصحابها ---------- */}
+          {multiAssets.length > 0 && (
+            <div style={{ ...styles.card, border: "1px solid #BFDBFE", background: "#F0F7FF" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <h2 style={{ ...styles.cardTitle, margin: 0 }}>
+                  📚 توزيع الأوامر ({multiAssets.length})
+                </h2>
+                <button
+                  style={styles.secondaryButton}
+                  onClick={() => setMultiAssets([])}
+                >
+                  إفراغ الكل
+                </button>
+              </div>
+              <p style={styles.cardSub}>
+                لكل أمر حددي صاحبه: ابحثي عن اسم موجود أو أنشئي ملفًا جديدًا، ثم اضغطي «حفظ الكل».
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {multiAssets.map((row, index) => {
+                  const results = row.query.trim()
+                    ? searchPersons(persons, row.query)
+                    : [];
+                  return (
+                    <div
+                      key={row.key}
+                      style={{
+                        background: "#fff",
+                        border: row.person ? "1px solid #BBF7D0" : "1px solid #E2E8F0",
+                        borderRadius: 12,
+                        padding: 12,
+                      }}
+                    >
+                      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 10 }}>
+                        {row.asset.preview && (
+                          <img
+                            src={row.asset.preview}
+                            alt="معاينة"
+                            style={{
+                              width: 60,
+                              height: 70,
+                              objectFit: "contain",
+                              borderRadius: 8,
+                              border: "1px solid #E2E8F0",
+                              background: "#fff",
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
+                        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, fontSize: 13.5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span>{index + 1}.</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {row.asset.name}
+                            </span>
+                          </div>
+                          <div style={{ color: "#64748B", fontSize: 12, marginTop: 2 }}>
+                            {row.asset.isPdf ? "📄 مستند PDF" : "🖼️ صورة"}
+                          </div>
+                        </div>
+                        <button
+                          style={styles.deleteButton}
+                          onClick={() => removeMultiRow(row.key)}
+                        >
+                          إزالة
+                        </button>
+                      </div>
+
+                      {row.person ? (
+                        <div
+                          style={{
+                            background: "#F0FDF4",
+                            border: "1px solid #BBF7D0",
+                            borderRadius: 10,
+                            padding: "10px 12px",
+                          }}
+                        >
+                          <div style={{ fontSize: 13.5, fontWeight: 800, color: "#15803D" }}>
+                            ✅ الاختيار: {row.person.full_name}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                            <input
+                              style={{ ...styles.input, flex: "1 1 200px", minWidth: 0 }}
+                              placeholder="وصف الأمر (اختياري)"
+                              value={row.note}
+                              onChange={(e) => updateMultiRow(row.key, { note: e.target.value })}
+                            />
+                            <button
+                              style={styles.secondaryButton}
+                              onClick={() => updateMultiRow(row.key, { person: null, query: "" })}
+                            >
+                              تغيير الاختيار
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            style={styles.searchInput}
+                            placeholder={`🔎 اسم صاحب الأمر رقم ${index + 1} (يكفي جزء من الاسم)`}
+                            value={row.query}
+                            onChange={(e) => updateMultiRow(row.key, { query: e.target.value })}
+                          />
+                          {row.query.trim() && (
+                            <div style={styles.resultText}>
+                              {results.length === 0
+                                ? "لا توجد نتائج"
+                                : `${results.length} نتيجة`}
+                            </div>
+                          )}
+                          {row.query.trim() && results.length === 0 && (
+                            <div style={{ ...styles.card, marginTop: 8 }}>
+                              <div style={styles.errorBox}>لم يتم العثور على هذا الشخص</div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                                <input
+                                  style={styles.input}
+                                  placeholder="اكتب اسم الملف الجديد"
+                                  value={row.newName ?? row.query}
+                                  onChange={(e) => updateMultiRow(row.key, { newName: e.target.value })}
+                                />
+                                <button
+                                  style={styles.manualClaimButton}
+                                  disabled={saving}
+                                  onClick={() =>
+                                    createPersonForMulti(row.key, row.newName ?? row.query)
+                                  }
+                                >
+                                  🆕 إنشاء ملف جديد نسبة لهذا الأمر
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {row.query.trim() && results.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                              {results.map((person) => (
+                                <button
+                                  key={person.id}
+                                  onClick={() => updateMultiRow(row.key, { person, query: "", newName: "" })}
+                                  style={{
+                                    ...styles.viewButton,
+                                    width: "100%",
+                                    justifyContent: "flex-start",
+                                    textAlign: "right",
+                                  }}
+                                >
+                                  {person.full_name}
+                                  {person.order_count ? ` (${person.order_count} أمر)` : ""}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ ...styles.modalActions, marginTop: 16 }}>
+                <button
+                  style={styles.primaryButton}
+                  disabled={saving || multiAssets.length === 0}
+                  onClick={saveAllMulti}
+                >
+                  {saving ? "⏳ جاري الحفظ..." : `🗂️ حفظ الكل (${multiAssets.length})`}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ---------- 2) البحث عن صاحب الأمر ---------- */}
           <div style={styles.card}>

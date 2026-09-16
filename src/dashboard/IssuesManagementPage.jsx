@@ -620,7 +620,7 @@ export default function IssuesManagementPage() {
         )}
         {success && <div style={styles.successBox}>{success}</div>}
 
-        <div style={styles.statsGrid}>
+        <div style={styles.statsGrid} className="issues-stats-grid">
           <div style={styles.statCard}>
             <div style={styles.statIcon}>📋</div>
             <div style={styles.statValue}>{stats.total}</div>
@@ -643,7 +643,7 @@ export default function IssuesManagementPage() {
           </div>
         </div>
 
-        <div style={styles.uploadSections}>
+        <div style={styles.uploadSections} className="issues-upload-grid">
           <div style={styles.uploadSection}>
             <h3 style={styles.uploadSectionTitle}>
               📊 رفع قائمة قضايا (Excel)
@@ -938,6 +938,7 @@ export default function IssuesManagementPage() {
                   gridTemplateColumns: "1fr 1fr",
                   gap: 12,
                 }}
+                className="issues-modal-grid"
               >
                 <div>
                   <label style={styles.formLabel}>رقم القضية</label>
@@ -1152,6 +1153,7 @@ export default function IssuesManagementPage() {
                 gap: 8,
                 fontSize: 13,
               }}
+              className="issues-detail-grid"
             >
               <div>
                 <strong>رقم القضية:</strong>{" "}
@@ -1201,6 +1203,7 @@ export default function IssuesManagementPage() {
                   justifyContent: "space-between",
                   marginBottom: 10,
                 }}
+                className="issues-pdf-header"
               >
                 <h4 style={{ margin: 0, fontSize: 15 }}>
                   📄 PDF الأساسي
@@ -1242,6 +1245,7 @@ export default function IssuesManagementPage() {
                     padding: "10px 12px",
                     borderRadius: 8,
                   }}
+                  className="issues-pdf-file"
                 >
                   <span>📎</span>
                   <div style={{ flex: 1 }}>

@@ -33,9 +33,18 @@ export default function Sidebar({
   setFilterType,
   setServiceRequestFilter,
   currentUser,
+  isMobile = false,
+  sidebarOpen = false,
+  onCloseSidebar,
 }) {
+  const navigate = (nextMenu) => {
+    setActiveMenu(nextMenu);
+    if (onCloseSidebar) onCloseSidebar();
+  };
   const controlItems = MENU_ITEMS.filter((item) =>
-    hasPermission(currentUser, MENU_ITEMS_PERMISSION[item.id])
+    item.id === "push_settings"
+      ? true
+      : hasPermission(currentUser, MENU_ITEMS_PERMISSION[item.id])
   );
 
   const workItems = TASK_TYPES.filter((type) =>
@@ -51,7 +60,28 @@ export default function Sidebar({
     canEntitlements || hasPermission(currentUser, "system_settings");
 
   return (
-    <aside style={styles.sidebar}>
+    <aside
+      className="dashboard-sidebar"
+      style={{          ...styles.sidebar,
+        ...(isMobile
+          ? {
+              position: "fixed",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 50,
+              transform: sidebarOpen
+                ? "translateX(0)"
+                : "translateX(100%)",
+              boxShadow: sidebarOpen
+                ? "0 0 40px rgba(15,23,42,0.35)"
+                : "none",
+              transition: "transform 0.28s ease",
+              overflowY: "auto",
+            }
+          : {}),
+      }}
+    >
       {/* اسم القسم */}
       <div style={styles.brand}>
         <div style={styles.logo}>🏛️</div>

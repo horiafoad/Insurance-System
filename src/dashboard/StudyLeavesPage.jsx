@@ -135,7 +135,7 @@ export default function StudyLeavesPage({
   return (
     <div>
       <div style={styles.card}>
-        <div style={styles.claimsHeader}>
+        <div style={styles.claimsHeader} className="claims-header">
           <div>
             <h2 style={styles.cardTitle}>🎓 الإجازات الدراسية</h2>
             <p style={styles.cardSub}>
@@ -211,7 +211,7 @@ export default function StudyLeavesPage({
                     {formatDisplayDate(leave.fiveYearEnd)}
                   </div>
                 </div>
-                <div style={styles.alertActions}>
+                <div style={styles.alertActions} className="alert-actions">
                   <button
                     style={styles.viewButton}
                     onClick={() => openEdit(leave)}
@@ -234,7 +234,7 @@ export default function StudyLeavesPage({
       )}
 
       <div style={styles.card}>
-        <div style={styles.filterRow}>
+        <div style={styles.filterRow} className="service-filter-bar">
           <input
             type="text"
             value={search}
@@ -352,7 +352,7 @@ export default function StudyLeavesPage({
           title={form.id ? "تعديل إجازة دراسية" : "إضافة إجازة دراسية"}
           onClose={() => setFormOpen(false)}
         >
-          <div style={styles.formGrid}>
+          <div style={styles.formGrid} className="form-grid-mobile">
             {LEAVE_FIELDS.filter((field) => field.key !== "remainingDays").map(
               (field) => {
                 const dateField = [

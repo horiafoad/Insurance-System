@@ -190,6 +190,11 @@ export const MENU_ITEMS = [
     title: "اختبار الاتصال",
     icon: "🔧",
   },
+  {
+    id: "push_settings",
+    title: "أجهزتي والإشعارات",
+    icon: "🔔",
+  },
 ];
 
 export const createEmptyTask = () => ({

@@ -168,7 +168,7 @@ export default function CertificateRequestsPage() {
   return (
     <div>
       <div style={styles.card}>
-        <div style={styles.cardHeader}>
+        <div style={styles.cardHeader} className="requests-header">
           <div>
             <h2 style={styles.cardTitle}>📋 طلبات الإفادات</h2>
             <p style={styles.cardSub}>

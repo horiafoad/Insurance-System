@@ -24,4 +24,17 @@ dist-ssr
 *.sw?
 cursor/
 
+# Build output (electron-builder)
 release/
+release2/
+*.blockmap
+*.exe
+*.msi
+
+# Temp build files
+build/*.tmp
+build/*.bak
+build/icons/
+
+# Generated icon temp files
+_tmp_icon.png

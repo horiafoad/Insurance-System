@@ -5,6 +5,7 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import NetworkBanner from "./NetworkBanner";
 import { supabase } from "./supabaseClient";
 import { hasPermission } from "./utils/permissions";
+import { notifyPushEvent } from "./utils/pushNotifications";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
 
@@ -112,6 +113,17 @@ function App() {
 
   const qrCodeFromUrl =
     new URLSearchParams(window.location.search).get("qr")?.trim() || "";
+
+  // عند الضغط على إشعار الموبايل (openRequest) بدون تسجيل دخول، نفتح شاشة الدخول.
+  useEffect(() => {
+    const openRequest = new URLSearchParams(window.location.search).get(
+      "openRequest"
+    );
+    if (openRequest && !isLoggedIn) {
+      setShowLogin(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [qrLetter, setQrLetter] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
@@ -996,6 +1008,11 @@ const updatedMovements = qrLetter.movements.map((movement) =>
         phone: "",
         requestedMonth: "",
         requestedYear: new Date().getFullYear(),
+      });
+
+      notifyPushEvent("new_request", {
+        requestId: data.id,
+        requestNumber: data.id,
       });
 
       alert(

@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "../supabaseClient";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
+import { notifyPushEvent } from "../utils/pushNotifications";
 
 const MONTH_LABELS = {
   1: "يناير",
@@ -284,6 +285,7 @@ export default function CriteriaView() {
 export function ServiceRequestsView({
   selectedService = "all",
   onServiceFilterChange,
+  focusRequestId,
 }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -300,6 +302,26 @@ export function ServiceRequestsView({
   const activeServiceFilter = onServiceFilterChange
     ? selectedService
     : serviceFilter;
+
+  // إبراز الطلب المفتوح من الإشعار (عند الضغط على الإشعار من خدمة Web Push).
+  useEffect(() => {
+    if (focusRequestId && requests.length > 0) {
+      const timer = window.setTimeout(() => {
+        const row = document.getElementById(
+          "service-request-" + focusRequestId
+        );
+        if (row) {
+          row.scrollIntoView({ behavior: "smooth", block: "center" });
+          row.style.transition = "background 0.6s";
+          row.style.background = "#FEF3C7";
+          window.setTimeout(() => {
+            row.style.background = "";
+          }, 2600);
+        }
+      }, 250);
+      return () => window.clearTimeout(timer);
+    }
+  }, [focusRequestId, requests.length]);
 
   const loadRequests = async () => {
     try {
@@ -428,6 +450,20 @@ export function ServiceRequestsView({
       }
 
       showToast("تم تحديث الطلب بنجاح.");
+
+      // إشعار الموبايل (fire-and-forget) عند تغيير الحالة أو إضافة ملاحظة.
+      if (newStatus !== previous.status) {
+        notifyPushEvent("status_change", {
+          requestId: id,
+          requestNumber: id,
+          status: newStatus,
+        });
+      } else if (newNotes !== (previous.notes || "")) {
+        notifyPushEvent("note_added", {
+          requestId: id,
+          requestNumber: id,
+        });
+      }
     } catch (updateError) {
       console.error(updateError);
       setRequests((current) =>
@@ -482,6 +518,10 @@ export function ServiceRequestsView({
     e.preventDefault();
     if (!editingRequest) return;
 
+    const prevRequest = requests.find(
+      (r) => r.id === editingRequest.id
+    );
+
     try {
       setRequests((curr) =>
         curr.map((r) => (r.id === editingRequest.id ? editingRequest : r))
@@ -509,6 +549,26 @@ export function ServiceRequestsView({
 
       setEditingRequest(null);
       alert("تم حفظ تعديل الطلب بنجاح.");
+
+      // إشعار الموبايل (fire-and-forget) عند تغيير الحالة أو إضافة ملاحظة.
+      if (
+        prevRequest &&
+        editingRequest.status !== prevRequest.status
+      ) {
+        notifyPushEvent("status_change", {
+          requestId: editingRequest.id,
+          requestNumber: editingRequest.id,
+          status: editingRequest.status,
+        });
+      } else if (
+        prevRequest &&
+        (editingRequest.notes || "") !== (prevRequest.notes || "")
+      ) {
+        notifyPushEvent("note_added", {
+          requestId: editingRequest.id,
+          requestNumber: editingRequest.id,
+        });
+      }
     } catch (e) {
       console.error(e);
       alert("تعذر حفظ التعديل.");
@@ -589,7 +649,7 @@ export function ServiceRequestsView({
         <ClaimStat title="مرفوضة" value={counts.rejected} icon="🔴" />
       </div>
 
-      <div style={styles.filterRow}>
+      <div className="service-filter-bar" style={styles.filterRow}>
         <input
           type="text"
           value={search}
@@ -637,7 +697,7 @@ export function ServiceRequestsView({
       </div>
 
       {!loading && filteredRequests.length > 0 && (
-        <div style={styles.claimTableWrapper}>
+        <div className="service-table-wrap mobile-hscroll" style={styles.claimTableWrapper}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -665,7 +725,7 @@ export function ServiceRequestsView({
                 ];
 
                 return (
-                  <tr key={request.id} style={styles.tr}>
+                  <tr key={request.id} id={"service-request-" + request.id} style={styles.tr}>
                     <td style={styles.td}>
                       <strong>{request.name || "—"}</strong>
                     </td>

@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: ['icons/favicon-48.png'],
       manifest: {
@@ -48,28 +51,10 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,png,svg,ico,jpg,xlsx}'],
         globIgnores: ['**/supabaseClient*.js'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
-        navigateFallback: '/',
-        cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.origin.includes('supabase.co'),
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: ({ url }) => url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com',
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'google-fonts',
-              expiration: { maxEntries: 20, maxAgeSeconds: 30 * 24 * 60 * 60 },
-            },
-          },
-        ],
       },
     }),
   ],

@@ -85,7 +85,7 @@ export default function ClaimsPage({
   return (
     <div>
       <div style={styles.card}>
-        <div style={styles.claimsHeader}>
+        <div style={styles.claimsHeader} className="claims-header">
           <div>
             <h2 style={styles.cardTitle}>📋 قسم المطالبات</h2>
             <p style={styles.cardSub}>إضافة وتعديل وحذف واستيراد ملفات المطالبات</p>
@@ -133,7 +133,7 @@ export default function ClaimsPage({
 
         {sheets.length > 0 && (
           <>
-            <div style={styles.filterRow}>
+            <div className="service-filter-bar" style={styles.filterRow}>
               <input
                 type="text"
                 value={search}
@@ -162,7 +162,7 @@ export default function ClaimsPage({
             </div>
 
             {claims.length > 0 && (
-              <div style={styles.claimTableWrapper}>
+              <div className="mobile-hscroll" style={styles.claimTableWrapper}>
                 <table style={styles.table}>
                   <thead>
                     <tr>

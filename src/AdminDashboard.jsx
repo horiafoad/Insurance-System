@@ -30,6 +30,7 @@ import FacultySalaryArchivePage from "./dashboard/FacultySalaryArchivePage";
 import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
 import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
 import OrgStructurePage from "./dashboard/OrgStructurePage";
+import PushNotificationsPanel from "./dashboard/PushNotificationsPanel";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -45,8 +46,9 @@ import {
   canAccessMenu,
 } from "./utils/permissions";
 
-export default function AdminDashboard({ currentUser }) {
+export default function AdminDashboard({ currentUser, focusRequestId: propFocusId }) {
   const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
+  const openRequestFromUrl = new URLSearchParams(window.location.search).get("openRequest") || "";
 
   // الحسابات القديمة (permissions = null) بوصول كامل ترى لوحة التحكم.
   // المستخدم المقيّد (مثل: خطابات فقط) يُفتح مباشرة على صفحة الخطابات
@@ -63,9 +65,11 @@ export default function AdminDashboard({ currentUser }) {
   const [activeMenu, setActiveMenu] = useState(
     qrCodeFromUrl
       ? "letters_tracking"
-      : hasDashboardAccess
-        ? "home"
-        : "letters_tracking"
+      : openRequestFromUrl
+        ? "service_requests"
+        : hasDashboardAccess
+          ? "home"
+          : "letters_tracking"
   );
 
   useEffect(() => {
@@ -74,8 +78,37 @@ export default function AdminDashboard({ currentUser }) {
     }
   }, [qrCodeFromUrl]);
 
+  const [focusRequestId, setFocusRequestId] = useState(openRequestFromUrl || propFocusId || null);
+
+  useEffect(() => {
+    const nextId = propFocusId || openRequestFromUrl || null;
+    if (nextId) {
+      setFocusRequestId(nextId);
+      if (canAccessMenu(currentUser, "service_requests")) {
+        setActiveMenu("service_requests");
+      }
+    }
+  }, [propFocusId, openRequestFromUrl, currentUser]);
+
   const [tasks, setTasks] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const handleChange = (e) => {
+      setIsMobile(e.matches);
+      if (!e.matches) setSidebarOpen(false);
+    };
+    setIsMobile(mq.matches);
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", handleChange);
+      return () => mq.removeEventListener("change", handleChange);
+    }
+    return undefined;
+  }, []);
+
   const [taskForm, setTaskForm] = useState(createEmptyTask());
   const [selectedTask, setSelectedTask] = useState(null);
 
@@ -892,6 +925,7 @@ export default function AdminDashboard({ currentUser }) {
   const goTo = (nextMenu) => {
     if (canAccessMenu(currentUser, nextMenu)) {
       setActiveMenu(nextMenu);
+      setSidebarOpen(false);
     }
   };
 
@@ -941,7 +975,7 @@ export default function AdminDashboard({ currentUser }) {
   }
 
   return (
-    <div dir="rtl" style={styles.app}>
+    <div dir="rtl" style={styles.app} className="admin-app">
       <Sidebar
         activeMenu={activeMenu}
         filterType={filterType}
@@ -949,12 +983,49 @@ export default function AdminDashboard({ currentUser }) {
         setActiveMenu={goTo}
         setFilterType={setFilterType}
         setServiceRequestFilter={setServiceRequestFilter}
+        isMobile={isMobile}
+        sidebarOpen={sidebarOpen}
+        onCloseSidebar={() => setSidebarOpen(false)}
       />
 
-      <main style={styles.main}>
+      {isMobile && sidebarOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.45)",
+            zIndex: 40,
+          }}
+          className="admin-backdrop"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <main style={styles.main} className="admin-main">
         {!isArchivePage && activeMenu !== "letters_tracking" && (
-          <header style={styles.header}>
+          <header style={styles.header} className="admin-header">
             <div>
+              {isMobile && (
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  title="القائمة"
+                  aria-label="فتح القائمة"
+                  style={{
+                    ...styles.secondaryButton,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 44,
+                    height: 44,
+                    padding: 0,
+                    fontSize: 20,
+                    marginBottom: 8,
+                  }}
+                >
+                  ☰
+                </button>
+              )}
+
               <div style={styles.breadcrumb}>
                 قسم الاستحقاقات / {currentTitle}
               </div>
@@ -1254,6 +1325,7 @@ export default function AdminDashboard({ currentUser }) {
               onServiceFilterChange={
                 setServiceRequestFilter
               }
+              focusRequestId={focusRequestId}
             />
           )}
 
@@ -1309,6 +1381,10 @@ export default function AdminDashboard({ currentUser }) {
           canAccessMenu(currentUser, "connection_test") && (
             <ConnectionTest />
           )}
+
+        {activeMenu === "push_settings" && (
+          <PushNotificationsPanel currentUser={currentUser} />
+        )}
 
         {activeMenu === "letters_tracking" &&
           canAccessMenu(currentUser, "letters_tracking") && (
