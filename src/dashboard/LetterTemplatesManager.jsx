@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { extractTemplateKeys } from "../utils/letterTemplateHelpers";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 
 const inputStyle = {
   width: "100%",
@@ -96,6 +97,33 @@ export default function LetterTemplatesManager({
       mounted = false;
     };
   }, []);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (إدارات المسارات + القطاعات) */
+  useRealtimeSync({
+    table: "letter_departments",
+    apply: (payload) => {
+      setRouteDepartments((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "tail",
+          sort: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ar"),
+        }).filter((item) => item.is_active !== false)
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "letter_sectors",
+    apply: (payload) => {
+      setSectors((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "tail",
+          sort: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ar"),
+        }).filter((item) => item.is_active !== false)
+      );
+    },
+  });
 
   const buildFormFromTemplate = (template = null) => ({
     name: template?.name || "",

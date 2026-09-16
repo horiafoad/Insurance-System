@@ -3,6 +3,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import { supabase } from "../supabaseClient";
 import OcrSplitPanel from "./OcrSplitPanel";
 import { FACULTY_SALARY_CONFIG } from "./salaryArchiveConfig";
+import { useRealtimeSync } from "../utils/realtimeSync";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -713,6 +714,53 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
       cancelled = true;
     };
   }, [search, selectedYearsKey, selectedMonthsKey]);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (سجل الأرشيف مع احترام فلاتر البحث/السنة/الشهر) */
+  useRealtimeSync({
+    table: cfg.table,
+    apply: (payload) => {
+      setRecords((prev) => {
+        if (payload.eventType === "DELETE") {
+          const removedId = payload.old?.id;
+          if (removedId == null) return prev;
+          return prev.filter((record) => record.id !== removedId);
+        }
+
+        const row = payload.new;
+        if (row == null) return prev;
+
+        const q = search.trim().toLowerCase();
+        if (q) {
+          const nameMatch = String(row[NAME_COL] || "")
+            .toLowerCase()
+            .includes(q);
+          const computerMatch = String(row.computer_number || "")
+            .toLowerCase()
+            .includes(q);
+          if (!nameMatch && !computerMatch) return prev;
+        }
+
+        if (
+          selectedYears.length > 0 &&
+          !selectedYears.some((year) => Number(year) === Number(row.year))
+        ) {
+          return prev;
+        }
+
+        if (
+          selectedMonths.length > 0 &&
+          !selectedMonths.some((month) => Number(month) === Number(row.month))
+        ) {
+          return prev;
+        }
+
+        if (prev.some((record) => record.id === row.id)) {
+          return prev.map((record) => (record.id === row.id ? row : record));
+        }
+        return [...prev, row];
+      });
+    },
+  });
 
   const loadMore = async () => {
     if (loading || loadedAll) return;

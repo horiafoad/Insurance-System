@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 
 const MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
 const EMPLOYEES = [
@@ -78,6 +79,34 @@ export default function EmployeePerformanceDashboard() {
   const [error, setError] = useState("");
 
   useEffect(() => { Promise.all([supabase.from("performance_evaluations").select("*").order("evaluation_year", { ascending: false }), supabase.from("employee_tasks").select("*")]).then(([evaluationResult, taskResult]) => { if (evaluationResult.error || taskResult.error) { console.error(evaluationResult.error || taskResult.error); setError("تعذر تحميل بيانات التقييم من Supabase."); } setEvaluations(evaluationResult.data || []); setTasks(taskResult.data || []); }); }, []);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (تقييمات + مهام الموظفين) */
+  useRealtimeSync({
+    table: "performance_evaluations",
+    apply: (payload) => {
+      setEvaluations((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => {
+            const byYear = (Number(b.evaluation_year) || 0) - (Number(a.evaluation_year) || 0);
+            if (byYear !== 0) return byYear;
+            return (Number(b.evaluation_month) || 0) - (Number(a.evaluation_month) || 0);
+          },
+        })
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "employee_tasks",
+    apply: (payload) => {
+      setTasks((prev) =>
+        applyRowChange(prev, payload, { pk: "id", insert: "head" })
+      );
+    },
+  });
+
   const selectedEmployee = EMPLOYEES.find((employee) => employee.id === selectedId) || EMPLOYEES[0];
   const latest = evaluations.find((evaluation) => Number(evaluation.employee_id) === selectedId);
   const selectedValues = aggregateScores(latest, tasks.filter((task) => task.employee_id === selectedId));

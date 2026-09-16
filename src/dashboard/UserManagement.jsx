@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import { PERMISSIONS } from "../utils/permissions";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 
 export default function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -87,6 +88,48 @@ export default function UserManagement({ currentUser }) {
     loadOrgData();
     checkPermissionsColumn();
   }, []);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (مستخدمون + قطاعات/إدارات) */
+  useRealtimeSync({
+    table: "users",
+    apply: (payload) => {
+      setUsers((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
+        })
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "letter_sectors",
+    apply: (payload) => {
+      setSectors((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "tail",
+          sort: (a, b) =>
+            (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) ||
+            (Number(a.id) || 0) - (Number(b.id) || 0),
+        }).filter((item) => item.is_active !== false)
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "letter_departments",
+    apply: (payload) => {
+      setDepartments((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "tail",
+          sort: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ar"),
+        }).filter((item) => item.is_active !== false)
+      );
+    },
+  });
 
   const handleOpenCreate = () => {
     setEditingUserId(null);

@@ -3,6 +3,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync } from "../utils/realtimeSync";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -204,6 +205,41 @@ export default function FacultySalariesPage() {
   useEffect(() => {
     loadRecords(currentPage, itemsPerPage);
   }, [currentPage, itemsPerPage]);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (صفحات المرتبات الورقية مع ترتيب الظهور) */
+  useRealtimeSync({
+    table: "faculty_salary_pages",
+    apply: (payload) => {
+      setRecords((prev) => {
+        if (payload.eventType === "DELETE") {
+          const removedId = payload.old?.id;
+          if (removedId == null) return prev;
+          return prev.filter((r) => r.id !== removedId);
+        }
+
+        const row = payload.new;
+        if (row == null) return prev;
+
+        const exists = prev.some((r) => r.id === row.id);
+        let next;
+
+        if (exists) {
+          next = prev.map((r) => (r.id === row.id ? row : r));
+        } else if (prev.length < itemsPerPage) {
+          next = [...prev, row];
+        } else {
+          return prev;
+        }
+
+        return next.sort(
+          (a, b) =>
+            (Number(b.period_year) || 0) - (Number(a.period_year) || 0) ||
+            (Number(b.period_month) || 0) - (Number(a.period_month) || 0) ||
+            (Number(a.page_number) || 0) - (Number(b.page_number) || 0)
+        );
+      });
+    },
+  });
 
   const indexPdf = async (source, sourceName, fileUrl, periodYear, periodMonth, onProgress) => {
     try {

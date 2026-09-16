@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 
 const EMPLOYEES = [
   { id: 1, name: "صفاء عبد الوهاب" },
@@ -94,6 +95,20 @@ export default function EmployeePerformance() {
       setLoading(false);
     }
   };
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (مهام الموظفين) */
+  useRealtimeSync({
+    table: "employee_tasks",
+    apply: (payload) => {
+      setTasks((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
+        })
+      );
+    },
+  });
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {

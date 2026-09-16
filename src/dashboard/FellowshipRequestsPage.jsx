@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 
 export default function FellowshipRequestsPage() {
   const [requests, setRequests] = useState([]);
@@ -42,6 +43,20 @@ export default function FellowshipRequestsPage() {
       setLoading(false);
     }
   };
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط عند أي إضافة/تعديل/حذف */
+  useRealtimeSync({
+    table: "fellowship_requests",
+    apply: (payload) => {
+      setRequests((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => new Date(b.request_date || 0) - new Date(a.request_date || 0),
+        })
+      );
+    },
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();

@@ -6,6 +6,7 @@ import NetworkBanner from "./NetworkBanner";
 import { supabase } from "./supabaseClient";
 import { hasPermission } from "./utils/permissions";
 import { notifyPushEvent } from "./utils/pushNotifications";
+import { useRealtimeSync } from "./utils/realtimeSync";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
 
@@ -132,6 +133,7 @@ function App() {
   const [qrReturnLoading, setQrReturnLoading] = useState(false);
   const [qrReturnNotes, setQrReturnNotes] = useState("");
   const [qrSuccessMessage, setQrSuccessMessage] = useState("");
+  const [qrRefreshTick, setQrRefreshTick] = useState(0);
 
   const qrActiveMovement = useMemo(
     () => getQrActionMovement(qrLetter?.movements || []),
@@ -369,7 +371,27 @@ const qrHasPreviousCompletedStation = useMemo(
       isMounted = false;
       clearInterval(refreshInterval);
     };
-  }, [qrCodeFromUrl]);
+  }, [qrCodeFromUrl, qrRefreshTick]);
+
+  /* =====================================================
+     REALTIME — تحديث حركة الخطاب فورًا (بدون انتظار الـ 5 ثوانٍ)
+     يشتغل فقط أثناء عرض خطاب QR، وبفلترة على رقم الخطاب نفسه
+     كي لا تُبث بيانات خطابات أخرى للمستخدم العادي.
+     ===================================================== */
+
+  useRealtimeSync({
+    table: "letters",
+    enabled: Boolean(qrLetter),
+    filter: qrLetter ? { id: `eq.${qrLetter.id}` } : undefined,
+    apply: () => setQrRefreshTick((t) => t + 1),
+  });
+
+  useRealtimeSync({
+    table: "letter_movements",
+    enabled: Boolean(qrLetter),
+    filter: qrLetter ? { letter_id: `eq.${qrLetter.id}` } : undefined,
+    apply: () => setQrRefreshTick((t) => t + 1),
+  });
 
   /* =====================================================
      QR MOBILE - RECEIVE & DELIVER ACTIONS
@@ -803,6 +825,28 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       setTrackingLoading(false);
     }
   };
+
+  /* =====================================================
+     REALTIME — حالة الطلب المتتبَّع
+     عند تعديل حالة الطلب من لوحة الإدارة تتحدّث هنا فورًا
+     (بفلترة على رقم الطلب فقط كي لا تُبث بيانات الطلبات
+     الأخرى — لا تغيير في منطق التتبع الحالي).
+     ===================================================== */
+
+  useRealtimeSync({
+    table: "service_requests",
+    enabled: Boolean(trackedRequest),
+    filter: trackedRequest ? { id: `eq.${trackedRequest.id}` } : undefined,
+    apply: async () => {
+      if (!trackedRequest) return;
+      const { data, error } = await supabase
+        .from("service_requests")
+        .select("id, service_type, name, status, notes, created_at, updated_at")
+        .eq("id", trackedRequest.id)
+        .maybeSingle();
+      if (!error && data) setTrackedRequest(data);
+    },
+  });
 
   useEffect(() => {
     const handleResize = () => {

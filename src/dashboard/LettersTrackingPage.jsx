@@ -5,6 +5,7 @@ import { supabase } from "../supabaseClient";
 import LetterCreationPanel from "./LetterCreationPanel";
 import LetterTemplatesManager from "./LetterTemplatesManager";
 import lettersHeaderImage from "../assets/letters-header.jpg";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 
 
 // --- letterHelpers.js ---
@@ -2603,6 +2604,201 @@ const startQrScanner = async () => {
       stopQrScanner();
     };
   }, []);
+
+  /* --- مزامنة لحظية: تعديل الصف المتأثر فقط (خطابات + حركات + قوالب + أكواد QR + مرسلون/إدارات) --- */
+  const enrichLetterById = async (letterId) => {
+    if (letterId == null) return;
+
+    try {
+      const { data: row, error } = await supabase
+        .from("letters")
+        .select(
+          "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at, letter_type, template_id, template_name, letter_title, variable_data, final_text"
+        )
+        .eq("id", letterId)
+        .maybeSingle();
+
+      if (error || !row) {
+        setLetters((prev) => prev.filter((l) => l.id !== letterId));
+        setSelectedLetter((prev) => (prev && prev.id === letterId ? null : prev));
+        return;
+      }
+
+      let sender = null;
+      let qr = null;
+      let movements = [];
+
+      if (row.sender_id != null) {
+        const { data: senderData, error: senderError } = await supabase
+          .from("letter_senders")
+          .select("id, name")
+          .eq("id", row.sender_id)
+          .maybeSingle();
+        if (!senderError) sender = senderData;
+      }
+
+      if (row.qr_code_id != null) {
+        const { data: qrData, error: qrError } = await supabase
+          .from("archive_qr_codes")
+          .select("id, code, status")
+          .eq("id", row.qr_code_id)
+          .maybeSingle();
+        if (!qrError) qr = qrData;
+      }
+
+      const { data: movementsData, error: movementsError } = await supabase
+        .from("letter_movements")
+        .select(
+          "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status, received_by"
+        )
+        .eq("letter_id", row.id)
+        .order("step_order", { ascending: true });
+
+      if (!movementsError) {
+        const deptIds = [
+          ...new Set(
+            (movementsData || [])
+              .map((m) => m.department_id)
+              .filter((d) => d != null)
+          ),
+        ];
+
+        let depts = [];
+        if (deptIds.length > 0) {
+          const { data: deptsData, error: deptsError } = await supabase
+            .from("letter_departments")
+            .select("id, name")
+            .in("id", deptIds);
+          if (!deptsError) depts = deptsData || [];
+        }
+
+        movements = (movementsData || []).map((movement) => ({
+          ...movement,
+          department:
+            depts.find((d) => d.id === movement.department_id) || null,
+        }));
+      }
+
+      const enriched = { ...row, sender, qr, movements };
+
+      setLetters((prev) => {
+        if (prev.some((l) => l.id === row.id)) {
+          return prev.map((l) => (l.id === row.id ? enriched : l));
+        }
+        return [enriched, ...prev];
+      });
+
+      setSelectedLetter((prev) => (prev && prev.id === row.id ? enriched : prev));
+    } catch (err) {
+      console.error("Realtime letter refresh error:", err);
+    }
+  };
+
+  const refreshLettersBySender = async (senderId) => {
+    if (senderId == null) return;
+    const { data: rows, error } = await supabase
+      .from("letters")
+      .select("id")
+      .eq("sender_id", senderId);
+    if (error || !rows) return;
+    rows.forEach((r) => enrichLetterById(r.id));
+  };
+
+  const refreshLettersByDepartment = async (deptId) => {
+    if (deptId == null) return;
+    const { data: rows, error } = await supabase
+      .from("letter_movements")
+      .select("letter_id")
+      .eq("department_id", deptId);
+    if (error || !rows) return;
+    [...new Set(rows.map((r) => r.letter_id))]
+      .filter((id) => id != null)
+      .forEach((id) => enrichLetterById(id));
+  };
+
+  useRealtimeSync({
+    table: "letters",
+    apply: (payload) => {
+      if (payload.eventType === "DELETE") {
+        const removedId = payload.old?.id;
+        if (removedId != null) {
+          setLetters((prev) => prev.filter((l) => l.id !== removedId));
+          setSelectedLetter((prev) => (prev && prev.id === removedId ? null : prev));
+        }
+        return;
+      }
+      if (payload.new?.id != null) enrichLetterById(payload.new.id);
+    },
+  });
+
+  useRealtimeSync({
+    table: "letter_movements",
+    apply: (payload) => {
+      const letterId = payload.new?.letter_id ?? payload.old?.letter_id;
+      if (letterId != null) enrichLetterById(letterId);
+    },
+  });
+
+  useRealtimeSync({
+    table: "letter_senders",
+    apply: (payload) => {
+      const senderId = payload.new?.id ?? payload.old?.id;
+      if (senderId != null) refreshLettersBySender(senderId);
+    },
+  });
+
+  useRealtimeSync({
+    table: "letter_departments",
+    apply: (payload) => {
+      setDepartments((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "tail",
+          mapRow: (row) => (row ? { id: row.id, name: row.name } : row),
+          sort: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ar"),
+        })
+      );
+      const deptId = payload.new?.id ?? payload.old?.id;
+      if (deptId != null) refreshLettersByDepartment(deptId);
+    },
+  });
+
+  useRealtimeSync({
+    table: "letter_templates",
+    apply: (payload) => {
+      setLetterTemplates((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "tail",
+          sort: (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ar"),
+        })
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "archive_qr_codes",
+    apply: (payload) => {
+      setQrCodes((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          mapRow: (row) =>
+            row
+              ? {
+                  id: row.id,
+                  code: row.code,
+                  status: row.status,
+                  created_at: row.created_at,
+                  letter_id: row.letter_id,
+                  used_at: row.used_at,
+                }
+              : row,
+          sort: (a, b) => (Number(b.id) || 0) - (Number(a.id) || 0),
+        })
+      );
+    },
+  });
 
   const refreshLetters = async () => {
     setRefreshingLetters(true);

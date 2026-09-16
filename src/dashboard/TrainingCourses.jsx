@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 import { ClaimStat, EmptyState } from "./ui";
 
 const defaultCourseForm = {
@@ -49,6 +50,29 @@ export default function TrainingCourses() {
   useEffect(() => {
     loadData();
   }, []);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (دورات + تسجيلات) */
+  useRealtimeSync({
+    table: "training_courses",
+    apply: (payload) => {
+      setCourses((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => new Date(b.start_date || 0) - new Date(a.start_date || 0),
+        })
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "course_registrations",
+    apply: (payload) => {
+      setRegistrations((prev) =>
+        applyRowChange(prev, payload, { pk: "id", insert: "head" })
+      );
+    },
+  });
 
   const loadData = async () => {
     try {

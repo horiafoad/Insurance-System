@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 
 const EMPLOYEES = [
   { id: 1, name: "صفاء عبد الوهاب" },
@@ -95,6 +96,37 @@ export default function EmployeeProfilePage({ onManageTasks }) {
 
     loadProfileData();
   }, []);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (مهام + تقييمات الموظف) */
+  useRealtimeSync({
+    table: "employee_tasks",
+    apply: (payload) => {
+      setTasks((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
+        })
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "performance_evaluations",
+    apply: (payload) => {
+      setEvaluations((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => {
+            const byYear = (Number(b.evaluation_year) || 0) - (Number(a.evaluation_year) || 0);
+            if (byYear !== 0) return byYear;
+            return (Number(b.evaluation_month) || 0) - (Number(a.evaluation_month) || 0);
+          },
+        })
+      );
+    },
+  });
 
   const employee = EMPLOYEES.find((item) => item.id === selectedEmployeeId) || EMPLOYEES[0];
   const employeeTasks = useMemo(

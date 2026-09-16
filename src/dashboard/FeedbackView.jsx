@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../supabaseClient";
 import { styles } from "./styles";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 import { ClaimStat, EmptyState } from "./ui";
 
 const FEEDBACK_STATUSES = [
@@ -112,6 +113,20 @@ export default function FeedbackView() {
       setLoading(false);
     }
   };
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (الشكاوى/التقييمات) */
+  useRealtimeSync({
+    table: "public_feedback",
+    apply: (payload) => {
+      setItems((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          sort: (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
+        })
+      );
+    },
+  });
 
   useEffect(() => {
     loadFeedback();

@@ -1,15 +1,22 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync } from "../utils/realtimeSync";
 import * as XLSX from "xlsx";
 
 const PAYMENT_STATUS_OPTIONS = [
-  "تم الصرف",
-  "تم التنفيذ",
-  "في انتظار الصرف",
   "جاري التنفيذ",
+  "تم التنفيذ وفي انتظار الصرف",
+  "تم الصرف",
   "مرفوضة",
 ];
+
+function normalizePaymentStatus(status) {
+  if (status === "تم التنفيذ" || status === "في انتظار الصرف") {
+    return "تم التنفيذ وفي انتظار الصرف";
+  }
+  return status;
+}
 
 const CASE_FIELD_ORDER = [
   "الاسم",
@@ -48,6 +55,7 @@ export default function IssuesManagementPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
 
   const [editingIssue, setEditingIssue] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -113,6 +121,86 @@ export default function IssuesManagementPage() {
       .order("created_at", { ascending: true });
     setAdditionalDocs(data || []);
   };
+
+  /* ===== المزامنة اللحظية (Supabase Realtime) — القضية المتأثرة فقط =====
+     البيانات المعروضة متداخلة (تفاصيل + مستندات مرفقة)، لذا عند أي حدث
+     نعيد جلب صف القضية الواحد بملحقاته ثم نستبدله في القائمة محليًا
+     دون إعادة جلب كل القضايا. */
+  const loadIssueRow = async (id) => {
+    if (id == null) return null;
+    const { data, error } = await supabase
+      .from("issues")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !data) return null;
+
+    let excel_data = null;
+    if (data.case_type === "individual") {
+      const { data: details } = await supabase
+        .from("issue_details")
+        .select("data")
+        .eq("issue_id", data.id)
+        .limit(1);
+      excel_data = details?.[0]?.data || null;
+    }
+
+    const { data: docs } = await supabase
+      .from("case_documents")
+      .select("*")
+      .eq("case_id", data.id)
+      .order("created_at", { ascending: true });
+
+    return { ...data, excel_data, additionalDocs: docs || [] };
+  };
+
+  const upsertIssue = (row) => {
+    if (!row) return;
+    setIssues((prev) => {
+      const index = prev.findIndex((item) => item.id === row.id);
+      if (index === -1) return [row, ...prev];
+      const next = [...prev];
+      next[index] = row;
+      return next;
+    });
+  };
+
+  const reloadIssueByExternalId = (id) => {
+    if (id == null) return;
+    loadIssueRow(id).then((row) => {
+      if (row) upsertIssue(row);
+    });
+  };
+
+  useRealtimeSync({
+    table: "issues",
+    apply: (payload) => {
+      if (payload.eventType === "DELETE") {
+        const oldId = payload.old?.id ?? payload.new?.id;
+        if (oldId != null) {
+          setIssues((prev) => prev.filter((item) => item.id !== oldId));
+        }
+        return;
+      }
+      loadIssueRow(payload.new?.id ?? payload.old?.id).then((row) => {
+        if (row) upsertIssue(row);
+      });
+    },
+  });
+
+  useRealtimeSync({
+    table: "issue_details",
+    apply: (payload) => {
+      reloadIssueByExternalId(payload.new?.issue_id ?? payload.old?.issue_id);
+    },
+  });
+
+  useRealtimeSync({
+    table: "case_documents",
+    apply: (payload) => {
+      reloadIssueByExternalId(payload.new?.case_id ?? payload.old?.case_id);
+    },
+  });
 
   const handleExcelUpload = (e) => {
     const file = e.target.files[0];
@@ -218,8 +306,10 @@ export default function IssuesManagementPage() {
             file_name: excelFile.name,
             file_size: excelFile.size,
             status: "pending",
-            payment_status: PAYMENT_STATUS_OPTIONS.includes(paymentStatusVal)
-              ? paymentStatusVal
+            payment_status: PAYMENT_STATUS_OPTIONS.includes(
+              normalizePaymentStatus(paymentStatusVal)
+            )
+              ? normalizePaymentStatus(paymentStatusVal)
               : null,
             payment_date: paymentDateVal || null,
           })
@@ -315,7 +405,7 @@ export default function IssuesManagementPage() {
       setMainPdfUploading(true);
       setError("");
 
-      const fileName = `pdf_main_${issueId}_${Date.now()}_${cleanFileName(file.name)}`;
+      const fileName = `pdf_${issueId}_${Date.now()}_${cleanFileName(file.name)}`;
 
       const { error: uploadError } = await supabase.storage
         .from("issues-files")
@@ -326,30 +416,25 @@ export default function IssuesManagementPage() {
         .from("issues-files")
         .getPublicUrl(fileName);
 
-      const { error: updateError } = await supabase
-        .from("issues")
-        .update({
-          file_type: "pdf",
-          file_url: urlData.publicUrl,
+      const { error: insertError } = await supabase
+        .from("case_documents")
+        .insert({
+          case_id: issueId,
           file_name: file.name,
+          file_url: urlData.publicUrl,
           file_size: file.size,
-        })
-        .eq("id", issueId);
+          doc_type: "additional_pdf",
+        });
 
-      if (updateError) throw updateError;
+      if (insertError) throw insertError;
 
-      setSuccess("تم تحديث PDF الأساسي بنجاح!");
+      setSuccess("تم إضافة PDF للقضية بنجاح!");
       loadIssues();
       if (detailModalIssue && detailModalIssue.id === issueId) {
-        setDetailModalIssue((prev) => ({
-          ...prev,
-          file_url: urlData.publicUrl,
-          file_name: file.name,
-          file_type: "pdf",
-        }));
+        loadAdditionalDocs(issueId);
       }
     } catch (err) {
-      setError("فشل رفع PDF الأساسي: " + err.message);
+      setError("فشل إضافة PDF للقضية: " + err.message);
     } finally {
       setMainPdfUploading(false);
     }
@@ -555,7 +640,10 @@ export default function IssuesManagementPage() {
       (issue.case_description || "").toLowerCase().includes(q);
     const matchStatus =
       statusFilter === "all" || issue.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchPaymentStatus =
+      paymentStatusFilter === "all" ||
+      normalizePaymentStatus(issue.payment_status) === paymentStatusFilter;
+    return matchSearch && matchStatus && matchPaymentStatus;
   });
 
   const getPaymentBadge = (status) => {
@@ -564,13 +652,13 @@ export default function IssuesManagementPage() {
         <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>
       );
     const map = {
-      "تم الصرف": { bg: "#D1FAE5", color: "#047857" },
-      "تم التنفيذ": { bg: "#DBEAFE", color: "#1D4ED8" },
-      "في انتظار الصرف": { bg: "#FEF3C7", color: "#92400E" },
       "جاري التنفيذ": { bg: "#E0E7FF", color: "#4338CA" },
+      "تم التنفيذ وفي انتظار الصرف": { bg: "#FEF3C7", color: "#92400E" },
+      "تم الصرف": { bg: "#D1FAE5", color: "#047857" },
       "مرفوضة": { bg: "#FEE2E2", color: "#DC2626" },
     };
-    const s = map[status] || { bg: "#F1F5F9", color: "#475569" };
+    const displayStatus = normalizePaymentStatus(status);
+    const s = map[displayStatus] || { bg: "#F1F5F9", color: "#475569" };
     return (
       <span
         style={{
@@ -583,7 +671,7 @@ export default function IssuesManagementPage() {
           whiteSpace: "nowrap",
         }}
       >
-        {status}
+        {displayStatus}
       </span>
     );
   };
@@ -762,6 +850,18 @@ export default function IssuesManagementPage() {
               <option value="in_progress">جاري التنفيذ</option>
               <option value="approved">مكتملة</option>
               <option value="rejected">مرفوضة</option>
+            </select>
+            <select
+              value={paymentStatusFilter}
+              onChange={(e) => setPaymentStatusFilter(e.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="all">كل حالات الصرف</option>
+              {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
             </select>
           </div>
         )}
@@ -1187,7 +1287,7 @@ export default function IssuesManagementPage() {
               )}
             </div>
 
-            {/* PDF الأساسي */}
+            {/* جميع مستندات القضية (الأساسي + الإضافية) */}
             <div
               style={{
                 border: "1px solid #E2E8F0",
@@ -1206,7 +1306,7 @@ export default function IssuesManagementPage() {
                 className="issues-pdf-header"
               >
                 <h4 style={{ margin: 0, fontSize: 15 }}>
-                  📄 PDF الأساسي
+                  📄 مستندات القضية
                 </h4>
                 <label
                   style={{
@@ -1216,7 +1316,7 @@ export default function IssuesManagementPage() {
                     cursor: "pointer",
                   }}
                 >
-                  {mainPdfUploading ? "جاري الرفع..." : "📝 إضافة PDF الأساسي"}
+                  {mainPdfUploading ? "جاري الرفع..." : "➕ إضافة PDF"}
                   <input
                     type="file"
                     accept=".pdf"
@@ -1234,74 +1334,6 @@ export default function IssuesManagementPage() {
                   />
                 </label>
               </div>
-
-              {detailModalIssue.file_url ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "#F0FDF4",
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                  }}
-                  className="issues-pdf-file"
-                >
-                  <span>📎</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>
-                      {detailModalIssue.file_name || "PDF الأساسي"}
-                    </div>
-                  </div>
-                  <a
-                    href={detailModalIssue.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      ...styles.viewButton,
-                      textDecoration: "none",
-                    }}
-                  >
-                    👁️ معاينة
-                  </a>
-                  <a
-                    href={detailModalIssue.file_url}
-                    download
-                    style={{
-                      ...styles.viewButton,
-                      textDecoration: "none",
-                      background: "#FEF3C7",
-                      color: "#92400E",
-                    }}
-                  >
-                    ⬇️ تحميل
-                  </a>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    padding: 10,
-                    color: "#94A3B8",
-                    fontSize: 13,
-                  }}
-                >
-                  لا يوجد PDF أساسي مرفق
-                </div>
-              )}
-            </div>
-
-            {/* الملفات الإضافية */}
-            <div
-              style={{
-                border: "1px solid #E2E8F0",
-                borderRadius: 10,
-                padding: 15,
-                marginBottom: 16,
-              }}
-            >
-              <h4 style={{ margin: "0 0 12px", fontSize: 15 }}>
-                📎 ملفات إضافية للقضية
-              </h4>
 
               <div
                 style={{
@@ -1362,8 +1394,61 @@ export default function IssuesManagementPage() {
                 )}
               </div>
 
-              {additionalDocs.length > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {detailModalIssue.file_url || additionalDocs.length > 0 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                  }}
+                >
+                  {detailModalIssue.file_url && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        background: "#F0FDF4",
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        fontSize: 13,
+                      }}
+                      className="issues-pdf-file"
+                    >
+                      <span>📄</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600 }}>
+                          {detailModalIssue.file_name || "PDF الأساسي"}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                          الملف الأساسي
+                        </div>
+                      </div>
+                      <a
+                        href={detailModalIssue.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          ...styles.viewButton,
+                          textDecoration: "none",
+                        }}
+                      >
+                        👁️ معاينة
+                      </a>
+                      <a
+                        href={detailModalIssue.file_url}
+                        download
+                        style={{
+                          ...styles.viewButton,
+                          textDecoration: "none",
+                          background: "#FEF3C7",
+                          color: "#92400E",
+                        }}
+                      >
+                        ⬇️ تحميل
+                      </a>
+                    </div>
+                  )}
                   {additionalDocs.map((doc) => (
                     <div
                       key={doc.id}
@@ -1433,7 +1518,7 @@ export default function IssuesManagementPage() {
                     fontSize: 13,
                   }}
                 >
-                  لا توجد ملفات إضافية مرفقة
+                  لا توجد مستندات مرفقة لهذه القضية
                 </div>
               )}
             </div>

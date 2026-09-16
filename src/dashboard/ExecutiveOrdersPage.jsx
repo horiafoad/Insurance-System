@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
+import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 import { styles } from "./styles";
 import { EXECUTIVE_ORDERS_CONFIG } from "./executiveOrdersConfig";
 import {
@@ -336,6 +337,75 @@ useEffect(() => {
     const t = setInterval(refreshInbox, 4000);
     return () => clearInterval(t);
   }, [view]);
+
+  /* مزامنة لحظية: تعديل الصف المتأثر فقط (الأشخاص + سلة الماسح + أوامر الشخص المفتوح) */
+  useRealtimeSync({
+    table: CFG.personsTable,
+    apply: (payload) => {
+      setPersons((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "tail",
+          mapRow: (row) =>
+            row
+              ? {
+                  id: row.id,
+                  full_name: row.full_name,
+                  full_name_norm: row.full_name_norm,
+                  file_path: row.file_path,
+                  file_url: row.file_url,
+                  page_count: row.page_count,
+                  order_count: row.order_count,
+                  created_at: row.created_at,
+                  updated_at: row.updated_at,
+                }
+              : row,
+          sort: (a, b) => String(a.full_name || "").localeCompare(String(b.full_name || ""), "ar"),
+        })
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "scanner_inbox",
+    filter: "status=eq.pending",
+    apply: (payload) => {
+      setInboxRows((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          mapRow: (row) =>
+            row
+              ? {
+                  id: row.id,
+                  file_path: row.file_path,
+                  file_url: row.file_url,
+                  file_name: row.file_name,
+                  file_mime: row.file_mime,
+                  file_size: row.file_size,
+                  status: row.status,
+                  scanned_at: row.scanned_at,
+                }
+              : row,
+          sort: (a, b) => new Date(b.scanned_at || 0) - new Date(a.scanned_at || 0),
+        }).slice(0, 50)
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: CFG.ordersTable,
+    apply: (payload) => {
+      const personId = payload.new?.person_id ?? payload.old?.person_id;
+      if (personId == null) return;
+      if (!filePerson || !fileModalOpen) return;
+      if (String(filePerson.id) !== String(personId)) return;
+
+      loadOrdersForPerson(personId)
+        .then((orders) => setFileOrders(orders))
+        .catch((err) => console.error("Realtime orders refresh:", err));
+    },
+  });
 
   const searchResults = useMemo(
     () => (searchQuery.trim() ? searchPersons(persons, searchQuery) : []),

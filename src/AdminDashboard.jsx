@@ -45,6 +45,7 @@ import {
   hasPermission,
   canAccessMenu,
 } from "./utils/permissions";
+import { useRealtimeSync, applyRowChange } from "./utils/realtimeSync";
 
 export default function AdminDashboard({ currentUser, focusRequestId: propFocusId }) {
   const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
@@ -221,6 +222,53 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       setClaimError("تعذر تحميل المطالبات من قاعدة البيانات.");
     }
   };
+
+  /* ===== المزامنة اللحظية (Supabase Realtime) — الصف المتأثر فقط ===== */
+  const realtimeClaimsRef = useRef([]);
+
+  useEffect(() => {
+    realtimeClaimsRef.current = claims;
+  }, [claims]);
+
+  const rebuildClaimSheets = (rows) => {
+    const grouped = {};
+    (rows || []).forEach((claim) => {
+      const name = claim.sheet_name || "بدون شيت";
+      if (!grouped[name]) grouped[name] = 0;
+      grouped[name]++;
+    });
+    return Object.entries(grouped).map(([name, count]) => ({ name, count }));
+  };
+
+  const realtimeEnabled = hasPermission(currentUser, "entitlements");
+
+  useRealtimeSync({
+    table: "tasks",
+    enabled: realtimeEnabled,
+    apply: (payload) => {
+      setTasks((prev) =>
+        applyRowChange(prev, payload, {
+          pk: "id",
+          insert: "head",
+          mapRow: mapTaskFromDatabase,
+        })
+      );
+    },
+  });
+
+  useRealtimeSync({
+    table: "claims",
+    enabled: realtimeEnabled,
+    apply: (payload) => {
+      const next = applyRowChange(realtimeClaimsRef.current, payload, {
+        pk: "id",
+        insert: "head",
+      });
+      realtimeClaimsRef.current = next;
+      setClaims(next);
+      setClaimSheets(rebuildClaimSheets(next));
+    },
+  });
 
   useEffect(() => {
     const notificationSources = [
