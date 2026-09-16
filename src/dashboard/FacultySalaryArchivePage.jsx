@@ -1702,7 +1702,8 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
           {/* البحث والفلاتر */}
           <div className="fsa-filter-row" style={filterRowStyle}>
             <input
-              type="search"
+              type="text"
+              enterKeyHint="search"
               className="fsa-search-input"
               placeholder={
                 cfg.id === "faculty"
