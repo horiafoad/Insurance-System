@@ -1042,6 +1042,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             </div>
 
           <div
+            className="admin-header-actions"
             style={{
               display: "flex",
               gap: "12px",
@@ -1193,6 +1194,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               activeMenu !== "employee_salary_archive" &&
               hasPermission(currentUser, "entitlements") && (
                 <button
+                  className="header-add-task"
                   style={styles.primaryButton}
                   onClick={() => {
                     setTaskForm(createEmptyTask());

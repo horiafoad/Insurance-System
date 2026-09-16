@@ -175,4 +175,96 @@ body,
     flex-direction: column !important;
     align-items: flex-start !important;
   }
+
+  /* ============================================================
+     أمان عام للكروت والقوائم على الموبايل
+     (لا يغيير شكل Landscape — يحافظ على العرض حتى الكرت نفسه)
+     box-sizing يمنع الحشوات من دفع المحتوى خارج حدود الكرت،
+     وmin-width: 0 يسمح لعناصر الشبكة بالانكماش داخل العمود
+     بدل الانزلاق والتداخل فوق بعضها.
+     لا نستخدم overflow:hidden هنا كي لا نخفي أي معلومات. */
+  .admin-app *,
+  .admin-app_dashboard * {
+    box-sizing: border-box;
+  }
+
+  .admin-app,
+  .admin-app_dashboard {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  /* عناصر شبكات الرئيسية تبقى داخل أعمدة الشبكة */
+  .admin-app .card > *,
+  .admin-app_dashboard .card > * {
+    min-width: 0;
+  }
+
+  /* هيدر الصفحة: صف الأزرار يلتف بدل ضغط العنوان (الجرس/تحديث/إضافة)
+     — flex-wrap فقط حفاظًا على Landscape كما هو عند وجود مساحة */
+  .admin-header-actions {
+    flex-wrap: wrap !important;
+  }
+
+  /* بطاقات الإحصائيات: الأيقونة + النص + الرقم يبقون داخل الكارت */
+  .home-stats-grid > *,
+  .home-work-grid > *,
+  .home-dashboard-grid > * {
+    min-width: 0;
+  }
+}
+
+/* =========================================================================
+   4) Portrait الهواتف حتى 430px — إصلاحات الأعمدة
+      (لا تُطبق على Landscape: عرضه الفعلي أكبر من 430px)
+   ========================================================================= */
+@media (max-width: 430px) {
+  /* شبكة الإحصائيات: 4 أعمدة → عمودان على الهاتف */
+  .home-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .home-stats-grid > *,
+  .home-work-grid > *,
+  .home-dashboard-grid > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* الأقسام السفلية (أداء القسم / مهام اليوم): عمود واحد في Portrait */
+  .home-dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* بطاقات الأعمال: 3 أعمدة → عمودان حتى 430px */
+  .home-work-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* هيدر الصفحة: صف الأزرار يصبح شبكة 2×2 — إضافة مهمة بكامل العرض
+     بعروض ملائمة للمس بدل تداخل الأزرار */
+  .admin-header-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    align-items: stretch !important;
+  }
+  .admin-header-actions > button {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+  .admin-header-actions > .header-add-task {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+/* =========================================================================
+   5) Portrait شديد الضيق حتى 360px — عمود واحد عند الحاجة لمنع التداخل
+   ========================================================================= */
+@media (max-width: 360px) {
+  .home-stats-grid,
+  .home-work-grid {
+    grid-template-columns: 1fr !important;
+  }
 }

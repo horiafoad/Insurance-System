@@ -8,7 +8,7 @@ export default function PerformanceView({ title, period, performance, stats }) {
 
       <p style={styles.cardSub}>{period}</p>
 
-      <div style={styles.statsGrid}>
+      <div style={styles.statsGrid} className="home-stats-grid">
         <StatCard
           title="نسبة الإنجاز"
           value={`${stats.completionRate}%`}

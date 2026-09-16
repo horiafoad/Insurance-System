@@ -14,14 +14,14 @@ export default function HomeView({
 }) {
   return (
     <>
-      <div style={styles.statsGrid}>
+      <div style={styles.statsGrid} className="home-stats-grid">
         <StatCard title="إجمالي المهام" value={stats.total} icon="📋" />
         <StatCard title="تم التنفيذ" value={stats.completed} icon="✅" />
         <StatCard title="جاري التنفيذ" value={stats.inProgress} icon="🔄" />
         <StatCard title="متأخر" value={stats.late} icon="⚠️" />
       </div>
 
-      <div style={styles.dashboardGrid}>
+      <div style={styles.dashboardGrid} className="home-dashboard-grid">
         <div style={styles.card}>
           <div style={styles.cardHeader}>
             <div>
@@ -75,7 +75,7 @@ export default function HomeView({
           </div>
         </div>
 
-        <div style={styles.workGrid}>
+        <div style={styles.workGrid} className="home-work-grid">
           {TASK_TYPES.map((type) => {
             let count;
             if (type.id === "staff_changes") {
