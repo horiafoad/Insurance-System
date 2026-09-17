@@ -592,11 +592,12 @@ export default function IssuesManagementPage() {
       if (updateErr) throw updateErr;
 
       if (editingIssue.case_type === "individual") {
-        const { data: existing } = await supabase
+        const { data: existing, error: selectErr } = await supabase
           .from("issue_details")
           .select("id")
           .eq("issue_id", id)
           .limit(1);
+        if (selectErr) throw selectErr;
 
         const excelData = {};
         CASE_FIELD_ORDER.forEach((field) => {
@@ -604,17 +605,21 @@ export default function IssuesManagementPage() {
         });
 
         if (existing && existing.length > 0) {
-          await supabase
+          const { error: detailErr } = await supabase
             .from("issue_details")
             .update({ data: excelData })
             .eq("issue_id", id);
+          if (detailErr) throw detailErr;
         } else {
-          await supabase.from("issue_details").insert({
-            issue_id: id,
-            row_number: 1,
-            data: excelData,
-            status: "pending",
-          });
+          const { error: detailErr } = await supabase
+            .from("issue_details")
+            .insert({
+              issue_id: id,
+              row_number: 1,
+              data: excelData,
+              status: "pending",
+            });
+          if (detailErr) throw detailErr;
         }
       }
 
