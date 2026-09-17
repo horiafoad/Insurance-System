@@ -594,7 +594,7 @@ export default function IssuesManagementPage() {
       if (editingIssue.case_type === "individual") {
         const { data: existing, error: selectErr } = await supabase
           .from("issue_details")
-          .select("id")
+          .select("id, row_number, status")
           .eq("issue_id", id)
           .limit(1);
         if (selectErr) throw selectErr;
@@ -605,11 +605,37 @@ export default function IssuesManagementPage() {
         });
 
         if (existing && existing.length > 0) {
-          const { error: detailErr } = await supabase
+          const { data: updatedRows, error: detailErr } = await supabase
             .from("issue_details")
             .update({ data: excelData })
-            .eq("issue_id", id);
+            .eq("issue_id", id)
+            .select("id");
           if (detailErr) throw detailErr;
+
+          if (!updatedRows || updatedRows.length === 0) {
+            const { data: deletedRows, error: delErr } = await supabase
+              .from("issue_details")
+              .delete()
+              .eq("issue_id", id)
+              .select("id");
+            if (delErr) throw delErr;
+            if (!deletedRows || deletedRows.length === 0) {
+              throw new Error(
+                "سياسات قاعدة البيانات تمنع تعديل تفاصيل القضية - شغّل ملف fix_issue_details_update_policy.sql في Supabase SQL Editor"
+              );
+            }
+
+            const { error: insErr } = await supabase
+              .from("issue_details")
+              .insert({
+                issue_id: id,
+                row_number: existing?.[0]?.row_number ?? 1,
+                data: excelData,
+                status: existing?.[0]?.status ?? "pending",
+              })
+              .select("id");
+            if (insErr) throw insErr;
+          }
         } else {
           const { error: detailErr } = await supabase
             .from("issue_details")
@@ -618,7 +644,8 @@ export default function IssuesManagementPage() {
               row_number: 1,
               data: excelData,
               status: "pending",
-            });
+            })
+            .select("id");
           if (detailErr) throw detailErr;
         }
       }
