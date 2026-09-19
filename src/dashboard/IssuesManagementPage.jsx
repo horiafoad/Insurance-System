@@ -341,7 +341,6 @@ export default function IssuesManagementPage() {
           issue_id: issueData.id,
           row_number: i + 1,
           data: row,
-          status: "pending",
         });
 
         created++;
@@ -590,6 +589,7 @@ export default function IssuesManagementPage() {
 
   const handleSaveEdit = async (e) => {
     e.preventDefault();
+    console.log("SAVE BUTTON CLICKED");
     if (!editingIssue) return;
 
     try {
@@ -606,12 +606,17 @@ export default function IssuesManagementPage() {
         payment_date: payment_date !== "" ? payment_date : null,
       };
 
+      console.log("SAVE DATA:", editForm);
+
       // تحديث جدول القضايا مع التحقق الفعلي من أن الصف اكتمل تحديثه.
+      console.log("START SUPABASE UPDATE");
       const { data: updatedIssues, error: updateErr } = await supabase
         .from("issues")
         .update(issuesPayload)
         .eq("id", id)
         .select("id");
+
+      console.log("SUPABASE RESULT:", { data: updatedIssues, error: updateErr });
 
       if (updateErr) throw updateErr;
       if (!updatedIssues || updatedIssues.length === 0) {
@@ -623,7 +628,7 @@ export default function IssuesManagementPage() {
       if (editingIssue.case_type === "individual") {
         const { data: existing, error: selectErr } = await supabase
           .from("issue_details")
-          .select("id, row_number, status, data")
+          .select('id, "row_number", data')
           .eq("issue_id", id)
           .order("id", { ascending: false })
           .limit(1);
@@ -640,7 +645,6 @@ export default function IssuesManagementPage() {
         });
 
         const rowNumber = existing?.[0]?.row_number ?? 1;
-        const detailStatus = existing?.[0]?.status ?? "pending";
 
         if (existing && existing.length > 0) {
           const { data: updatedRows, error: detailErr } = await supabase
@@ -648,6 +652,8 @@ export default function IssuesManagementPage() {
             .update({ data: baseData })
             .eq("issue_id", id)
             .select("id");
+
+          console.log("DETAIL RESULT:", { updatedRows, detailErr });
 
           if (detailErr) throw detailErr;
 
@@ -661,7 +667,6 @@ export default function IssuesManagementPage() {
                 issue_id: id,
                 row_number: rowNumber,
                 data: baseData,
-                status: detailStatus,
               })
               .select("id");
             if (insErr) throw insErr;
@@ -687,7 +692,6 @@ export default function IssuesManagementPage() {
               issue_id: id,
               row_number: 1,
               data: newDetailData,
-              status: "pending",
             })
             .select("id");
           if (detailErr) throw detailErr;
@@ -1295,7 +1299,19 @@ export default function IssuesManagementPage() {
                 >
                   إلغاء
                 </button>
-                <button type="submit" style={styles.primaryButton}>
+                <button
+                  type="submit"
+                  style={{
+                    ...styles.primaryButton,
+                    position: "relative",
+                    zIndex: 10001,
+                    pointerEvents: "auto",
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    handleSaveEdit(event);
+                  }}
+                >
                   💾 حفظ التعديلات
                 </button>
               </div>
