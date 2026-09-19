@@ -3,7 +3,333 @@ import * as XLSX from "xlsx";
 import { supabase } from "../supabaseClient";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
-import { notifyPushEvent } from "../utils/pushNotifications";
+import { notifyPushEvent, getAppBase } from "../utils/pushNotifications";
+
+/* =========================================================================
+   DEMO WHATSAPP — معاينة إشعار عند إتمام الطلب
+   مرحلة التجربة فقط: بدون WhatsApp API، بدون إرسال فعلي، بدون مفاتيح سرية.
+   ========================================================================= */
+
+// رقم الإرسال التجريبي (ليس رقم الإدارة النهائي).
+const WHATSAPP_DEMO_NUMBER = "01055662546";
+const WHATSAPP_DEMO_NOTE =
+  "للعرض التجريبي فقط – سيتم استبداله برقم الإدارة لاحقًا.";
+
+// الرابط العام للمتابعة — نفس نطاق التطبيق مع معامل track (يُفتح منه نموذج متابعة الطلب).
+function requestTrackingUrl(requestId) {
+  let base = "";
+
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol;
+
+    if (protocol === "http:" || protocol === "https:") {
+      base = getAppBase();
+    }
+  }
+
+  // احتياط داخل تطبيق الأندرويد (capacitor/file://) — نفس الرابط العام المستخدم
+  // أصلًا في المشروع لروابط متابعة الخطابات QR.
+  if (!base) {
+    base = "https://insurance-system-9et.pages.dev/";
+  }
+
+  return base + "?track=" + encodeURIComponent(String(requestId));
+}
+
+// تحويل رقم مقدم الطلب إلى صيغة دولية +20 لاستخدام wa.me (يمنع فتح الرابط برقم خاطئ).
+function normalizePhoneToIntl(rawPhone) {
+  const digits = String(rawPhone || "").replace(/\D/g, "");
+
+  if (!digits) return null;
+
+  if (digits.startsWith("20") && digits.length === 12) {
+    return digits;
+  }
+
+  if (digits.startsWith("0") && digits.length === 11) {
+    return "20" + digits.slice(1);
+  }
+
+  return null;
+}
+
+// نص رسالة WhatsApp بالشكل النهائي المقترح للمراسلة.
+function buildWhatsAppCompletedMessage(request) {
+  const trackingUrl = requestTrackingUrl(request?.id);
+
+  return [
+    "إدارة الاستحقاقات – كلية الهندسة – جامعة عين شمس",
+    "",
+    "السيد/السيدة مقدم الطلب،",
+    "",
+    "نحيطكم علمًا بأنه تم الانتهاء من تنفيذ طلبكم رقم " +
+      (request?.id ?? "") +
+      ".",
+    "",
+    "لمتابعة تفاصيل الطلب:",
+    trackingUrl,
+    "",
+    "مع خالص التحية،",
+    "إدارة الاستحقاقات",
+  ].join("\n");
+}
+
+/* =========================================================================
+   نافذة معاينة إشعار WhatsApp (تجريبية)
+   ========================================================================= */
+
+function WhatsAppPreviewModal({ request, onClose }) {
+  const [copied, setCopied] = useState(false);
+
+  if (!request) return null;
+
+  const message = buildWhatsAppCompletedMessage(request);
+  const intlNumber = normalizePhoneToIntl(request.phone);
+  const hasPhone = Boolean(request.phone && String(request.phone).trim());
+  const invalidPhone = hasPhone && !intlNumber;
+
+  const handleOpenWhatsApp = () => {
+    if (!hasPhone) {
+      alert("لا يوجد رقم موبايل مسجل لهذا الطلب.");
+      return;
+    }
+
+    if (!intlNumber) {
+      alert(
+        "رقم الهاتف غير صالح لفتح محادثة WhatsApp: " + request.phone
+      );
+      return;
+    }
+
+    const waUrl =
+      "https://wa.me/" +
+      intlNumber +
+      "?text=" +
+      encodeURIComponent(message);
+
+    // فتح المحادثة فقط — لا يتم إرسال أي رسالة تلقائيًا.
+    // المستخدم هو الذي يضغط زر الإرسال يدويًا أثناء العرض.
+    window.open(waUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopy = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(message);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = message;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2200);
+    } catch (copyError) {
+      console.error("Copy WhatsApp message error:", copyError);
+      alert("تعذر نسخ الرسالة، يرجى المحاولة مرة أخرى.");
+    }
+  };
+
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div
+        style={{
+          ...styles.loginBox,
+          width: "min(560px, 95%)",
+          padding: 0,
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "14px 18px",
+            background: "#075E54",
+            color: "#FFFFFF",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              minWidth: 0,
+            }}
+          >
+            <span style={{ fontSize: 22, flexShrink: 0 }}>💬</span>
+
+            <div style={{ minWidth: 0 }}>
+              <strong
+                style={{
+                  display: "block",
+                  fontSize: 14,
+                  marginBottom: 2,
+                }}
+              >
+                معاينة إشعار WhatsApp
+              </strong>
+
+              <small style={{ opacity: 0.85, fontSize: 11, lineHeight: 1.5 }}>
+                عرض الشكل النهائي للإدارة — بدون إرسال فعلي
+              </small>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            aria-label="إغلاق المعاينة"
+            title="إغلاق"
+            style={{
+              border: 0,
+              background: "rgba(255,255,255,.18)",
+              color: "#FFFFFF",
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              cursor: "pointer",
+              fontSize: 16,
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div
+          style={{
+            padding: "18px 18px 10px",
+            background: "#ECE5DD",
+            maxHeight: 300,
+            overflowY: "auto",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: "88%",
+              background: "#DCF8C6",
+              borderRadius: "12px",
+              borderTopRightRadius: 2,
+              padding: "12px 14px",
+              color: "#111B21",
+              fontSize: 14,
+              lineHeight: 1.8,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              boxShadow: "0 1px 1px rgba(0,0,0,.12)",
+            }}
+          >
+            {message}
+          </div>
+        </div>
+
+        <div style={{ padding: "12px 18px 18px", background: "#FFFFFF" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
+              background: "#F0FDF4",
+              border: "1px solid #BBF7D0",
+              marginBottom: 12,
+            }}
+          >
+            <span style={{ color: "#16A34A", flexShrink: 0 }}>📱</span>
+
+            <div style={{ fontSize: 13, color: "#166534", lineHeight: 1.7 }}>
+              <strong>
+                رقم الإرسال التجريبي: {WHATSAPP_DEMO_NUMBER}
+              </strong>
+
+              <div>{WHATSAPP_DEMO_NOTE}</div>
+            </div>
+          </div>
+
+          {!hasPhone ? (
+            <div
+              style={{
+                ...styles.errorBox,
+                marginBottom: 12,
+                fontSize: 13,
+              }}
+            >
+              ⚠️ لا يوجد رقم موبايل مسجل لهذا الطلب.
+            </div>
+          ) : invalidPhone ? (
+            <div
+              style={{
+                ...styles.errorBox,
+                marginBottom: 12,
+                fontSize: 13,
+              }}
+            >
+              ⚠️ رقم الهاتف غير صالح ولا يمكن فتح محادثة WhatsApp عليه:{" "}
+              <strong dir="ltr">{request.phone}</strong>
+            </div>
+          ) : (
+            <div
+              style={{
+                ...styles.infoBox,
+                marginBottom: 12,
+                fontSize: 12,
+              }}
+            >
+              سيُفتح WhatsApp على الرقم{" "}
+              <strong dir="ltr">{request.phone}</strong> — لن تُرسل الرسالة
+              تلقائيًا، يضغط المستخدم زر الإرسال يدويًا.
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+            }}
+          >
+            <button
+              style={{
+                ...styles.secondaryButton,
+                background: "#ECFDF5",
+                color: "#047857",
+                border: "1px solid #A7F3D0",
+              }}
+              onClick={handleCopy}
+            >
+              {copied ? "✅ تم النسخ" : "📋 نسخ الرسالة"}
+            </button>
+
+            <button style={styles.secondaryButton} onClick={onClose}>
+              إغلاق
+            </button>
+
+            <button
+              style={{
+                ...styles.primaryButton,
+                background: "#25D366",
+                border: "1px solid #1DA851",
+              }}
+              onClick={handleOpenWhatsApp}
+            >
+              💬 فتح WhatsApp للعرض
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const MONTH_LABELS = {
   1: "يناير",
@@ -298,6 +624,7 @@ export function ServiceRequestsView({
   const [drafts, setDrafts] = useState({});
   const [toast, setToast] = useState("");
   const [rejectPending, setRejectPending] = useState(null);
+  const [waPreviewRequest, setWaPreviewRequest] = useState(null);
 
   const activeServiceFilter = onServiceFilterChange
     ? selectedService
@@ -522,12 +849,16 @@ export function ServiceRequestsView({
       (r) => r.id === editingRequest.id
     );
 
-    try {
-      setRequests((curr) =>
-        curr.map((r) => (r.id === editingRequest.id ? editingRequest : r))
-      );
+    if (!prevRequest) {
+      setError("تعذر العثور على الطلب المطلوب تعديله.");
+      return;
+    }
 
-      const { error: saveError } = await supabase
+    setUpdatingId(editingRequest.id);
+    setError("");
+
+    try {
+      const { data: savedRow, error: saveError } = await supabase
         .from("service_requests")
         .update({
           name: editingRequest.name,
@@ -541,27 +872,41 @@ export function ServiceRequestsView({
           status: editingRequest.status,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", editingRequest.id);
+        .eq("id", editingRequest.id)
+        .select()
+        .single();
 
+      // لا نعرض نجاحًا إلا بعد تأكيد التحديث من قاعدة البيانات فعلاً.
       if (saveError) {
-        console.warn("Save request update error:", saveError.message);
+        console.error("Save request update error:", saveError);
+        setRequests((curr) =>
+          curr.map((r) => (r.id === editingRequest.id ? prevRequest : r))
+        );
+        setError(
+          "حدث خطأ أثناء حفظ تعديل الطلب: " + saveError.message
+        );
+        return;
       }
 
+      // نعرض القيم المؤكدة من قاعدة البيانات مباشرة في نفس الصفحة.
+      const confirmedRow = savedRow || editingRequest;
+      setRequests((curr) =>
+        curr.map((r) =>
+          r.id === editingRequest.id ? confirmedRow : r
+        )
+      );
+
       setEditingRequest(null);
-      alert("تم حفظ تعديل الطلب بنجاح.");
+      showToast("تم حفظ تعديل الطلب بنجاح.");
 
       // إشعار الموبايل (fire-and-forget) عند تغيير الحالة أو إضافة ملاحظة.
-      if (
-        prevRequest &&
-        editingRequest.status !== prevRequest.status
-      ) {
+      if (editingRequest.status !== prevRequest.status) {
         notifyPushEvent("status_change", {
           requestId: editingRequest.id,
           requestNumber: editingRequest.id,
           status: editingRequest.status,
         });
       } else if (
-        prevRequest &&
         (editingRequest.notes || "") !== (prevRequest.notes || "")
       ) {
         notifyPushEvent("note_added", {
@@ -569,9 +914,17 @@ export function ServiceRequestsView({
           requestNumber: editingRequest.id,
         });
       }
-    } catch (e) {
-      console.error(e);
-      alert("تعذر حفظ التعديل.");
+    } catch (saveException) {
+      console.error("Save request exception:", saveException);
+      setRequests((curr) =>
+        curr.map((r) => (r.id === editingRequest.id ? prevRequest : r))
+      );
+      setError(
+        "تعذر حفظ التعديل في قاعدة البيانات: " +
+          (saveException?.message || "")
+      );
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -632,6 +985,12 @@ export function ServiceRequestsView({
             📊 تصدير Excel
           </button>
         </div>
+      </div>
+
+      <div style={styles.infoBox}>
+        💬 <strong>وضع تجريبي WhatsApp:</strong> عند وصول أي طلب بحالة «تم
+        التنفيذ» يظهر زر «معاينة رسالة WhatsApp» لعرض شكل الإشعار المقترح —
+        لا يتم إرسال أي رسالة فعلية في هذه المرحلة.
       </div>
 
       {loading && <div style={styles.infoBox}>جاري تحميل الطلبات...</div>}
@@ -815,7 +1174,32 @@ export function ServiceRequestsView({
                     </td>
                     <td style={styles.td}>{formatRequestDate(request)}</td>
                     <td style={styles.td}>
-                      <div style={{ display: "flex", gap: "6px" }}>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        {currentStatus === "تم التنفيذ" && (
+                          <button
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 5,
+                              background: "#DCFCE7",
+                              color: "#15803D",
+                              border: "1px solid #86EFAC",
+                              borderRadius: 8,
+                              padding: "6px 10px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                            }}
+                            onClick={() =>
+                              setWaPreviewRequest(request)
+                            }
+                            title="عرض شكل رسالة WhatsApp عند إتمام الطلب"
+                          >
+                            💬 معاينة رسالة WhatsApp
+                          </button>
+                        )}
+
                         <button
                           style={{
                             ...styles.viewButton,
@@ -1026,13 +1410,27 @@ export function ServiceRequestsView({
                 >
                   إلغاء
                 </button>
-                <button type="submit" style={styles.primaryButton}>
-                  💾 حفظ التعديل
+                <button
+                  type="submit"
+                  disabled={updatingId === editingRequest.id}
+                  style={styles.primaryButton}
+                >
+                  {updatingId === editingRequest.id
+                    ? "⏳ جاري الحفظ..."
+                    : "💾 حفظ التعديل"}
                 </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* Modal معاينة إشعار WhatsApp (تجريبي) */}
+      {waPreviewRequest && (
+        <WhatsAppPreviewModal
+          request={waPreviewRequest}
+          onClose={() => setWaPreviewRequest(null)}
+        />
       )}
 
       {/* Modal تأكيد رفض الطلب */}

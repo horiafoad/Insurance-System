@@ -808,10 +808,17 @@ const updatedMovements = qrLetter.movements.map((movement) =>
     });
   };
 
-  const trackServiceRequest = async (event) => {
-    event.preventDefault();
+  const trackServiceRequest = async (event, overrideId) => {
+    event?.preventDefault?.();
 
-    if (!trackingId.trim()) {
+    // دعم الرابط المباشر للمتابعة (?track=رقم الطلب) برقم يمرر خارج الـ state.
+    const targetId = (
+      overrideId !== undefined
+        ? overrideId
+        : trackingId
+    ).trim();
+
+    if (!targetId) {
       setTrackingError("أدخلي رقم الطلب أولاً.");
       return;
     }
@@ -824,7 +831,7 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       const { data, error } = await supabase
         .from("service_requests")
         .select("id, service_type, name, status, notes, created_at, updated_at")
-        .eq("id", trackingId.trim())
+        .eq("id", targetId)
         .maybeSingle();
 
       if (error) throw error;
@@ -846,6 +853,30 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       setTrackingLoading(false);
     }
   };
+
+  // فتح متابعة الطلب مباشرة من الرابط الموجود في إشعار WhatsApp التجريبي
+  // (?track=رقم الطلب) — يفتح نموذج المتابعة ويملأ الرقم ويبحث تلقائيًا.
+  const trackingFromUrl =
+    new URLSearchParams(window.location.search).get("track")?.trim() || "";
+
+  useEffect(() => {
+    if (!trackingFromUrl) return;
+
+    const timer = window.setTimeout(() => {
+      setShowTrackingForm(true);
+      setTrackingError("");
+      setTrackedRequest(null);
+      setTrackingId(trackingFromUrl);
+
+      trackServiceRequest(
+        { preventDefault() {} },
+        trackingFromUrl
+      );
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackingFromUrl]);
 
   /* =====================================================
      REALTIME — حالة الطلب المتتبَّع
