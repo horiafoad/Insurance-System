@@ -56,8 +56,9 @@ function normalizePhoneToIntl(rawPhone) {
 // نص رسالة WhatsApp بالشكل النهائي المقترح للمراسلة.
 function buildWhatsAppCompletedMessage(request) {
   const trackingUrl = requestTrackingUrl(request?.id);
+  const notes = String(request?.notes || "").trim();
 
-  return [
+  const lines = [
     "إدارة الاستحقاقات – كلية الهندسة – جامعة عين شمس",
     "",
     "السيد/السيدة مقدم الطلب،",
@@ -65,13 +66,23 @@ function buildWhatsAppCompletedMessage(request) {
     "نحيطكم علمًا بأنه تم الانتهاء من تنفيذ طلبكم رقم " +
       (request?.id ?? "") +
       ".",
+  ];
+
+  // ملاحظة الموظف على الطلب تُضاف تلقائيًا في الرسالة إن وجدت (لا يُعرض قسم إذا لم توجد).
+  if (notes) {
+    lines.push("", "ملاحظات إدارة الاستحقاقات:", notes);
+  }
+
+  lines.push(
     "",
     "لمتابعة تفاصيل الطلب:",
     trackingUrl,
     "",
     "مع خالص التحية،",
-    "إدارة الاستحقاقات",
-  ].join("\n");
+    "إدارة الاستحقاقات"
+  );
+
+  return lines.join("\n");
 }
 
 /* =========================================================================
@@ -109,7 +120,35 @@ function WhatsAppPreviewModal({ request, onClose }) {
 
     // فتح المحادثة فقط — لا يتم إرسال أي رسالة تلقائيًا.
     // المستخدم هو الذي يضغط زر الإرسال يدويًا أثناء العرض.
-    window.open(waUrl, "_blank", "noopener,noreferrer");
+    routeWhatsAppOpen(waUrl);
+  };
+
+  const routeWhatsAppOpen = (waUrl) => {
+    try {
+      // داخل تطبيق الأندرويد (Capacitor): فتح رسميّ خارج التطبيق ليتجه مباشرة إلى WhatsApp.
+      if (
+        typeof window !== "undefined" &&
+        window.Capacitor &&
+        window.Capacitor.isNativePlatform &&
+        window.Capacitor.isNativePlatform()
+      ) {
+        window.open(waUrl, "_system", "noopener,noreferrer");
+        return;
+      }
+
+      // ويب/ديسكتوب: رابط حقيقي في تبويب جديد — أضمن من window.open
+      // ولا يحجزه مانع النوافذ المنبثقة.
+      const link = document.createElement("a");
+      link.href = waUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (openError) {
+      console.error("Open WhatsApp error:", openError);
+      alert("تعذر فتح WhatsApp، يرجى المحاولة من متصفح آخر.");
+    }
   };
 
   const handleCopy = async () => {
