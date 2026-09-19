@@ -124,6 +124,17 @@ async function sendToSubscriptions(subscriptions, payload): Promise<number> {
           .from("push_subscriptions")
           .update({ is_active: false })
           .eq("endpoint", sub.endpoint);
+      } else if (
+        statusCode === 400 &&
+        /VapidPkHashMismatch/i.test(String(err?.body || err?.message || ""))
+      ) {
+        // Apple/Chrome: الاشتراك أُنشئ بمفتاح VAPID قديم مختلف عن مفتاح الخادم —
+        // نُعطّله ليعيد التطبيق تسجيله تلقائياً بمفتاح سليم عند التفعيل.
+        console.warn("Vapid key mismatch — deactivating subscription:", sub.endpoint);
+        await supabase
+          .from("push_subscriptions")
+          .update({ is_active: false })
+          .eq("endpoint", sub.endpoint);
       } else {
         console.error("Push send error:", statusCode || err?.message || err);
       }
@@ -451,8 +462,8 @@ async function handleTest(body, selfUrl): Promise<Record<string, unknown>> {
   const subs = await getActiveSubscriptions(userId);
   const appBase = resolveAppBase(body?.appUrl, selfUrl);
   const payload = buildPayload("test", {}, appBase);
-  const sent = await sendToSubscriptions(subs, payload);
-  return { ok: true, sent };
+  const { web, fcm } = await sendMixedSubscriptions(subs, payload);
+  return { ok: true, sent: web + fcm, web, fcm };
 }
 
 async function handleNotify(body, selfUrl): Promise<Record<string, unknown>> {

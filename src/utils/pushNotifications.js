@@ -77,7 +77,19 @@ export async function enablePushNotifications(user) {
   }
 
   const registration = await navigator.serviceWorker.ready;
+  const storedVapidKey = localStorage.getItem("pushVapidKey");
   let subscription = await registration.pushManager.getSubscription();
+
+  // لو تغيّر مفتاح VAPID منذ آخر تسجيل (إعادة نشر بمفتاح جديد)، الاشتراك القديم
+  // سيرفضه الخادم برمز VapidPkHashMismatch — نعيد إنشاءه بمفتاح سليم.
+  if (subscription && storedVapidKey && storedVapidKey !== VAPID_PUBLIC_KEY) {
+    try {
+      await subscription.unsubscribe();
+    } catch (e) {
+      console.warn("unsubscribe old push subscription:", e);
+    }
+    subscription = null;
+  }
 
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
@@ -85,6 +97,7 @@ export async function enablePushNotifications(user) {
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
   }
+  localStorage.setItem("pushVapidKey", VAPID_PUBLIC_KEY);
 
   const { platform, deviceName } = getDeviceInfo();
 
