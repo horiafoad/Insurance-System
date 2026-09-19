@@ -163,6 +163,32 @@ export async function listPushDevices(userId) {
   return (data && data.devices) || [];
 }
 
+// قائمة بجميع أجهزة الإشعارات لكل المستخدمين — للمسؤول فقط (الخادم يتحقق).
+export async function listAllPushDevices(userId) {
+  const { data, error } = await supabase.functions.invoke(
+    "push-notifications",
+    { body: { action: "list_all", userId } }
+  );
+  if (error) {
+    console.error("push list-all error:", error);
+    return [];
+  }
+  return (data && data.devices) || [];
+}
+
+// تفعيل/تعطيل جهاز معيّن لأي مستخدم — للمسؤول فقط (الخادم يتحقق).
+export async function setPushDeviceActive(userId, endpoint, isActive) {
+  const { data, error } = await supabase.functions.invoke(
+    "push-notifications",
+    { body: { action: "set_active", userId, endpoint, is_active: isActive } }
+  );
+  if (error) {
+    console.error("push set-active error:", error);
+    return false;
+  }
+  return data && data.ok !== false;
+}
+
 export async function deactivatePushDevice(userId, endpoint) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",

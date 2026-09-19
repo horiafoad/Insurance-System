@@ -466,6 +466,72 @@ async function handleTest(body, selfUrl): Promise<Record<string, unknown>> {
   return { ok: true, sent: web + fcm, web, fcm };
 }
 
+// هل المتصل مسؤول (منشئ البرنامج/مدير) يمكنه إدارة أجهزة جميع المستخدمين؟
+async function isAdminCaller(callerUserId): Promise<boolean> {
+  const { data: caller } = await supabase
+    .from("users")
+    .select("role, permissions")
+    .eq("id", callerUserId)
+    .maybeSingle();
+  if (!caller) return false;
+  return (
+    caller.role === "super_admin" ||
+    caller.role === "admin" ||
+    caller.permissions == null
+  );
+}
+
+// قائمة بجميع الأجهزة المشتركة في الإشعارات لكل المستخدمين (للمسؤول فقط).
+async function handleListAllDevices(body): Promise<Record<string, unknown>> {
+  const callerId = body?.userId;
+  if (!callerId) return { ok: false, error: "Missing userId" };
+  if (!(await isAdminCaller(callerId))) {
+    return { ok: false, error: "Forbidden" };
+  }
+
+  const { data: devices, error } = await supabase
+    .from("push_subscriptions")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const { data: users, error: usersError } = await supabase
+    .from("users")
+    .select("id, username, full_name, role");
+  if (usersError) throw usersError;
+
+  const usersById = {};
+  (users || []).forEach((u) => {
+    usersById[u.id] = u;
+  });
+
+  return {
+    ok: true,
+    devices: (devices || []).map((d) => ({
+      ...d,
+      user: usersById[d.user_id] || null,
+    })),
+  };
+}
+
+// تفعيل/تعطيل أي جهاز من أي مستخدم (للمسؤول فقط).
+async function handleSetDeviceActive(body): Promise<Record<string, unknown>> {
+  const callerId = body?.userId;
+  const endpoint = body?.endpoint;
+  const isActive = Boolean(body?.is_active);
+  if (!callerId || !endpoint) return { ok: false, error: "Missing data" };
+  if (!(await isAdminCaller(callerId))) {
+    return { ok: false, error: "Forbidden" };
+  }
+
+  const { error } = await supabase
+    .from("push_subscriptions")
+    .update({ is_active: isActive })
+    .eq("endpoint", endpoint);
+  if (error) throw error;
+  return { ok: true };
+}
+
 async function handleNotify(body, selfUrl): Promise<Record<string, unknown>> {
   const { eventType, requestNumber, status, requestId, letterId } = body || {};
   if (!eventType) return { ok: false, error: "Missing eventType" };
@@ -562,6 +628,12 @@ Deno.serve(async (req) => {
         break;
       case "test":
         result = await handleTest(body, selfUrl);
+        break;
+      case "list_all":
+        result = await handleListAllDevices(body);
+        break;
+      case "set_active":
+        result = await handleSetDeviceActive(body);
         break;
       case "notify":
         result = await handleNotify(body, selfUrl);

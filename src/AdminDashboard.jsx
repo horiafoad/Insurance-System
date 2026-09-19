@@ -31,6 +31,7 @@ import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
 import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
 import OrgStructurePage from "./dashboard/OrgStructurePage";
 import PushNotificationsPanel from "./dashboard/PushNotificationsPanel";
+import AdminPushDevicesPanel from "./dashboard/AdminPushDevicesPanel";
 import InstallAppButton from "./dashboard/InstallAppButton";
 import {
   ClaimFormModal,
@@ -1789,6 +1790,13 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         {activeMenu === "push_settings" && (
           <PushNotificationsPanel currentUser={currentUser} />
         )}
+
+        {activeMenu === "push_settings" &&
+          (currentUser?.role === "super_admin" ||
+            currentUser?.role === "admin" ||
+            currentUser?.permissions == null) && (
+            <AdminPushDevicesPanel currentUser={currentUser} />
+          )}
 
         {activeMenu === "letters_tracking" &&
           canAccessMenu(currentUser, "letters_tracking") && (
