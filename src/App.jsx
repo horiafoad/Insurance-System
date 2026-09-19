@@ -129,6 +129,24 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // تسجيل الجهاز الأصلي (تطبيق الأندرويد) لدى الخادم عبر FCM عند الدخول.
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { enableNativePush } = await import("./utils/nativePush");
+      if (cancelled) return;
+      const result = await enableNativePush(currentUser);
+      if (result && result.ok) {
+        console.log("FCM device registered:", result.token?.slice(0, 16) + "…");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, currentUser?.id]);
+
   const [qrLetter, setQrLetter] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");

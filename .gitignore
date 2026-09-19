@@ -44,3 +44,6 @@ release.token
 
 # Supabase CLI temp
 supabase/.temp
+
+# Built APK artifacts
+*.apk

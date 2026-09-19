@@ -1,10 +1,13 @@
 // Supabase Edge Function: push-notifications
-// المسؤول عن إدارة اشتراكات الأجهزة وإرسال Web Push.
+// المسؤول عن إدارة اشتراكات الأجهزة وإرسال Web Push + FCM (تطبيق الأندرويد الأصلي).
 //
-// المتغيرات المطلوبة (Supabase Dashboard -> Edge Functions / Deno KV secrets):
+// المتغيرات المطلوبة (Supabase Dashboard -> Edge Functions):
 //   VAPID_SUBJECT        مثل: mailto:admin@example.com
 //   VAPID_PUBLIC_KEY     المفتاح العام VAPID (نفس VITE_VAPID_PUBLIC_KEY في .env)
 //   VAPID_PRIVATE_KEY     المفتاح الخاص VAPID (سري - لا يوضع في الواجهة أبداً)
+//   FCM_SERVICE_ACCOUNT   (اختياري) JSON لحساب Service Account من Firebase
+//                        لإرسال إشعارات تطبيق الأندرويد الأصلي عبر FCM. إن لم
+//                        يُضبط يتم تخطي الإرسال عبر FCM بهدوء (يبقى Web Push يعمل).
 //
 // الوصول: service_role فقط (لا يمكن للعميل قراءة/كتابة push_subscriptions مباشرة).
 
@@ -19,6 +22,8 @@ const VAPID_SUBJECT =
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY");
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY");
 const vapidConfigured = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+
+const FCM_SERVICE_ACCOUNT = Deno.env.get("FCM_SERVICE_ACCOUNT") || "";
 
 if (!vapidConfigured) {
   console.error("Missing VAPID keys. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY secrets.");
@@ -86,8 +91,8 @@ function buildPayload(eventType, data, appBase) {
     title: titleMap[eventType] || "تنبيه",
     body: bodyMap[eventType] || "",
     url,
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    icon: "./icons/icon-192.png",
+    badge: "./icons/icon-192.png",
     dir: "rtl",
     lang: "ar",
   };
@@ -135,6 +140,156 @@ async function getActiveSubscriptions(userId): Promise<any[]> {
     .eq("is_active", true);
   if (error) throw error;
   return data || [];
+}
+
+/* =========================================================================
+   FCM — إرسال الإشعارات لتطبيق الأندرويد الأصلي (عبر @capacitor/push-notifications)
+   يستخدم OAuth2 عبر مفتاح service account من نفس مشروع Firebase.
+   ========================================================================= */
+
+function parseFcmServiceAccount(raw: string) {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    if (o.project_id && o.client_email && o.private_key) return o;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+const fcmCredentials = parseFcmServiceAccount(FCM_SERVICE_ACCOUNT);
+
+function base64UrlEncode(buf: ArrayBuffer): string {
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function pemToPkcs8(pem: string): ArrayBuffer {
+  const base64 = pem
+    .replace(/-----BEGIN [^-]+-----/, "")
+    .replace(/-----END [^-]+-----/, "")
+    .replace(/\s+/g, "");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr.buffer;
+}
+
+async function getFcmAccessToken(): Promise<string | null> {
+  if (!fcmCredentials) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const tokenUri = fcmCredentials.token_uri || "https://oauth2.googleapis.com/token";
+  const enc = (o: unknown) =>
+    base64UrlEncode(new TextEncoder().encode(JSON.stringify(o)));
+
+  const signingInput = `${enc({ alg: "RS256", typ: "JWT" })}.${enc({
+    iss: fcmCredentials.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: tokenUri,
+    iat: now,
+    exp: now + 3600,
+  })}`;
+
+  try {
+    const key = await crypto.subtle.importKey(
+      "pkcs8",
+      pemToPkcs8(fcmCredentials.private_key),
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const sig = await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      key,
+      new TextEncoder().encode(signingInput)
+    );
+    const jwt = `${signingInput}.${base64UrlEncode(sig)}`;
+
+    const res = await fetch(tokenUri, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion: jwt,
+      }),
+    });
+    if (!res.ok) {
+      console.error("FCM token exchange failed:", res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    return data.access_token || null;
+  } catch (err) {
+    console.error("FCM token generation error:", err?.message || err);
+    return null;
+  }
+}
+
+async function sendFcmMessage(token: string, payload): Promise<boolean> {
+  if (!fcmCredentials) {
+    console.error("FCM_SERVICE_ACCOUNT not configured — skipping FCM send.");
+    return false;
+  }
+  const accessToken = await getFcmAccessToken();
+  if (!accessToken) return false;
+
+  try {
+    const res = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${fcmCredentials.project_id}/messages:send`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: {
+            token,
+            notification: {
+              title: payload.title,
+              body: payload.body,
+            },
+            data: { url: payload.url || "" },
+            android: {
+              priority: "high",
+              notification: { clickAction: "OPEN_MAIN_ACTIVITY" },
+            },
+          },
+        }),
+      }
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("FCM send error:", res.status, text);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("FCM send exception:", err?.message || err);
+    return false;
+  }
+}
+
+async function sendMixedSubscriptions(subscriptions, payload): Promise<{ web: number; fcm: number }> {
+  const webSubs = (subscriptions || []).filter(
+    (s: any) => s.is_active && s.endpoint && s.p256dh && s.auth
+  );
+  const fcmSubs = (subscriptions || []).filter(
+    (s: any) => s.is_active && s.fcm_token
+  );
+
+  let web = 0;
+  let fcm = 0;
+  if (webSubs.length > 0) {
+    web = await sendToSubscriptions(webSubs, payload);
+  }
+  for (const s of fcmSubs) {
+    if (await sendFcmMessage(s.fcm_token, payload)) fcm++;
+  }
+  return { web, fcm };
 }
 
 // متلقو إشعارات الطلبات: كل من يملك صلاحية "requests" أو permissions خالية (وصول كامل)
@@ -196,8 +351,34 @@ async function resolveLetterRecipients(letterId): Promise<{ userIds: string[]; d
 }
 
 async function handleRegister(body): Promise<Record<string, unknown>> {
-  const { userId, endpoint, p256dh, auth, deviceName, platform } = body || {};
-  if (!userId || !endpoint || !p256dh || !auth) {
+  const { userId, endpoint, p256dh, auth, deviceName, platform, fcmToken } =
+    body || {};
+
+  if (!userId) return { ok: false, error: "Missing userId" };
+
+  // تسجيل جهاز تطبيق الأندرويد الأصلي عبر رمز FCM
+  if (fcmToken) {
+    const { data, error } = await supabase
+      .from("push_subscriptions")
+      .upsert(
+        {
+          user_id: userId,
+          fcm_token: fcmToken,
+          endpoint: endpoint || fcmToken,
+          device_name: deviceName || "native",
+          platform: platform || "android",
+          is_active: true,
+        },
+        { onConflict: "fcm_token" }
+      )
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    return { ok: true, id: data?.id };
+  }
+
+  if (!endpoint || !p256dh || !auth) {
     return { ok: false, error: "Missing subscription data" };
   }
 
@@ -241,15 +422,24 @@ async function handleList(body): Promise<Record<string, unknown>> {
 }
 
 async function handleDeactivate(body): Promise<Record<string, unknown>> {
-  const { userId, endpoint } = body || {};
-  if (!userId || !endpoint) return { ok: false, error: "Missing data" };
+  const { userId, endpoint, fcmToken } = body || {};
+  if (!userId || (!endpoint && !fcmToken)) {
+    return { ok: false, error: "Missing data" };
+  }
 
-  const { error } = await supabase
+  let query = supabase
     .from("push_subscriptions")
     .update({ is_active: false })
     .eq("user_id", userId)
-    .eq("endpoint", endpoint);
+    .eq("is_active", true);
 
+  if (fcmToken) {
+    query = query.eq("fcm_token", fcmToken);
+  } else {
+    query = query.eq("endpoint", endpoint);
+  }
+
+  const { error } = await query;
   if (error) throw error;
   return { ok: true };
 }
@@ -306,8 +496,8 @@ async function handleNotify(body, selfUrl): Promise<Record<string, unknown>> {
       appBase
     );
 
-    const sent = await sendToSubscriptions(data || [], payload);
-    return { ok: true, recipients: userIds.length, sent };
+    const { web, fcm } = await sendMixedSubscriptions(data || [], payload);
+    return { ok: true, recipients: userIds.length, sent: web + fcm, fcm };
   }
 
   const recipientIds = await resolveRequestRecipients();
@@ -333,8 +523,8 @@ async function handleNotify(body, selfUrl): Promise<Record<string, unknown>> {
     appBase
   );
 
-  const sent = await sendToSubscriptions(data || [], payload);
-  return { ok: true, recipients: recipientIds.length, sent };
+  const { web, fcm } = await sendMixedSubscriptions(data || [], payload);
+  return { ok: true, recipients: recipientIds.length, sent: web + fcm, fcm };
 }
 
 Deno.serve(async (req) => {

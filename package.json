@@ -71,6 +71,7 @@
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
+    "@capacitor/push-notifications": "^8.1.2",
     "@supabase/supabase-js": "^2.112.3",
     "electron-updater": "^6.6.2",
     "html5-qrcode": "^2.3.8",
