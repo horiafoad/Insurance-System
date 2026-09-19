@@ -16,18 +16,19 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const VAPID_SUBJECT =
   Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@asu.edu.eg";
-const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY")!;
-const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY")!;
+const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY");
+const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY");
+const vapidConfigured = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 
-if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+if (!vapidConfigured) {
   console.error("Missing VAPID keys. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY secrets.");
+} else {
+  webpush.setVapidDetails(
+    VAPID_SUBJECT,
+    VAPID_PUBLIC_KEY!,
+    VAPID_PRIVATE_KEY!
+  );
 }
-
-webpush.setVapidDetails(
-  VAPID_SUBJECT,
-  VAPID_PUBLIC_KEY,
-  VAPID_PRIVATE_KEY
-);
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -63,19 +64,23 @@ function resolveAppBase(appUrl, selfUrl): string {
 function buildPayload(eventType, data, appBase) {
   const titleMap = {
     new_request: "🔔 طلب جديد",
+    new_letter: "📩 خطاب جديد",
     status_change: "🔔 تحديث حالة طلب",
     note_added: "📝 ملاحظة جديدة",
     test: "✅ إشعار تجريبي",
   };
   const bodyMap = {
-    new_request: `تم استلام طلب جديد رقم ${data.requestNumber}`,
+    new_request: `وصل طلب جديد يحتاج إلى المتابعة${data.requesterName ? ` من ${data.requesterName}` : ""}${data.serviceType ? ` (${data.serviceType})` : ""}`,
+    new_letter: `وصل خطاب جديد إلى قسم ${data.departmentName || ""}`.trim() + (data.subject ? `\n${data.subject}` : ""),
     status_change: `تم تحديث حالة الطلب رقم ${data.requestNumber} إلى "${data.status}"`,
     note_added: `تمت إضافة ملاحظة على الطلب رقم ${data.requestNumber}`,
     test: "إشعارات الموبايل تعمل بشكل صحيح 🎉",
   };
-  const url = data.requestId
-    ? `${appBase}/?openRequest=${data.requestId}`
-    : `${appBase}/`;
+  const url = data.letterId
+    ? `${appBase}/?openLetter=${data.letterId}`
+    : data.requestId
+      ? `${appBase}/?openRequest=${data.requestId}`
+      : `${appBase}/`;
 
   return {
     title: titleMap[eventType] || "تنبيه",
@@ -89,6 +94,10 @@ function buildPayload(eventType, data, appBase) {
 }
 
 async function sendToSubscriptions(subscriptions, payload): Promise<number> {
+  if (!vapidConfigured) {
+    console.error("VAPID keys are not configured — skipping push send.");
+    return 0;
+  }
   let sent = 0;
   for (const sub of subscriptions) {
     if (!sub.is_active) continue;
@@ -138,6 +147,52 @@ async function resolveRequestRecipients(): Promise<string[]> {
     );
   if (error) throw error;
   return (data || []).map((u) => u.id);
+}
+
+// متلقو إشعارات الخطابات: مستخدمو القسم الذي وصل إليه الخطاب فقط + المدراء.
+// يُحدَّد القسم من محطة الخطاب الحالية (status=in_progress ولم يتم استلامها بعد).
+async function resolveLetterRecipients(letterId): Promise<{ userIds: string[]; departmentName: string }> {
+  const { data: movements, error: movError } = await supabase
+    .from("letter_movements")
+    .select("department_id")
+    .eq("letter_id", letterId)
+    .eq("status", "in_progress")
+    .is("received_at", null);
+
+  if (movError) throw movError;
+
+  const deptIds = [
+    ...new Set(
+      (movements || [])
+        .map((m) => m.department_id)
+        .filter((d) => d != null)
+    ),
+  ];
+
+  let departmentName = "";
+  if (deptIds.length > 0) {
+    const { data: depts, error: deptError } = await supabase
+      .from("letter_departments")
+      .select("name")
+      .in("id", deptIds);
+    if (deptError) throw deptError;
+    departmentName = (depts || [])[0]?.name || "";
+  }
+
+  if (deptIds.length === 0) {
+    return { userIds: [], departmentName };
+  }
+
+  const { data: users, error: userError } = await supabase
+    .from("users")
+    .select("id")
+    .or(`department_id.in.(${deptIds.join(",")}),role.in.(super_admin,admin)`);
+
+  if (userError) throw userError;
+  return {
+    userIds: (users || []).map((u) => u.id),
+    departmentName,
+  };
 }
 
 async function handleRegister(body): Promise<Record<string, unknown>> {
@@ -211,8 +266,49 @@ async function handleTest(body, selfUrl): Promise<Record<string, unknown>> {
 }
 
 async function handleNotify(body, selfUrl): Promise<Record<string, unknown>> {
-  const { eventType, requestNumber, status, requestId } = body || {};
+  const { eventType, requestNumber, status, requestId, letterId } = body || {};
   if (!eventType) return { ok: false, error: "Missing eventType" };
+
+  const appBase = resolveAppBase(body?.appUrl, selfUrl);
+
+  // إشعار خطاب جديد: الإشعار يصل لمستخدمي القسم الهدف فقط (ما يُنشئه الجرس في DB).
+  if (eventType === "letter" || eventType === "new_letter") {
+    if (letterId == null) {
+      return { ok: false, error: "Missing letterId" };
+    }
+
+    const { userIds, departmentName } =
+      await resolveLetterRecipients(letterId);
+    if (userIds.length === 0) return { ok: true, sent: 0 };
+
+    const { data: letter } = await supabase
+      .from("letters")
+      .select("letter_number, subject")
+      .eq("id", letterId)
+      .maybeSingle();
+
+    const { data, error } = await supabase
+      .from("push_subscriptions")
+      .select("*")
+      .in("user_id", userIds)
+      .eq("is_active", true);
+
+    if (error) throw error;
+
+    const payload = buildPayload(
+      "new_letter",
+      {
+        letterId: String(letterId),
+        letterNumber: letter?.letter_number || "",
+        subject: letter?.subject || "",
+        departmentName: departmentName || body?.departmentName || "",
+      },
+      appBase
+    );
+
+    const sent = await sendToSubscriptions(data || [], payload);
+    return { ok: true, recipients: userIds.length, sent };
+  }
 
   const recipientIds = await resolveRequestRecipients();
   if (recipientIds.length === 0) return { ok: true, sent: 0 };
@@ -225,13 +321,14 @@ async function handleNotify(body, selfUrl): Promise<Record<string, unknown>> {
 
   if (error) throw error;
 
-  const appBase = resolveAppBase(body?.appUrl, selfUrl);
   const payload = buildPayload(
     eventType,
     {
       requestNumber: requestNumber ?? "؟",
       status: status || "",
       requestId: requestId || null,
+      requesterName: body?.requesterName || "",
+      serviceType: body?.serviceType || "",
     },
     appBase
   );

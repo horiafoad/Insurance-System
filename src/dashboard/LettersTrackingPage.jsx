@@ -2026,7 +2026,7 @@ const creationPanelNewButtonStyle = {
 
 const PUBLIC_APP_URL = "https://insurance-system-9et.pages.dev/";
 
-export default function LettersTrackingPage({ qrCode = "", currentUser = null }) {
+export default function LettersTrackingPage({ qrCode = "", currentUser = null, openLetterId = "" }) {
   // إدارة أكواد QR متاحة للأدمن فقط (منشئ البرنامج / مدير عام / مدير)
   const isAdmin = ["creator", "super_admin", "admin"].includes(currentUser?.role);
 
@@ -2373,6 +2373,19 @@ const startQrScanner = async () => {
       setSelectedLetter(matchingLetter);
     }
   }, [qrCode, letters]);
+
+  // فتح خطاب محدد مباشرة عند الضغط على إشعار "خطاب جديد".
+  useEffect(() => {
+    if (!openLetterId || !letters.length) return;
+
+    const target = letters.find(
+      (letter) => String(letter.id) === String(openLetterId)
+    );
+
+    if (target) {
+      setSelectedLetter(target);
+    }
+  }, [openLetterId, letters]);
   const loadLetters = async () => {
     setLoadingLetters(true);
 

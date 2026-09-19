@@ -51,8 +51,8 @@ self.addEventListener('push', (event) => {
   const title = payload.title || 'إشعار جديد'
   const options = {
     body: payload.body || '',
-    icon: payload.icon || '/icons/icon-192.png',
-    badge: payload.badge || '/icons/icon-192.png',
+    icon: payload.icon || './icons/icon-192.png',
+    badge: payload.badge || './icons/icon-192.png',
     dir: payload.dir || 'rtl',
     lang: payload.lang || 'ar',
     renotify: true,

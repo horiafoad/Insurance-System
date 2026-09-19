@@ -51,6 +51,7 @@ import { useRealtimeSync, applyRowChange } from "./utils/realtimeSync";
 export default function AdminDashboard({ currentUser, focusRequestId: propFocusId }) {
   const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
   const openRequestFromUrl = new URLSearchParams(window.location.search).get("openRequest") || "";
+  const openLetterFromUrl = new URLSearchParams(window.location.search).get("openLetter")?.trim() || "";
 
   // الحسابات القديمة (permissions = null) بوصول كامل ترى لوحة التحكم.
   // المستخدم المقيّد (مثل: خطابات فقط) يُفتح مباشرة على صفحة الخطابات
@@ -69,9 +70,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       ? "letters_tracking"
       : openRequestFromUrl
         ? "service_requests"
-        : hasDashboardAccess
-          ? "home"
-          : "letters_tracking"
+        : openLetterFromUrl
+          ? "letters_tracking"
+          : hasDashboardAccess
+            ? "home"
+            : "letters_tracking"
   );
 
   useEffect(() => {
@@ -81,6 +84,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   }, [qrCodeFromUrl]);
 
   const [focusRequestId, setFocusRequestId] = useState(openRequestFromUrl || propFocusId || null);
+  const [openLetterId, setOpenLetterId] = useState(openLetterFromUrl || null);
 
   useEffect(() => {
     const nextId = propFocusId || openRequestFromUrl || null;
@@ -91,6 +95,15 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       }
     }
   }, [propFocusId, openRequestFromUrl, currentUser]);
+
+  useEffect(() => {
+    if (openLetterFromUrl) {
+      setOpenLetterId(openLetterFromUrl);
+      if (canAccessMenu(currentUser, "letters_tracking")) {
+        setActiveMenu("letters_tracking");
+      }
+    }
+  }, [openLetterFromUrl, currentUser]);
 
   const [tasks, setTasks] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -140,6 +153,29 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [urgentNotification, setUrgentNotification] = useState(null);
   const knownNotificationIds = useRef(new Set());
+
+  // إشعارات قاعدة البيانات (جدول notifications) — جرس الإشعارات + العداد غير المقروء.
+  const [dbNotifications, setDbNotifications] = useState([]);
+
+  // Toast فوري يظهر عند وصول إشعار جديد أثناء فتح التطبيق في نفس التبويب.
+  const [liveToast, setLiveToast] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  const showLiveToast = (notification) => {
+    if (!notification?.id) return;
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setLiveToast({
+      id: notification.id,
+      type: notification.type,
+      title: notification.title || "إشعار جديد",
+      body: notification.body || "",
+      referenceId: notification.reference_id || "",
+    });
+    toastTimerRef.current = window.setTimeout(() => {
+      setLiveToast(null);
+      toastTimerRef.current = null;
+    }, 7000);
+  };
 
   useEffect(() => {
     if (hasPermission(currentUser, "entitlements")) {
@@ -273,9 +309,6 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
 
   useEffect(() => {
     const notificationSources = [
-      ...(hasPermission(currentUser, "requests")
-        ? [{ table: "service_requests", label: "طلب إلكتروني جديد", icon: "📥" }]
-        : []),
       ...(hasPermission(currentUser, "entitlements")
         ? [
             { table: "public_feedback", label: "شكوى أو تقييم جديد", icon: "💬" },
@@ -368,11 +401,20 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
           )
         );
 
+        const feedbackSource =
+          notificationSources.find(
+            (source) => source.table === "public_feedback"
+          ) || {
+            table: "public_feedback",
+            label: "شكوى أو تقييم جديد",
+            icon: "💬",
+          };
+
         localFeedback.forEach((item) => {
           const notificationId = `public_feedback-${item.id}`;
 
           if (!seenLocalFeedback.has(String(item.id))) {
-            notify(notificationSources[1], item.id);
+            notify(feedbackSource, item.id);
             seenLocalFeedback.add(String(item.id));
           } else {
             knownNotificationIds.current.add(notificationId);
@@ -441,7 +483,16 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
 
           if (!item) return;
 
-          notify(notificationSources[1], item.id);
+          notify(
+            notificationSources.find(
+              (source) => source.table === "public_feedback"
+            ) || {
+              table: "public_feedback",
+              label: "شكوى أو تقييم جديد",
+              icon: "💬",
+            },
+            item.id
+          );
         } catch (storageError) {
           console.error(
             "تعذر قراءة إشعار الشكوى المحلي:",
@@ -475,12 +526,170 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     };
   }, []);
 
+  /* =========================================================================
+     جرس الإشعارات من قاعدة البيانات (جدول notifications)
+     - التحميل الأولي غير المقروء + المزامنة اللحظية (بدون Refresh).
+     - الفلترة على مستخدم الدخول الحالي (لا يرى أحد إشعارات غيره).
+     - الضغط على الإشعار يفتح الطلب/الخطاب مباشرة ويُعلّم الإشعار مقروءًا.
+     ========================================================================= */
+
+  const notificationFilter = useMemo(
+    () =>
+      currentUser?.id
+        ? { user_id: `eq.${currentUser.id}` }
+        : undefined,
+    [currentUser]
+  );
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    let mounted = true;
+
+    const loadNotifications = async () => {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (!error && mounted && Array.isArray(data)) {
+        setDbNotifications(data);
+      }
+    };
+
+    loadNotifications();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUser?.id]);
+
+  // إدخال/تحديث/حذف لحظي على جدول notifications → يزيد العداد مباشرة بلا Refresh.
+  useRealtimeSync({
+    table: "notifications",
+    enabled: Boolean(currentUser?.id),
+    filter: notificationFilter,
+    apply: (payload) => {
+      if (payload.eventType === "INSERT") {
+        setDbNotifications((prev) =>
+          [payload.new, ...prev].slice(0, 100)
+        );
+
+        // Toast فوري أثناء فتح التطبيق في نفس التبويب.
+        showLiveToast(payload.new);
+
+        // إشعار متصفح فوري أثناء فتح التطبيق في تبويب آخر
+        if (
+          "Notification" in window &&
+          Notification.permission === "granted" &&
+          document.hidden
+        ) {
+          try {
+            new Notification(payload.new?.title || "إشعار جديد", {
+              body: payload.new?.body || "",
+              dir: "rtl",
+              lang: "ar",
+            });
+          } catch {
+            // تجاهل فشل الإنشاء
+          }
+        }
+      } else if (payload.eventType === "UPDATE") {
+        setDbNotifications((prev) =>
+          prev.map((item) =>
+            item.id === payload.new.id
+              ? { ...item, ...payload.new }
+              : item
+          )
+        );
+      } else if (payload.eventType === "DELETE") {
+        setDbNotifications((prev) =>
+          prev.filter((item) => item.id !== payload.old?.id)
+        );
+      }
+    },
+  });
+
+  // عدد الإشعارات غير المقروءة يظهر على الجرس.
+  const dbUnreadCount = useMemo(
+    () =>
+      dbNotifications.filter((item) => !item.is_read).length,
+    [dbNotifications]
+  );
+
+  const badgeCount = dbUnreadCount + notifications.length;
+
+  const markAllNotificationsRead = async () => {
+    if (!currentUser?.id) return;
+
+    setDbNotifications((prev) =>
+      prev.map((item) => ({ ...item, is_read: true }))
+    );
+
+    try {
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("user_id", currentUser.id)
+        .eq("is_read", false);
+    } catch (e) {
+      console.error("تعذر تحديث حالة القراءة:", e);
+    }
+  };
+
+  // فتح الطلب/الخطاب من الإشعار مباشرة.
+  const openNotificationTarget = (notification) => {
+    setNotificationsOpen(false);
+    markAllNotificationsRead();
+
+    if (!notification) return;
+
+    if (
+      notification.type === "new_request" &&
+      notification.reference_id
+    ) {
+      setFocusRequestId(notification.reference_id);
+      if (canAccessMenu(currentUser, "service_requests")) {
+        setActiveMenu("service_requests");
+      }
+    } else if (
+      notification.type === "new_letter" &&
+      notification.reference_id
+    ) {
+      setOpenLetterId(notification.reference_id);
+      if (canAccessMenu(currentUser, "letters_tracking")) {
+        setActiveMenu("letters_tracking");
+      }
+    }
+  };
+
+  const notificationTimeLabel = (createdAt) => {
+    if (!createdAt) return "";
+    try {
+      return new Date(createdAt).toLocaleDateString("ar-EG", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "";
+    }
+  };
+
   const enableNotifications = async () => {
     if (
       "Notification" in window &&
       Notification.permission === "default"
     ) {
       await Notification.requestPermission();
+    }
+
+    // فتح الجرس يُعلّم الإشعارات كلها مقروءة فورًا.
+    if (!notificationsOpen) {
+      markAllNotificationsRead();
     }
 
     setNotificationsOpen((current) => !current);
@@ -1025,6 +1234,78 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
 
   return (
     <div dir="rtl" style={styles.app} className="admin-app">
+      {liveToast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            right: 20,
+            zIndex: 9999,
+            maxWidth: 340,
+            width: "calc(100vw - 40px)",
+            background: "#0F172A",
+            color: "#fff",
+            borderRadius: 12,
+            boxShadow: "0 12px 30px rgba(15,23,42,.35)",
+            padding: "12px 14px",
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            cursor: "pointer",
+            animation: "toastIn .25s ease",
+          }}
+          onClick={() => {
+            const target = {
+              type: liveToast.type,
+              reference_id: liveToast.referenceId,
+              title: liveToast.title,
+              body: liveToast.body,
+            };
+            setLiveToast(null);
+            openNotificationTarget(target);
+          }}
+        >
+          <span style={{ fontSize: 22, flexShrink: 0 }}>
+            {liveToast.type === "new_letter"
+              ? "📩"
+              : liveToast.type === "new_request"
+                ? "📥"
+                : "🔔"}
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <strong style={{ display: "block", fontSize: 13 }}>
+              {liveToast.title}
+            </strong>
+            {liveToast.body && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#CBD5E1",
+                  marginTop: 2,
+                  lineHeight: 1.6,
+                  wordBreak: "break-word",
+                }}
+              >
+                {liveToast.body}
+              </div>
+            )}
+          </div>
+          <span
+            style={{
+              flexShrink: 0,
+              color: "#94A3B8",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              setLiveToast(null);
+            }}
+          >
+            ✕
+          </span>
+        </div>
+      )}
       <Sidebar
         activeMenu={activeMenu}
         filterType={filterType}
@@ -1112,7 +1393,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             >
               🔔
 
-              {notifications.length > 0 && (
+              {badgeCount > 0 && (
                 <span
                   style={{
                     position: "absolute",
@@ -1126,11 +1407,10 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                     fontSize: 11,
                     display: "grid",
                     placeItems: "center",
+                    padding: "0 4px",
                   }}
                 >
-                  {notifications.length > 9
-                    ? "9+"
-                    : notifications.length}
+                  {badgeCount > 9 ? "9+" : badgeCount}
                 </span>
               )}
             </button>
@@ -1141,7 +1421,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                   position: "absolute",
                   top: 48,
                   right: 0,
-                  width: 310,
+                  width: 320,
                   maxWidth: "80vw",
                   background: "#fff",
                   border: "1px solid #E2E8F0",
@@ -1160,7 +1440,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                     marginBottom: 8,
                   }}
                 >
-                  <strong>الإشعارات الجديدة</strong>
+                  <strong>الإشعارات</strong>
 
                   <button
                     style={{
@@ -1169,13 +1449,17 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                       color: "#64748B",
                       cursor: "pointer",
                     }}
-                    onClick={() => setNotifications([])}
+                    onClick={() => {
+                      markAllNotificationsRead();
+                      setNotifications([]);
+                    }}
                   >
                     مسح
                   </button>
                 </div>
 
-                {notifications.length === 0 ? (
+                {dbNotifications.length === 0 &&
+                notifications.length === 0 ? (
                   <div
                     style={{
                       padding: 18,
@@ -1186,40 +1470,107 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                     لا توجد إشعارات جديدة
                   </div>
                 ) : (
-                  notifications.map((item) => (
-                    <div
-                      key={item.id}
-                      style={{
-                        padding: 10,
-                        borderTop:
-                          "1px solid #F1F5F9",
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "center",
-                      }}
-                    >
-                      <span style={{ fontSize: 20 }}>
-                        {item.icon}
-                      </span>
+                  <>
+                    {dbNotifications.map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() =>
+                          openNotificationTarget(item)
+                        }
+                        style={{
+                          padding: 10,
+                          borderTop:
+                            "1px solid #F1F5F9",
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "flex-start",
+                          cursor: "pointer",
+                          background: item.is_read
+                            ? "transparent"
+                            : "#EFF6FF",
+                          borderRadius: 8,
+                          marginBottom: 2,
+                        }}
+                        title={item.body || ""}
+                      >
+                        <span style={{ fontSize: 20 }}>
+                          {item.type === "new_letter"
+                            ? "📩"
+                            : item.type === "new_request"
+                              ? "📥"
+                              : "🔔"}
+                        </span>
 
-                      <div>
-                        <strong
-                          style={{
-                            display: "block",
-                            fontSize: 13,
-                          }}
-                        >
-                          {item.title}
-                        </strong>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <strong
+                            style={{
+                              display: "block",
+                              fontSize: 13,
+                              color: "#0F172A",
+                            }}
+                          >
+                            {item.title}
+                          </strong>
 
-                        <small
-                          style={{ color: "#64748B" }}
-                        >
-                          {item.time}
-                        </small>
+                          {item.body && (
+                            <div
+                              style={{
+                                color: "#475569",
+                                fontSize: 12,
+                                marginTop: 2,
+                                lineHeight: 1.6,
+                              }}
+                            >
+                              {item.body}
+                            </div>
+                          )}
+
+                          <small
+                            style={{ color: "#94A3B8" }}
+                          >
+                            {notificationTimeLabel(
+                              item.created_at
+                            )}
+                          </small>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    ))}
+
+                    {notifications.map((item) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: 10,
+                          borderTop:
+                            "1px solid #F1F5F9",
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: 20 }}>
+                          {item.icon}
+                        </span>
+
+                        <div>
+                          <strong
+                            style={{
+                              display: "block",
+                              fontSize: 13,
+                            }}
+                          >
+                            {item.title}
+                          </strong>
+
+                          <small
+                            style={{ color: "#64748B" }}
+                          >
+                            {item.time}
+                          </small>
+                        </div>
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             )}
@@ -1444,6 +1795,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             <LettersTrackingPage
               qrCode={qrCodeFromUrl}
               currentUser={currentUser}
+              openLetterId={openLetterId}
             />
           )}
 

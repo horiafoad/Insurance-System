@@ -161,6 +161,11 @@ export async function deactivatePushDevice(userId, endpoint) {
   return data && data.ok !== false;
 }
 
+export function getAppBase() {
+  const { origin, pathname } = window.location;
+  return origin + pathname;
+}
+
 export async function sendTestNotification(userId) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",
@@ -168,7 +173,7 @@ export async function sendTestNotification(userId) {
       body: {
         action: "test",
         userId,
-        appUrl: window.location.origin,
+        appUrl: getAppBase(),
       },
     }
   );
@@ -187,7 +192,7 @@ export function notifyPushEvent(eventType, payload = {}) {
       body: {
         action: "notify",
         eventType,
-        appUrl: window.location.origin,
+        appUrl: getAppBase(),
         ...payload,
       },
     })

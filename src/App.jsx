@@ -115,12 +115,15 @@ function App() {
   const qrCodeFromUrl =
     new URLSearchParams(window.location.search).get("qr")?.trim() || "";
 
-  // عند الضغط على إشعار الموبايل (openRequest) بدون تسجيل دخول، نفتح شاشة الدخول.
+  // عند الضغط على إشعار الموبايل (openRequest / openLetter) بدون تسجيل دخول، نفتح شاشة الدخول.
   useEffect(() => {
     const openRequest = new URLSearchParams(window.location.search).get(
       "openRequest"
     );
-    if (openRequest && !isLoggedIn) {
+    const openLetter = new URLSearchParams(window.location.search).get(
+      "openLetter"
+    );
+    if ((openRequest || openLetter) && !isLoggedIn) {
       setShowLogin(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1057,6 +1060,9 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       notifyPushEvent("new_request", {
         requestId: data.id,
         requestNumber: data.id,
+        requesterName: serviceForm.name.trim(),
+        serviceType: selectedService?.title,
+        appUrl: window.location.origin,
       });
 
       alert(

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
+import { notifyPushEvent } from "../utils/pushNotifications";
 import {
   extractTemplateKeys,
   replaceTemplateVariables,
@@ -785,6 +786,21 @@ supabase
       );
       setSavingLetter(false);
       return;
+    }
+
+    // إشعار فوري (Web Push) لمستخدمي القسم الأول في مسار الخطاب —
+    // إشعار الجرس يُنشئه محفز قاعدة البيانات تلقائيًا (create_notifications_table.sql).
+    try {
+      notifyPushEvent("new_letter", {
+        letterId: letter.id,
+        letterNumber,
+        subject: payload.subject,
+        departmentName: route[0]?.name || "",
+        departmentId: route[0]?.id ?? null,
+        appUrl: window.location.origin,
+      });
+    } catch (notifyError) {
+      console.error("push letter notify error:", notifyError);
     }
 
     alert(

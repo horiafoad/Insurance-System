@@ -29,6 +29,23 @@ const CASE_FIELD_ORDER = [
   "تاريخ الصرف",
 ];
 
+// الحقول الرقمية داخل بيانات القضية (JSONB data) — تُحوَّل بطريقة آمنة.
+const ISSUE_NUMERIC_FIELDS = ["الاساسي بعد التغيير", "الاجمالي", "الصافي"];
+
+// تحويل رقمي آمن:
+// - الأرقام تُترك أرقامًا.
+// - النص الرقمي الصحيح (مثل "15000" أو "15000.50") يُحول إلى رقم.
+// - القيم الفارغة تبقى فارغة (لا تتحول إلى 0).
+// - أي نص غير رقمي يُرجع كما هو بدون كسر.
+function normalizeIssueNumber(value) {
+  if (value == null) return value;
+  if (typeof value === "number") return value;
+  const trimmed = String(value).trim();
+  if (trimmed === "") return "";
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  return trimmed;
+}
+
 function cleanFileName(name) {
   return name
     .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, "")
@@ -91,8 +108,9 @@ export default function IssuesManagementPage() {
               .from("issue_details")
               .select("data")
               .eq("issue_id", issue.id)
+              .order("id", { ascending: false })
               .limit(1);
-            excel_data = details?.[0]?.data || null;
+            excel_data = details?.[0]?.data ?? null;
           }
 
           const { data: docs } = await supabase
@@ -141,8 +159,9 @@ export default function IssuesManagementPage() {
         .from("issue_details")
         .select("data")
         .eq("issue_id", data.id)
+        .order("id", { ascending: false })
         .limit(1);
-      excel_data = details?.[0]?.data || null;
+      excel_data = details?.[0]?.data ?? null;
     }
 
     const { data: docs } = await supabase
@@ -551,12 +570,12 @@ export default function IssuesManagementPage() {
   const openEditModal = (issue) => {
     const formData = {
       id: issue.id,
-      case_number: issue.case_number || "",
-      case_title: issue.case_title || "",
-      case_description: issue.case_description || "",
-      status: issue.status || "pending",
-      payment_status: issue.payment_status || "",
-      payment_date: issue.payment_date || "",
+      case_number: issue.case_number ?? "",
+      case_title: issue.case_title ?? "",
+      case_description: issue.case_description ?? "",
+      status: issue.status ?? "pending",
+      payment_status: issue.payment_status ?? "",
+      payment_date: issue.payment_date ?? "",
     };
     if (issue.excel_data) {
       CASE_FIELD_ORDER.forEach((field) => {
@@ -575,84 +594,117 @@ export default function IssuesManagementPage() {
 
     try {
       setError("");
+      setSuccess("");
       const { id, case_number, case_title, case_description, status, payment_status, payment_date, ...rest } = editForm;
 
-      const { error: updateErr } = await supabase
+      const issuesPayload = {
+        case_number: case_number ?? "",
+        case_title: case_title ?? "",
+        case_description: case_description ?? "",
+        status: status ?? "pending",
+        payment_status: payment_status !== "" ? payment_status : null,
+        payment_date: payment_date !== "" ? payment_date : null,
+      };
+
+      // تحديث جدول القضايا مع التحقق الفعلي من أن الصف اكتمل تحديثه.
+      const { data: updatedIssues, error: updateErr } = await supabase
         .from("issues")
-        .update({
-          case_number,
-          case_title,
-          case_description,
-          status,
-          payment_status: payment_status || null,
-          payment_date: payment_date || null,
-        })
-        .eq("id", id);
+        .update(issuesPayload)
+        .eq("id", id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      if (!updatedIssues || updatedIssues.length === 0) {
+        throw new Error(
+          "لم يتم تحديث القضية — سياسات قاعدة البيانات (RLS) تمنع التعديل. شغّل create_issues_tables.sql ثم أعد المحاولة."
+        );
+      }
 
       if (editingIssue.case_type === "individual") {
         const { data: existing, error: selectErr } = await supabase
           .from("issue_details")
-          .select("id, row_number, status")
+          .select("id, row_number, status, data")
           .eq("issue_id", id)
+          .order("id", { ascending: false })
           .limit(1);
         if (selectErr) throw selectErr;
 
-        const excelData = {};
+        // نبدأ من آخر بيانات محفوظة (لا نمسح الأعمدة الأخرى غير المعروضة في النموذج).
+        const baseData = (existing && existing.length > 0 && existing[0].data) ? { ...existing[0].data } : {};
         CASE_FIELD_ORDER.forEach((field) => {
-          if (rest[field] !== undefined) excelData[field] = rest[field];
+          let value = rest[field] !== undefined ? rest[field] : "";
+          if (ISSUE_NUMERIC_FIELDS.includes(field)) {
+            value = normalizeIssueNumber(value);
+          }
+          baseData[field] = value;
         });
+
+        const rowNumber = existing?.[0]?.row_number ?? 1;
+        const detailStatus = existing?.[0]?.status ?? "pending";
 
         if (existing && existing.length > 0) {
           const { data: updatedRows, error: detailErr } = await supabase
             .from("issue_details")
-            .update({ data: excelData })
+            .update({ data: baseData })
             .eq("issue_id", id)
             .select("id");
+
           if (detailErr) throw detailErr;
 
+          // إذا لم يتأثر أي صف (سياسات RLS تمنع UPDATE بصمت)،
+          // نضيف صفًا جديدًا بأحدث البيانات بدل الحذف — تُبقى كل البيانات
+          // ويقرأ النظام دائمًا أحدث صف (ترتيب تنازلي على id).
           if (!updatedRows || updatedRows.length === 0) {
-            const { data: deletedRows, error: delErr } = await supabase
-              .from("issue_details")
-              .delete()
-              .eq("issue_id", id)
-              .select("id");
-            if (delErr) throw delErr;
-            if (!deletedRows || deletedRows.length === 0) {
-              throw new Error(
-                "سياسات قاعدة البيانات تمنع تعديل تفاصيل القضية - شغّل ملف fix_issue_details_update_policy.sql في Supabase SQL Editor"
-              );
-            }
-
-            const { error: insErr } = await supabase
+            const { data: insertedRows, error: insErr } = await supabase
               .from("issue_details")
               .insert({
                 issue_id: id,
-                row_number: existing?.[0]?.row_number ?? 1,
-                data: excelData,
-                status: existing?.[0]?.status ?? "pending",
+                row_number: rowNumber,
+                data: baseData,
+                status: detailStatus,
               })
               .select("id");
             if (insErr) throw insErr;
+            if (!insertedRows || insertedRows.length === 0) {
+              throw new Error(
+                "سياسات قاعدة البيانات تمنع حفظ تفاصيل القضية - شغّل ملف fix_issue_details_update_policy.sql (أو create_issues_tables.sql) في Supabase SQL Editor"
+              );
+            }
           }
         } else {
-          const { error: detailErr } = await supabase
+          const newDetailData = {};
+          CASE_FIELD_ORDER.forEach((field) => {
+            let value = rest[field] !== undefined ? rest[field] : "";
+            if (ISSUE_NUMERIC_FIELDS.includes(field)) {
+              value = normalizeIssueNumber(value);
+            }
+            newDetailData[field] = value;
+          });
+
+          const { error: detailErr, data: insertedRows } = await supabase
             .from("issue_details")
             .insert({
               issue_id: id,
               row_number: 1,
-              data: excelData,
+              data: newDetailData,
               status: "pending",
             })
             .select("id");
           if (detailErr) throw detailErr;
+          if (!insertedRows || insertedRows.length === 0) {
+            throw new Error(
+              "سياسات قاعدة البيانات تمنع إضافة تفاصيل القضية - شغّل create_issues_tables.sql ثم أعد المحاولة."
+            );
+          }
         }
       }
 
+      // إعادة تحميل القضية من قاعدة البيانات لضمان أن الشاشة تعكس ما حُفظ فعلاً.
+      const refreshed = await loadIssueRow(id);
+      if (refreshed) upsertIssue(refreshed);
+
       setSuccess("تم حفظ التعديلات بنجاح");
       setEditingIssue(null);
-      loadIssues();
     } catch (err) {
       setError("فشل حفظ التعديلات: " + err.message);
     }
@@ -1076,7 +1128,7 @@ export default function IssuesManagementPage() {
                   <label style={styles.formLabel}>رقم القضية</label>
                   <input
                     type="text"
-                    value={editForm.case_number || ""}
+                    value={editForm.case_number ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1090,7 +1142,7 @@ export default function IssuesManagementPage() {
                   <label style={styles.formLabel}>اسم صاحب القضية</label>
                   <input
                     type="text"
-                    value={editForm.case_title || ""}
+                    value={editForm.case_title ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1106,7 +1158,7 @@ export default function IssuesManagementPage() {
                   </label>
                   <input
                     type="text"
-                    value={editForm["شهر تغير الاساسي"] || ""}
+                    value={editForm["شهر تغير الاساسي"] ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1122,7 +1174,7 @@ export default function IssuesManagementPage() {
                   </label>
                   <input
                     type="text"
-                    value={editForm["الاساسي بعد التغيير"] || ""}
+                    value={editForm["الاساسي بعد التغيير"] ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1136,7 +1188,7 @@ export default function IssuesManagementPage() {
                   <label style={styles.formLabel}>الإجمالي</label>
                   <input
                     type="text"
-                    value={editForm["الاجمالي"] || ""}
+                    value={editForm["الاجمالي"] ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1150,7 +1202,7 @@ export default function IssuesManagementPage() {
                   <label style={styles.formLabel}>الصافي</label>
                   <input
                     type="text"
-                    value={editForm["الصافي"] || ""}
+                    value={editForm["الصافي"] ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1163,7 +1215,7 @@ export default function IssuesManagementPage() {
                 <div>
                   <label style={styles.formLabel}>حالة الصرف</label>
                   <select
-                    value={editForm.payment_status || ""}
+                    value={editForm.payment_status ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1184,7 +1236,7 @@ export default function IssuesManagementPage() {
                   <label style={styles.formLabel}>تاريخ الصرف</label>
                   <input
                     type="date"
-                    value={editForm.payment_date || ""}
+                    value={editForm.payment_date ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1197,7 +1249,7 @@ export default function IssuesManagementPage() {
                 <div>
                   <label style={styles.formLabel}>الحالة</label>
                   <select
-                    value={editForm.status || "pending"}
+                    value={editForm.status ?? "pending"}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1215,7 +1267,7 @@ export default function IssuesManagementPage() {
                 <div style={{ gridColumn: "1 / -1" }}>
                   <label style={styles.formLabel}>وصف القضية</label>
                   <textarea
-                    value={editForm.case_description || ""}
+                    value={editForm.case_description ?? ""}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,

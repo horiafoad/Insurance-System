@@ -41,3 +41,6 @@ _tmp_icon.png
 
 # GitHub token file (used by scripts/release.cjs)
 release.token
+
+# Supabase CLI temp
+supabase/.temp
