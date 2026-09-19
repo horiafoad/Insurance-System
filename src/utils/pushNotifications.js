@@ -82,7 +82,10 @@ export async function enablePushNotifications(user) {
 
   // لو تغيّر مفتاح VAPID منذ آخر تسجيل (إعادة نشر بمفتاح جديد)، الاشتراك القديم
   // سيرفضه الخادم برمز VapidPkHashMismatch — نعيد إنشاءه بمفتاح سليم.
-  if (subscription && storedVapidKey && storedVapidKey !== VAPID_PUBLIC_KEY) {
+  if (
+    subscription &&
+    (!storedVapidKey || storedVapidKey !== VAPID_PUBLIC_KEY)
+  ) {
     try {
       await subscription.unsubscribe();
     } catch (e) {
@@ -145,6 +148,7 @@ export async function disablePushNotifications(user) {
         },
       });
       await subscription.unsubscribe();
+      localStorage.removeItem("pushVapidKey");
     }
   } catch (e) {
     console.error("disable push error:", e);
