@@ -125,8 +125,10 @@ async function sendToSubscriptions(subscriptions, payload): Promise<number> {
           .update({ is_active: false })
           .eq("endpoint", sub.endpoint);
       } else if (
-        statusCode === 400 &&
-        /VapidPkHashMismatch/i.test(String(err?.body || err?.message || ""))
+        (statusCode === 400 || statusCode === 403) &&
+        /VapidPkHashMismatch|VAPID credentials/i.test(
+          String(err?.body || err?.message || "")
+        )
       ) {
         // Apple/Chrome: الاشتراك أُنشئ بمفتاح VAPID قديم مختلف عن مفتاح الخادم —
         // نُعطّله ليعيد التطبيق تسجيله تلقائياً بمفتاح سليم عند التفعيل.
