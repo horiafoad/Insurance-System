@@ -39,6 +39,64 @@ registerRoute(
 
 // ============ Push Notifications ============
 
+// سجل تشخيص مؤقت لمسار Android: يسجّل اللحظة التي يصل فيها push إلى الـ SW،
+// ومتى يستدعى showNotification، وأي خطأ فيه — لا يغيّر سلوك الإشعار نفسه.
+const DIAG_DB = 'push-debug-v1'
+function openDiagDB() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(DIAG_DB, 1)
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore('events')
+      }
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => resolve(null)
+    } catch (e) {
+      resolve(null)
+    }
+  })
+}
+async function diagSave(stage, extra) {
+  try {
+    const db = await openDiagDB()
+    if (!db) return
+    const tx = db.transaction('events', 'readwrite')
+    tx.objectStore('events').put(
+      { stage, t: Date.now(), ...(extra || {}) },
+      'last'
+    )
+  } catch (e) {
+    // ignore
+  }
+}
+async function diagRead() {
+  try {
+    const db = await openDiagDB()
+    if (!db) return null
+    return await new Promise((resolve) => {
+      const tx = db.transaction('events', 'readonly')
+      const rq = tx.objectStore('events').get('last')
+      rq.onsuccess = () => resolve(rq.result || null)
+      rq.onerror = () => resolve(null)
+    })
+  } catch (e) {
+    return null
+  }
+}
+async function diagBroadcast(stage, extra) {
+  await diagSave(stage, extra)
+  try {
+    const message = { type: 'PUSH_DEBUG', stage, t: Date.now(), ...(extra || {}) }
+    const clients = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    })
+    clients.forEach((c) => c.postMessage(message))
+  } catch (e) {
+    // ignore
+  }
+}
+
 self.addEventListener('push', (event) => {
   let payload = {}
   try {
@@ -59,7 +117,21 @@ self.addEventListener('push', (event) => {
     data: payload,
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(
+    (async () => {
+      await diagBroadcast('push-received', {
+        hasData: Boolean(event.data && event.data.text()),
+      })
+      try {
+        await self.registration.showNotification(title, options)
+        await diagBroadcast('shown')
+      } catch (err) {
+        await diagBroadcast('show-error', {
+          error: String((err && err.message) || err).slice(0, 160),
+        })
+      }
+    })()
+  )
 })
 
 self.addEventListener('notificationclick', (event) => {
@@ -95,5 +167,20 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting()
+    return
+  }
+  if (event.data && event.data.type === 'PUSH_DEBUG_QUERY') {
+    event.waitUntil(
+      (async () => {
+        const record = await diagRead()
+        try {
+          if (event.source) {
+            event.source.postMessage({ type: 'PUSH_DEBUG_RESULT', record })
+          }
+        } catch (e) {
+          // ignore
+        }
+      })()
+    )
   }
 })

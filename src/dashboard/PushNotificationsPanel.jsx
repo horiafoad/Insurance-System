@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { styles } from "./styles";
+import AndroidPushDiagnostics from "./AndroidPushDiagnostics";
 import {
   isPushSupported,
   enablePushNotifications,
@@ -106,6 +107,8 @@ export default function PushNotificationsPanel({ currentUser }) {
           </p>
         </div>
       </div>
+
+      <AndroidPushDiagnostics currentUser={currentUser} />
 
       {!supported ? (
         <div style={styles.errorBox}>

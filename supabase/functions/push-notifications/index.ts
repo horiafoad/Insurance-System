@@ -65,6 +65,16 @@ function resolveAppBase(appUrl, selfUrl): string {
   }
 }
 
+// معرف مختصر لنقطة نهاية الجهاز لأغراض التشخيص.
+function endpointHostOf(ep: string): string {
+  if (!ep) return "";
+  try {
+    return new URL(ep).hostname;
+  } catch (_e) {
+    return ep.slice(0, 48);
+  }
+}
+
 // تنسيق payload واحد يُرسل للمتصفح + معالجة الضغط على الإشعار.
 function buildPayload(eventType, data, appBase) {
   const titleMap = {
@@ -98,14 +108,28 @@ function buildPayload(eventType, data, appBase) {
   };
 }
 
-async function sendToSubscriptions(subscriptions, payload): Promise<number> {
+async function sendToSubscriptions(
+  subscriptions,
+  payload,
+  details?: Array<Record<string, unknown>>
+): Promise<number> {
   if (!vapidConfigured) {
     console.error("VAPID keys are not configured — skipping push send.");
     return 0;
   }
   let sent = 0;
   for (const sub of subscriptions) {
-    if (!sub.is_active) continue;
+    if (!sub.is_active) {
+      if (details)
+        details.push({
+          device: sub.device_name,
+          platform: sub.platform,
+          ok: false,
+          status: null,
+          error: "inactive",
+        });
+      continue;
+    }
     try {
       await webpush.sendNotification(
         {
@@ -116,8 +140,25 @@ async function sendToSubscriptions(subscriptions, payload): Promise<number> {
         { TTL: 60 * 60 }
       );
       sent++;
+      if (details)
+        details.push({
+          device: sub.device_name,
+          platform: sub.platform,
+          ok: true,
+          status: 201,
+          endpointHost: endpointHostOf(sub.endpoint),
+        });
     } catch (err) {
       const statusCode = err?.statusCode;
+      if (details)
+        details.push({
+          device: sub.device_name,
+          platform: sub.platform,
+          ok: false,
+          status: statusCode || null,
+          error: String(err?.body || err?.message || err).slice(0, 160),
+          endpointHost: endpointHostOf(sub.endpoint),
+        });
       if (statusCode === 404 || statusCode === 410) {
         console.warn("Removing dead subscription:", statusCode);
         await supabase
@@ -241,13 +282,21 @@ async function getFcmAccessToken(): Promise<string | null> {
   }
 }
 
-async function sendFcmMessage(token: string, payload): Promise<boolean> {
+async function sendFcmMessage(
+  token: string,
+  payload,
+  diag?: Array<Record<string, unknown>>
+): Promise<boolean> {
   if (!fcmCredentials) {
     console.error("FCM_SERVICE_ACCOUNT not configured — skipping FCM send.");
+    if (diag) diag.push({ ok: false, status: null, error: "bad-credentials" });
     return false;
   }
   const accessToken = await getFcmAccessToken();
-  if (!accessToken) return false;
+  if (!accessToken) {
+    if (diag) diag.push({ ok: false, status: null, error: "token-exchange" });
+    return false;
+  }
 
   try {
     const res = await fetch(
@@ -274,14 +323,27 @@ async function sendFcmMessage(token: string, payload): Promise<boolean> {
         }),
       }
     );
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
       console.error("FCM send error:", res.status, text);
+      if (diag)
+        diag.push({
+          ok: false,
+          status: res.status,
+          error: text.slice(0, 160),
+        });
       return false;
     }
+    if (diag) diag.push({ ok: true, status: res.status || 200 });
     return true;
   } catch (err) {
     console.error("FCM send exception:", err?.message || err);
+    if (diag)
+      diag.push({
+        ok: false,
+        status: null,
+        error: String(err?.message || err).slice(0, 160),
+      });
     return false;
   }
 }
@@ -482,6 +544,36 @@ async function handleTest(body, selfUrl): Promise<Record<string, unknown>> {
   const subs = await getActiveSubscriptions(userId);
   const appBase = resolveAppBase(body?.appUrl, selfUrl);
   const payload = buildPayload("test", {}, appBase);
+
+  // وضع التشخيص: يعيد نتيجة مفصّلة لكل جهاز (يُستخدم من شاشة تشخيص أندرويد فقط).
+  if (body?.diagnostics) {
+    const details: Array<Record<string, unknown>> = [];
+    const webSubs = (subs || []).filter(
+      (s: any) => s.endpoint && s.p256dh && s.auth
+    );
+    await sendToSubscriptions(webSubs, payload, details);
+    const fcmSubs = (subs || []).filter((s: any) => s.fcm_token);
+    for (const s of fcmSubs) {
+      const d: Array<Record<string, unknown>> = [];
+      await sendFcmMessage(s.fcm_token, payload, d);
+      details.push({
+        device: s.device_name,
+        platform: s.platform,
+        ok: d[0]?.ok === true,
+        status: d[0]?.status || null,
+        error: d[0]?.error,
+        endpointHost: "fcm-native",
+      });
+    }
+    const web = details.filter(
+      (d) => d.endpointHost !== "fcm-native" && d.ok === true
+    ).length;
+    const fcm = details.filter(
+      (d) => d.endpointHost === "fcm-native" && d.ok === true
+    ).length;
+    return { ok: true, sent: web + fcm, web, fcm, details };
+  }
+
   const { web, fcm } = await sendMixedSubscriptions(subs, payload);
   return { ok: true, sent: web + fcm, web, fcm };
 }
