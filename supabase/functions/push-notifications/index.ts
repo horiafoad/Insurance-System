@@ -371,21 +371,39 @@ async function handleRegister(body): Promise<Record<string, unknown>> {
 
   // تسجيل جهاز تطبيق الأندرويد الأصلي عبر رمز FCM
   if (fcmToken) {
+    const row = {
+      user_id: userId,
+      fcm_token: fcmToken,
+      endpoint: endpoint || fcmToken,
+      p256dh: p256dh || "",
+      auth: auth || "",
+      device_name: deviceName || "native",
+      platform: platform || "android",
+      is_active: true,
+    };
+
+    // أولاً نفعّل أي صف قديم يحمل نفس التوكن.
+    await supabase
+      .from("push_subscriptions")
+      .update({ is_active: true, device_name: row.device_name })
+      .eq("fcm_token", fcmToken);
+
     const { data, error } = await supabase
       .from("push_subscriptions")
-      .upsert(
-        {
-          user_id: userId,
-          fcm_token: fcmToken,
-          endpoint: endpoint || fcmToken,
-          device_name: deviceName || "native",
-          platform: platform || "android",
-          is_active: true,
-        },
-        { onConflict: "fcm_token" }
-      )
+      .upsert(row, { onConflict: "endpoint" })
       .select("id")
       .single();
+
+    if (error && /unique|duplicate/i.test(String(error.message || error))) {
+      // لا يوجد فهرس فريد على endpoint — نُدرج يدوياً مكتفين بالعودة.
+      const { data: inserted, error: insertError } = await supabase
+        .from("push_subscriptions")
+        .insert(row)
+        .select("id")
+        .single();
+      if (insertError) throw insertError;
+      return { ok: true, id: inserted?.id };
+    }
 
     if (error) throw error;
     return { ok: true, id: data?.id };
