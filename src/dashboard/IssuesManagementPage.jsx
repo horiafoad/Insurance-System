@@ -1013,6 +1013,8 @@ export default function IssuesManagementPage() {
     ) {
       return;
     }
+    // لا نحرّك المؤشر بينما نافذة التعديل أو التفاصيل مفتوحة.
+    if (editingIssue || detailModalIssue) return;
     const key = e.key;
     if (key === "ArrowDown") {
       e.preventDefault();
@@ -1045,7 +1047,7 @@ export default function IssuesManagementPage() {
     }
   };
 
-  // يُبقي الخلية المحددة ظاهرة داخل منطقة التمرير.
+  // تُبقي الخلية المحددة ظاهرة داخل منطقة التمرير.
   useEffect(() => {
     if (cursor.r < 0 || cursor.c < 0) return;
     const wrap = tableRef.current;
@@ -1055,6 +1057,13 @@ export default function IssuesManagementPage() {
     );
     if (cell) cell.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [cursor]);
+
+  // استماع عام للكيبورد في جزء القضايا — الأسهم تتحرك فورًا دون الحاجة
+  // للضغط على الجدول أولًا (يُعاد ربط المستمع كل عرض ليكون محدّثًا دائمًا).
+  useEffect(() => {
+    window.addEventListener("keydown", handleTableKeyDown);
+    return () => window.removeEventListener("keydown", handleTableKeyDown);
+  });
 
   return (
     <div>
@@ -1655,7 +1664,6 @@ export default function IssuesManagementPage() {
               ref={tableRef}
               tabIndex={0}
               style={{ overflowX: "auto", outline: "none" }}
-              onKeyDown={handleTableKeyDown}
               onFocus={() =>
                 setCursor((cur) => (cur.r < 0 ? { r: 0, c: 0 } : cur))
               }
