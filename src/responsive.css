@@ -277,10 +277,10 @@ body,
    ========================================================================= */
 @media (min-width: 769px) {
   .admin-app.admin-app-wide .dashboard-sidebar {
-    width: 230px !important;
+    width: 210px !important;
   }
 
   .admin-app.admin-app-wide .admin-main {
-    padding: 20px 10px !important;
+    padding: 0 !important;
   }
 }
