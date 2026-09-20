@@ -3,6 +3,7 @@ import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import { useRealtimeSync } from "../utils/realtimeSync";
 import * as XLSX from "xlsx";
+import issuesHeaderImage from "../assets/ط.jpg";
 
 const PAYMENT_STATUS_OPTIONS = [
   "جاري التنفيذ",
@@ -1022,6 +1023,99 @@ export default function IssuesManagementPage() {
     .issues-table thead th:hover { background: #DCE8FA; }
     .issues-menu-item:hover { background: #F1F5F9; }
     .issues-upload-card h3 { margin: 0; }
+
+    .iss-hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: 0 0 24px 24px;
+      background-size: cover;
+      background-position: center;
+      margin-bottom: 24px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+      color: #fff;
+      height: 300px;
+    }
+    .iss-hero-inner {
+      position: relative;
+      height: 100%;
+      box-sizing: border-box;
+      padding: clamp(20px, 3vw, 32px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+    }
+    .iss-hero-head {
+      text-align: center;
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .iss-hero-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+    .iss-hero-icon {
+      width: 58px;
+      height: 58px;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 0 12px rgba(253, 224, 71, 0.55));
+    }
+    .iss-hero-title {
+      margin: 0;
+      font-size: 42px;
+      font-weight: 800;
+      line-height: 1.35;
+      color: #fff;
+      text-align: center;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+    .iss-hero-college {
+      margin: 16px 0 0;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.5;
+      color: #fff;
+      text-align: center;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+    .iss-hero-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 55%;
+      max-width: 700px;
+      margin: 20px auto 0;
+    }
+    .iss-hero-divider .iss-hero-line {
+      flex: 1;
+      height: 2px;
+      background: #60a5fa;
+      border-radius: 2px;
+      opacity: 0.8;
+    }
+    .iss-hero-divider .iss-hero-diamond {
+      width: 10px;
+      height: 10px;
+      background: #60a5fa;
+      border-radius: 2px;
+      transform: rotate(45deg);
+      opacity: 0.95;
+    }
+    @media (max-width: 1024px) {
+      .iss-hero { height: 280px; }
+      .iss-hero-title { font-size: 34px; }
+    }
+    @media (max-width: 640px) {
+      .iss-hero { height: 380px; min-height: 380px; }
+      .iss-hero-title { font-size: 26px; line-height: 1.5; }
+      .iss-hero-icon { width: 42px; height: 42px; }
+      .iss-hero-college { font-size: 16px; }
+    }
   `;
 
   const openEditFromDetail = (issue) => {
@@ -1129,77 +1223,53 @@ export default function IssuesManagementPage() {
 
       {/* ============ ترويسة الصفحة ============ */}
       <div
+        className="iss-hero"
         style={{
-          background: "#fff",
-          borderRadius: 18,
-          padding: "22px 26px",
-          marginBottom: 18,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-          boxShadow: "0 8px 22px rgba(15,41,66,.08)",
-          border: "1px solid #E7EBF0",
+          backgroundImage: `linear-gradient(135deg, rgba(7,27,58,0.90), rgba(11,42,91,0.78), rgba(29,95,209,0.55)), url(${issuesHeaderImage})`,
         }}
       >
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 15,
-            flex: "1 1 300px",
-            minWidth: 0,
+            position: "absolute",
+            width: "200px",
+            height: "200px",
+            borderRadius: "50%",
+            border: "2px solid rgba(255,255,255,0.12)",
+            left: "-70px",
+            top: "-110px",
+            background:
+              "radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%)",
           }}
-        >
-          <div
-            style={{
-              width: 62,
-              height: 62,
-              borderRadius: 16,
-              background: "linear-gradient(135deg,#FDE68A 0%,#F59E0B 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 34,
-              boxShadow: "0 8px 18px rgba(217,119,6,.35)",
-              flexShrink: 0,
-            }}
-          >
-            ⚖️
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#64748b",
-                marginBottom: 4,
-              }}
-            >
-              قسم الاستحقاقات / نظام القضايا
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: "150px",
+            height: "150px",
+            borderRadius: "50%",
+            border: "1px solid rgba(255,255,255,0.1)",
+            right: "-50px",
+            bottom: "-80px",
+            background:
+              "radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%)",
+          }}
+        />
+        <div className="iss-hero-inner">
+          <div className="iss-hero-head">
+            <div className="iss-hero-title-row">
+              <div className="iss-hero-icon">⚖️</div>
+              <h1 className="iss-hero-title">
+                النظام الإلكتروني للمعاملات الإدارية
+              </h1>
             </div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 26,
-                fontWeight: 900,
-                color: "#0F172A",
-                lineHeight: 1.3,
-              }}
-            >
-              نظام إدارة القضايا
-            </h1>
-            <p
-              style={{
-                margin: "5px 0 0",
-                fontSize: 14,
-                color: "#64748b",
-                fontWeight: 600,
-              }}
-            >
-              منصة العمل الشاملة للمتابعة اللحظية للقضايا والأداء
+            <p className="iss-hero-college">
+              كلية الهندسة – جامعة عين شمس
             </p>
+            <div className="iss-hero-divider">
+              <span className="iss-hero-line" />
+              <span className="iss-hero-diamond" />
+              <span className="iss-hero-line" />
+            </div>
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { supabase } from "../supabaseClient";
 
 /* =========================================================================
@@ -80,8 +80,15 @@ export function useRealtimeSync({ table, filter, apply, enabled = true }) {
   const filterRef = useRef(filter);
   filterRef.current = filter;
 
+  const serializedFilter = useMemo(
+    () => (filter ? JSON.stringify(filter) : ""),
+    [filter]
+  );
+
   useEffect(() => {
     if (!enabled) return undefined;
+
+    const currentFilter = filterRef.current;
 
     const channelName = `rt-${table}-${Math.random().toString(36).slice(2, 8)}`;
     const channel = supabase
@@ -92,11 +99,16 @@ export function useRealtimeSync({ table, filter, apply, enabled = true }) {
           event: "*",
           schema: "public",
           table,
-          ...(filter ? { filter } : {}),
+          ...(currentFilter ? { filter: currentFilter } : {}),
         },
         (payload) => {
           try {
-            if (applyRef.current) applyRef.current(payload);
+            const result = applyRef.current ? applyRef.current(payload) : undefined;
+            if (result && typeof result.then === "function") {
+              result.catch((err) =>
+                console.error(`[realtimeSync] خطأ غير متزامن في معالجة حدث ${table}:`, err)
+              );
+            }
           } catch (err) {
             console.error(`[realtimeSync] خطأ في معالجة حدث ${table}:`, err);
           }
@@ -111,5 +123,5 @@ export function useRealtimeSync({ table, filter, apply, enabled = true }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [table, filter, enabled]);
+  }, [table, serializedFilter, enabled]);
 }

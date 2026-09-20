@@ -1314,7 +1314,9 @@ const updatedMovements = qrLetter.movements.map((movement) =>
         error: allError,
       } = await supabase
         .from("users")
-        .select("username, password");
+        .select("username, password")
+        .eq("username", loginForm.username)
+        .limit(1);
 
       if (allError) {
         console.error(
