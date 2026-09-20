@@ -3439,6 +3439,61 @@ const startQrScanner = async () => {
   setReceivedNotes("");
 };
 
+  // ربط كود QR متاح بخطاب موجود مسبقًا (وارد / مستورد من إكسيل / منشأ يدويًا)
+  // حتى يتوفر له كود وملصق QR في صفحة تفاصيل الخطاب.
+  const handleBindQrToLetter = async (letter) => {
+    if (!letter) return;
+
+    try {
+      const { data: availableRows, error: availError } = await supabase
+        .from("archive_qr_codes")
+        .select("id, code")
+        .eq("status", "available")
+        .is("letter_id", null)
+        .order("id")
+        .limit(1);
+
+      if (availError) throw availError;
+
+      const qr = availableRows?.[0];
+
+      if (!qr) {
+        alert(
+          "لا توجد أكواد QR متاحة حاليًا.\n" +
+            "أنشئ دفعة أكواد جديدة من لوحة «إدارة الخطابات» أولًا."
+        );
+        return;
+      }
+
+      const { error: letterUpdateError } = await supabase
+        .from("letters")
+        .update({ qr_code_id: qr.id })
+        .eq("id", letter.id);
+      if (letterUpdateError) throw letterUpdateError;
+
+      const { error: qrUpdateError } = await supabase
+        .from("archive_qr_codes")
+        .update({
+          status: "used",
+          letter_id: letter.id,
+          used_at: new Date().toISOString(),
+        })
+        .eq("id", qr.id);
+      if (qrUpdateError) throw qrUpdateError;
+
+      await enrichLetterById(letter.id);
+
+      alert(
+        "تم ربط كود QR («" +
+          qr.code +
+          "») بهذا الخطاب وتحديث بياناته."
+      );
+    } catch (e) {
+      console.error("Bind QR to letter error:", e);
+      alert("حدث خطأ أثناء ربط كود QR: " + (e?.message || ""));
+    }
+  };
+
   // إعادة طباعة نفس QR للخطاب نفسه (بعد ضياعه) من غير إنشاء خطاب جديد.
   const handleReprintLetterQr = async (letter) => {
     const code = letter?.qr?.code;
@@ -5107,6 +5162,7 @@ const startQrScanner = async () => {
               setSelectedLetter(null)
             }
             onReprintQr={handleReprintLetterQr}
+            onBindQr={handleBindQrToLetter}
             isAdmin={isAdmin}
           />
         )}
@@ -6296,7 +6352,7 @@ fontSize: "20px",
    تفاصيل الخطاب - التصميم المميز
    ========================================================= */
 
-function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
+function LetterDetails({ letter, onClose, onReprintQr, isAdmin, onBindQr }) {
   const movements = letter.movements || [];
 
   const completedCount = movements.filter(
@@ -6329,6 +6385,66 @@ function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
       ? movements[currentIndex]
       : movements[completedCount - 1] ||
         movements[0];
+
+  const qrCode = letter.qr?.code || "";
+  const trackingUrl = qrCode
+    ? PUBLIC_APP_URL + "?qr=" + encodeURIComponent(qrCode)
+    : "";
+
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrBusy, setQrBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!qrCode) return;
+    let mounted = true;
+
+    QRCode.toDataURL(trackingUrl, {
+      width: 600,
+      margin: 2,
+      errorCorrectionLevel: "H",
+    })
+      .then((dataUrl) => {
+        if (mounted) setQrDataUrl(dataUrl);
+      })
+      .catch((err) => {
+        console.error("Letter QR render error:", err);
+      });
+
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrCode]);
+
+  const downloadLetterQr = () => {
+    if (!qrDataUrl) return;
+    const link = document.createElement("a");
+    link.download = (qrCode || "letter") + "-QR.png";
+    link.href = qrDataUrl;
+    link.click();
+  };
+
+  const copyTrackingUrl = async () => {
+    if (!trackingUrl) return;
+    try {
+      await navigator.clipboard.writeText(trackingUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      console.error("Copy QR link error:", e);
+      alert("تعذر نسخ الرابط: " + (e?.message || ""));
+    }
+  };
+
+  const handleBindQr = async () => {
+    setQrBusy(true);
+    try {
+      await onBindQr?.(letter);
+    } finally {
+      setQrBusy(false);
+    }
+  };
 
   return (
     <div
@@ -6561,6 +6677,219 @@ function LetterDetails({ letter, onClose, onReprintQr, isAdmin }) {
       </div>
 
       <div style={{ padding: "24px" }}>
+        {/* كود QR — حمّله وضع على الورقة */}
+        {qrCode && (
+          <div
+            style={{
+              background: "#fff",
+              border: "1px solid #E2E8F0",
+              borderRadius: "16px",
+              padding: "18px",
+              marginBottom: "20px",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "18px",
+              alignItems: "center",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+              }}
+            >
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt={"كود QR " + qrCode}
+                  width={128}
+                  height={128}
+                  style={{
+                    border: "1px solid #E2E8F0",
+                    borderRadius: "12px",
+                    padding: "6px",
+                    background: "#fff",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 128,
+                    height: 128,
+                    borderRadius: 12,
+                    background: "#F1F5F9",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    color: "#94A3B8",
+                  }}
+                >
+                  جارٍ توليد QR…
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={downloadLetterQr}
+                disabled={!qrDataUrl}
+                style={{
+                  border: "none",
+                  borderRadius: "12px",
+                  padding: "11px 16px",
+                  background:
+                    "linear-gradient(135deg,#1D4ED8,#2563EB)",
+                  color: "#fff",
+                  fontSize: "13px",
+                  fontWeight: "800",
+                  cursor: "pointer",
+                }}
+              >
+                ⬇️ تحميل QR
+              </button>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                  marginBottom: "5px",
+                }}
+              >
+                🏷️ كود QR
+              </div>
+
+              <div
+                style={{
+                  direction: "ltr",
+                  textAlign: "left",
+                  fontSize: "14px",
+                  fontWeight: "800",
+                  color: "#0F172A",
+                  marginBottom: "10px",
+                }}
+              >
+                {qrCode}
+              </div>
+
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                  marginBottom: "5px",
+                }}
+              >
+                🔗 رابط المتابعة (يُفتح بمسح الكود)
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <code
+                  style={{
+                    flex: 1,
+                    direction: "ltr",
+                    textAlign: "left",
+                    background: "#F8FAFC",
+                    border: "1px solid #E2E8F0",
+                    borderRadius: "8px",
+                    padding: "8px 10px",
+                    fontSize: "11px",
+                    color: "#334155",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {trackingUrl}
+                </code>
+
+                <button
+                  type="button"
+                  onClick={copyTrackingUrl}
+                  style={{
+                    border: "1px solid #BFDBFE",
+                    borderRadius: "10px",
+                    padding: "8px 12px",
+                    background: "#EFF6FF",
+                    color: "#1D4ED8",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {copied ? "✓ تم النسخ" : "📋 نسخ"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!qrCode && (
+          <div
+            style={{
+              background: "#FFFBEB",
+              border: "1px dashed #F59E0B",
+              borderRadius: "16px",
+              padding: "16px 18px",
+              marginBottom: "20px",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  fontWeight: "800",
+                  color: "#92400E",
+                }}
+              >
+                ⚠️ لا يوجد كود QR مرتبط بهذا الخطاب
+              </div>
+
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#B45309",
+                  marginTop: "4px",
+                }}
+              >
+                اربط كود QR متاحًا ثم حمّله وضعه على نسخة الخطاب لمتابعة
+                حركته بالمسح.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleBindQr}
+              disabled={qrBusy}
+              style={{
+                border: "none",
+                borderRadius: "12px",
+                padding: "11px 16px",
+                background: "#F59E0B",
+                color: "#fff",
+                fontSize: "13px",
+                fontWeight: "800",
+                cursor: "pointer",
+              }}
+            >
+              {qrBusy ? "جاري الربط…" : "🔗 ربط كود QR متاح"}
+            </button>
+          </div>
+        )}
+
         {/* الحالة والإحصائيات */}
         <div
           style={{
