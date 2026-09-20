@@ -3,7 +3,6 @@ import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import { useRealtimeSync } from "../utils/realtimeSync";
 import * as XLSX from "xlsx";
-import engineering from "../assets/engineering.jpg";
 
 const PAYMENT_STATUS_OPTIONS = [
   "جاري التنفيذ",
@@ -85,6 +84,35 @@ function cleanFileName(name) {
     .replace(/\s+/g, "_")
     .replace(/_{2,}/g, "_")
     .trim();
+}
+
+// تنسيق تاريخ القضية للعرض في الجدول (بصيغة عربية موجزة).
+function formatIssueDate(value) {
+  if (!value) return "-";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("ar-EG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "-";
+  }
+}
+
+// اسم العميل/صاحب القضية: يُستخرج من بيانات القضية (JSONB) أو من عنوانها.
+function getIssueClientName(issue) {
+  if (!issue) return "-";
+  const d = issue.excel_data || {};
+  return (
+    d["الاسم"] ||
+    d["اسم صاحب القضية"] ||
+    d["Client Name"] ||
+    issue.case_title ||
+    "-"
+  );
 }
 
 export default function IssuesManagementPage() {
@@ -940,107 +968,138 @@ export default function IssuesManagementPage() {
     <div>
       <style>{issuesCss}</style>
 
-      {/* Header Image Section */}
+      {/* ============ ترويسة الصفحة ============ */}
       <div
         style={{
-          position: "relative",
-          width: "100%",
-          height: "200px",
-          backgroundImage: `linear-gradient(135deg, rgba(15,23,42,0.85) 0%, rgba(37,99,235,0.75) 100%), url(${engineering})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          borderRadius: "18px 18px 0 0",
-          overflow: "hidden",
-          marginBottom: 0,
+          background: "#fff",
+          borderRadius: 18,
+          padding: "22px 26px",
+          marginBottom: 18,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+          boxShadow: "0 8px 22px rgba(15,41,66,.08)",
+          border: "1px solid #E7EBF0",
         }}
       >
         <div
           style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "linear-gradient(135deg, rgba(15,23,42,0.9) 0%, rgba(37,99,235,0.7) 100%)",
             display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
             alignItems: "center",
-            padding: "24px",
+            gap: 15,
+            flex: "1 1 300px",
+            minWidth: 0,
           }}
         >
           <div
             style={{
-              fontSize: "48px",
-              marginBottom: "12px",
-              textShadow: "0 2px 8px rgba(0,0,0,0.3)",
+              width: 62,
+              height: 62,
+              borderRadius: 16,
+              background: "linear-gradient(135deg,#FDE68A 0%,#F59E0B 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 34,
+              boxShadow: "0 8px 18px rgba(217,119,6,.35)",
+              flexShrink: 0,
             }}
           >
             ⚖️
           </div>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "28px",
-              fontWeight: 900,
-              color: "#fff",
-              textShadow: "0 2px 8px rgba(0,0,0,0.3)",
-              marginBottom: "8px",
-            }}
-          >
-            نظام إدارة القضايا
-          </h2>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "15px",
-              color: "#e2e8f0",
-              fontWeight: 600,
-              textShadow: "0 1px 4px rgba(0,0,0,0.3)",
-            }}
-          >
-            رفع وإدارة القضايا مع ملفات Excel و PDF — متابعة حالات الصرف لحظيًا
-          </p>
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#64748b",
+                marginBottom: 4,
+              }}
+            >
+              قسم الاستحقاقات / نظام القضايا
+            </div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 26,
+                fontWeight: 900,
+                color: "#0F172A",
+                lineHeight: 1.3,
+              }}
+            >
+              نظام إدارة القضايا
+            </h1>
+            <p
+              style={{
+                margin: "5px 0 0",
+                fontSize: 14,
+                color: "#64748b",
+                fontWeight: 600,
+              }}
+            >
+              منصة العمل الشاملة للمتابعة اللحظية للقضايا والأداء
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* ============ العنوان ============ */}
+      {/* ============ بطاقة إدارة القضايا ============ */}
       <div
         style={{
           background: "#fff",
-          borderRadius: "0 0 16px 16px",
-          padding: "22px 24px",
+          borderRadius: 16,
+          padding: "20px 24px",
           marginBottom: 18,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: 14,
           flexWrap: "wrap",
-          boxShadow: "0 8px 22px rgba(15,41,66,.14)",
+          boxShadow: "0 6px 18px rgba(15,41,66,.06)",
           border: "1px solid #E7EBF0",
-          borderTop: "none",
         }}
       >
-        <div style={{ color: "#0f172a" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flex: "1 1 260px",
+            minWidth: 0,
+          }}
+        >
           <div
             style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#64748b",
-              marginBottom: 4,
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: "#FEF3C7",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 22,
+              flexShrink: 0,
             }}
           >
-            قسم الاستحقاقات / نظام القضايا
+            ⚖️
           </div>
-          <h2
-            style={{ margin: 0, fontSize: 23, fontWeight: 900, color: "#0f172a" }}
-          >
-            📋 إدارة القضايا
-          </h2>
-          <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "#64748b" }}>
-            رفع وإدارة القضايا مع ملفات Excel و PDF — متابعة حالات الصرف
-            لحظيًا
-          </p>
+          <div style={{ minWidth: 0 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 21,
+                fontWeight: 900,
+                color: "#0F172A",
+              }}
+            >
+              إدارة القضايا
+            </h2>
+            <p style={{ margin: "5px 0 0", fontSize: 13.5, color: "#64748b" }}>
+              رفع وإدارة القضايا مع ملفات Excel و PDF — متابعة الحالات لحظيًا
+            </p>
+          </div>
         </div>
         <div
           style={{
@@ -1056,15 +1115,16 @@ export default function IssuesManagementPage() {
               display: "inline-flex",
               alignItems: "center",
               gap: 7,
-              border: "1px solid rgba(255,255,255,.4)",
-              background: showAddPanel ? "rgba(255,255,255,.14)" : "#ffffff",
-              color: showAddPanel ? "#fff" : "#0F2F4F",
-              borderRadius: 11,
-              padding: "11px 16px",
+              border: 0,
+              background: showAddPanel ? "#1E3A8A" : "#123B5D",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "12px 18px",
               fontWeight: 800,
-              fontSize: 13.5,
+              fontSize: 14,
               cursor: "pointer",
-              boxShadow: "0 3px 10px rgba(15,41,66,.18)",
+              boxShadow: "0 4px 12px rgba(18,59,93,.28)",
+              whiteSpace: "nowrap",
             }}
             onClick={() => setShowAddPanel((open) => !open)}
           >
@@ -1076,12 +1136,12 @@ export default function IssuesManagementPage() {
             title="تحديث القائمة من قاعدة البيانات"
             onClick={loadIssues}
             style={{
-              border: "1px solid rgba(255,255,255,.35)",
-              background: "rgba(255,255,255,.12)",
-              color: "#fff",
-              borderRadius: 11,
-              width: 42,
-              height: 42,
+              border: "1px solid #CBD5E1",
+              background: "#F8FAFC",
+              color: "#334155",
+              borderRadius: 10,
+              width: 44,
+              height: 44,
               fontSize: 18,
               cursor: "pointer",
               display: "inline-flex",
@@ -1112,64 +1172,67 @@ export default function IssuesManagementPage() {
         className="issues-stats-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
           gap: 14,
           marginBottom: 18,
         }}
       >
         {[
-          { icon: "🗂️", label: "إجمالي القضايا", value: stats.total, bg: "#EFF6FF", bd: "#BFDBFE", color: "#1D4ED8" },
-          { icon: "⏳", label: "قيد المعالجة", value: stats.pending, bg: "#FEF3C7", bd: "#FDE68A", color: "#B45309" },
-          { icon: "🔄", label: "جاري التنفيذ", value: stats.inProgress, bg: "#DBEAFE", bd: "#93C5FD", color: "#1D4ED8" },
-          { icon: "💰", label: "تم الصرف", value: stats.paid, bg: "#D1FAE5", bd: "#A7F3D0", color: "#047857" },
-          { icon: "⏸️", label: "بانتظار الصرف", value: stats.waiting, bg: "#E0E7FF", bd: "#C7D2FE", color: "#4338CA" },
-          { icon: "🚫", label: "مرفوضة", value: stats.rejected, bg: "#FEE2E2", bd: "#FECACA", color: "#DC2626" },
+          { icon: "💵", label: "تم الصرف", value: stats.paid, color: "#047857", bg: "#D1FAE5" },
+          { icon: "🛡️", label: "جاري التنفيذ", value: stats.inProgress, color: "#1E3A8A", bg: "#DBEAFE" },
+          { icon: "⏳", label: "قيد المعالجة", value: stats.pending, color: "#B45309", bg: "#FEF3C7" },
+          { icon: "📁", label: "إجمالي القضايا", value: stats.total, color: "#1E3A8A", bg: "#DBEAFE" },
         ].map((c) => (
           <div
             key={c.label}
             style={{
-              background: c.bg,
-              border: `2px solid ${c.bd}`,
+              background: "#fff",
+              border: "1px solid #E7EBF0",
               borderRadius: 15,
-              padding: "15px 16px",
+              padding: "16px",
               display: "flex",
               alignItems: "center",
               gap: 13,
-              boxShadow: "0 4px 14px rgba(15,41,66,.08)",
+              boxShadow: "0 4px 14px rgba(15,41,66,.06)",
               transition: "all 0.2s",
+              minWidth: 0,
             }}
           >
             <div
               style={{
-                width: 45,
-                height: 45,
-                borderRadius: 12,
-                background: "rgba(255,255,255,0.6)",
-                border: `1px solid ${c.bd}`,
+                width: 46,
+                height: 46,
+                borderRadius: 13,
+                background: c.bg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 21,
+                fontSize: 22,
+                flexShrink: 0,
               }}
             >
               {c.icon}
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 12.5,
                   fontWeight: 700,
-                  color: c.color,
-                  marginBottom: 2,
+                  color: "#64748B",
+                  marginBottom: 3,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 {c.label}
               </div>
               <div
                 style={{
-                  fontSize: 22,
+                  fontSize: 26,
                   fontWeight: 900,
                   color: c.color,
+                  lineHeight: 1,
                 }}
               >
                 {c.value}
@@ -1497,55 +1560,102 @@ export default function IssuesManagementPage() {
             }}
           >
             <div style={{ overflowX: "auto" }}>
-              <table className="issues-table" style={{ minWidth: "1200px" }}>
+              <table className="issues-table" style={{ minWidth: "880px" }}>
                 <thead>
                   <tr>
-                    <th style={ui.th}>اسم صاحب القضية</th>
-                    <th style={ui.th}>شهر تغيير الأساسي</th>
-                    <th style={ui.thNum}>الأساسي بعد التغيير</th>
-                    <th style={ui.thNum}>الإجمالي</th>
-                    <th style={ui.thNum}>الصافي</th>
-                    <th style={ui.th}>حالة الصرف</th>
-                    <th style={ui.th}>حالة القضية</th>
+                    <th style={ui.thNum}>رقم القضية</th>
+                    <th style={ui.th}>اسم القضية</th>
+                    <th style={ui.th}>اسم العميل</th>
+                    <th style={ui.th}>التاريخ</th>
+                    <th style={ui.th}>الحالة</th>
                     <th style={ui.th}>إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredIssues.slice(0, 300).map((issue) => {
-                    const d = issue.excel_data || {};
                     const menuOpen = rowMenuOpenId === issue.id;
                     return (
                       <tr key={issue.id}>
+                        <td style={ui.tdNum}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              background: "#EEF2F6",
+                              color: "#334155",
+                              borderRadius: 8,
+                              padding: "4px 10px",
+                              fontSize: 12.5,
+                              fontWeight: 800,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            # {issue.case_number || "-"}
+                          </span>
+                        </td>
                         <td style={ui.td}>
                           <div style={{ fontWeight: 800, color: "#0F172A" }}>
                             {issue.case_title || "-"}
                           </div>
-                          <div
-                            style={{
-                              fontSize: 11.5,
-                              color: "#94A3B8",
-                              marginTop: 2,
-                            }}
-                          >
-                            # {issue.case_number || "-"}
+                          {issue.file_url && (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#94A3B8",
+                                marginTop: 2,
+                                fontWeight: 600,
+                              }}
+                            >
+                              📎 ملف مرفوع
+                            </div>
+                          )}
+                        </td>
+                        <td style={ui.td}>
+                          <div style={{ fontWeight: 700, color: "#1E293B" }}>
+                            {getIssueClientName(issue)}
                           </div>
                         </td>
                         <td style={ui.td}>
-                          {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
-                        </td>
-                        <td style={ui.tdNum}>
-                          {formatMoneyValue(d["الاساسي بعد التغيير"])}
-                        </td>
-                        <td style={ui.tdNum}>
-                          {formatMoneyValue(d["الاجمالي"])}
-                        </td>
-                        <td style={ui.tdNum}>
-                          {formatMoneyValue(d["الصافي"])}
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 600,
+                              color: "#475569",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {formatIssueDate(issue.created_at)}
+                          </div>
                         </td>
                         <td style={ui.td}>
-                          {getPaymentBadge(issue.payment_status)}
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "flex-start",
+                              gap: 4,
+                            }}
+                          >
+                            {getStatusBadge(issue.status)}
+                            {issue.payment_status &&
+                              normalizePaymentStatus(issue.payment_status) !==
+                                "لا يوجد" && (
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 5,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    color: "#64748B",
+                                  }}
+                                  title="حالة الصرف"
+                                >
+                                  {getPaymentBadge(issue.payment_status)}
+                                </div>
+                              )}
+                          </div>
                         </td>
-                        <td style={ui.td}>{getStatusBadge(issue.status)}</td>
                         <td style={ui.td}>
                           <div
                             style={{
@@ -1557,29 +1667,70 @@ export default function IssuesManagementPage() {
                           >
                             <button
                               type="button"
-                              style={styles.viewButton}
+                              title="عرض تفاصيل وملفات القضية"
                               onClick={() => openDetailModal(issue)}
-                              title="تفاصيل وملفات القضية"
-                            >
-                              📁 تفاصيل
-                            </button>
-                            <select
-                              value={issue.status}
-                              onChange={(e) =>
-                                handleUpdateStatus(issue.id, e.target.value)
-                              }
                               style={{
-                                ...styles.statusSelect,
-                                padding: "6px 8px",
-                                fontSize: 12,
+                                border: "1px solid #DBEAFE",
+                                background: "#EFF6FF",
+                                color: "#1D4ED8",
+                                borderRadius: 9,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
                               }}
-                              title="تحديث حالة القضية بسرعة"
                             >
-                              <option value="pending">قيد المعالجة</option>
-                              <option value="in_progress">جاري التنفيذ</option>
-                              <option value="approved">مكتملة</option>
-                              <option value="rejected">مرفوضة</option>
-                            </select>
+                              👁️
+                            </button>
+                            <button
+                              type="button"
+                              title="تعديل بيانات القضية"
+                              onClick={() => {
+                                setRowMenuOpenId(null);
+                                openEditModal(issue);
+                              }}
+                              style={{
+                                border: "1px solid #E2E8F0",
+                                background: "#F8FAFC",
+                                color: "#334155",
+                                borderRadius: 9,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              title="حذف القضية"
+                              onClick={() => {
+                                setRowMenuOpenId(null);
+                                handleDeleteIssue(issue.id);
+                              }}
+                              style={{
+                                border: "1px solid #FECACA",
+                                background: "#FEF2F2",
+                                color: "#DC2626",
+                                borderRadius: 9,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              🗑️
+                            </button>
                             <button
                               type="button"
                               title="المزيد من الإجراءات"
@@ -1614,9 +1765,40 @@ export default function IssuesManagementPage() {
                                   boxShadow: "0 10px 26px rgba(15,41,66,.14)",
                                   padding: 6,
                                   zIndex: 20,
-                                  minWidth: 150,
+                                  minWidth: 170,
                                 }}
                               >
+                                <div
+                                  style={{
+                                    padding: "6px 12px 4px",
+                                    fontSize: 11.5,
+                                    fontWeight: 900,
+                                    color: "#64748B",
+                                  }}
+                                >
+                                  تغيير حالة القضية
+                                </div>
+                                <select
+                                  value={issue.status}
+                                  onChange={(e) => {
+                                    setRowMenuOpenId(null);
+                                    handleUpdateStatus(issue.id, e.target.value);
+                                  }}
+                                  style={{
+                                    ...styles.statusSelect,
+                                    width: "calc(100% - 12px)",
+                                    margin: "0 6px 8px",
+                                    padding: "6px 8px",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <option value="pending">قيد المعالجة</option>
+                                  <option value="in_progress">
+                                    جاري التنفيذ
+                                  </option>
+                                  <option value="approved">مكتملة</option>
+                                  <option value="rejected">مرفوضة</option>
+                                </select>
                                 <button
                                   type="button"
                                   className="issues-menu-item"
