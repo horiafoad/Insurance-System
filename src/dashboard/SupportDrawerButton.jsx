@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { styles } from "./styles";
+import { canManageSupport } from "../utils/permissions";
+import SupportAdminPanel from "./SupportAdminPanel";
 import {
   upsertRowInList,
   removeRowFromList,
@@ -9,9 +11,30 @@ import {
 
 const STATUS_COLORS = {
   "جديدة": { background: "#DBEAFE", color: "#1D4ED8" },
+  "جاري الدعم": { background: "#FEF3C7", color: "#B45309" },
   "جاري المعالجة": { background: "#FEF3C7", color: "#B45309" },
   "تم الحل": { background: "#D1FAE5", color: "#047857" },
+  "مغلقة": { background: "#E2E8F0", color: "#475569" },
 };
+
+// كشف اسم الجهاز تلقائيًا من بيانات المتصفح (بدون أي صلاحيات إضافية)
+function detectDeviceName() {
+  if (typeof navigator === "undefined") return "";
+  const ua = navigator.userAgent || "";
+  const platform = navigator.platform || "";
+  let os = platform;
+  if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Windows|Win/i.test(platform)) os = "Windows";
+  else if (/Mac/i.test(platform)) os = "macOS";
+  else if (/Linux/i.test(platform)) os = "Linux";
+  let browser = "متصفح";
+  if (/Edg\//.test(ua)) browser = "Edge";
+  else if (/Chrome\//.test(ua)) browser = "Chrome";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Safari\//.test(ua)) browser = "Safari";
+  return `${os} - ${browser}`;
+}
 
 // تحويل صورة إلى Data URL مصغّرة (JPEG) لتخزينها اختياريًا مع الطلب.
 function fileToResizedDataUrl(file) {
@@ -74,6 +97,16 @@ export default function SupportDrawerButton({ currentUser }) {
   const [previewScreenshot, setPreviewScreenshot] = useState("");
   const fileInputRef = useRef(null);
 
+  // وضع مسؤول الدعم: يرى إدارة الدعم + عدّاد كل الطلبات المفتوحة.
+  const isSupportManager = useMemo(
+    () => canManageSupport(currentUser),
+    [currentUser]
+  );
+  const [activeTab, setActiveTab] = useState("manage");
+  const [allRequests, setAllRequests] = useState([]);
+  const [deviceName, setDeviceName] = useState(() => detectDeviceName());
+  const [meshDeviceId, setMeshDeviceId] = useState("");
+
   const supportFilter = useMemo(
     () =>
       currentUser?.id
@@ -104,6 +137,22 @@ export default function SupportDrawerButton({ currentUser }) {
     }
   };
 
+  // جميع الطلبات (لعدّاد مسؤول الدعم فورًا بدون فتح الطلبات)
+  const loadAllRequests = async () => {
+    if (!isSupportManager) return;
+    try {
+      const { data, error: loadError } = await supabase
+        .from("support_requests")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (loadError) throw loadError;
+      setAllRequests(data || []);
+    } catch (e) {
+      console.error("تعذر تحميل طلبات الدعم الإدارية:", e);
+    }
+  };
+
   // اسم الإدارة تلقائيًا من المستخدم الحالي (letter_departments)
   useEffect(() => {
     if (!currentUser?.department_id) return;
@@ -128,6 +177,7 @@ export default function SupportDrawerButton({ currentUser }) {
     } else {
       setOpen(true);
       if (currentUser?.id) loadRequests();
+      if (isSupportManager) loadAllRequests();
     }
   };
 
@@ -153,14 +203,34 @@ export default function SupportDrawerButton({ currentUser }) {
     },
   });
 
-  // عدّاد الطلبات التي تحتاج متابعة (جديدة / جاري المعالجة)
-  const openRequestsCount = useMemo(
-    () =>
-      requests.filter(
-        (item) => (item.status || "جديدة") !== "تم الحل"
-      ).length,
-    [requests]
-  );
+  // تحديث فوري لعدّاد مسؤول الدعم (كل الطلبات المفتوحة) — مثل إشعار WhatsApp
+  useRealtimeSync({
+    table: "support_requests",
+    enabled: Boolean(isSupportManager),
+    apply: (payload) => {
+      if (payload.eventType === "INSERT") {
+        setAllRequests((prev) =>
+          upsertRowInList(prev, payload.new, { pk: "id" })
+        );
+      } else if (payload.eventType === "UPDATE") {
+        setAllRequests((prev) =>
+          upsertRowInList(prev, payload.new, { pk: "id" })
+        );
+      } else if (payload.eventType === "DELETE") {
+        setAllRequests((prev) =>
+          removeRowFromList(prev, payload.old || payload.new, { pk: "id" })
+        );
+      }
+    },
+  });
+
+  // عدّاد الطلبات التي تحتاج متابعة (جديدة / جاري الدعم)
+  const openRequestsCount = useMemo(() => {
+    const list = isSupportManager ? allRequests : requests;
+    return list.filter(
+      (item) => !["تم الحل", "مغلقة"].includes(item.status || "جديدة")
+    ).length;
+  }, [isSupportManager, allRequests, requests]);
 
   const handleFileSelect = async (event) => {
     const file = event.target.files?.[0];
@@ -190,8 +260,11 @@ export default function SupportDrawerButton({ currentUser }) {
           user_id: currentUser?.id || null,
           employee_name:
             currentUser?.full_name || currentUser?.username || "",
+          department_id: currentUser?.department_id || null,
           department_name: departmentName,
           description: description.trim(),
+          device_name: deviceName.trim() || null,
+          mesh_device_id: meshDeviceId.trim() || null,
           screenshot_url: screenshotData || null,
           status: "جديدة",
         });
@@ -199,8 +272,10 @@ export default function SupportDrawerButton({ currentUser }) {
       if (insertError) throw insertError;
 
       await loadRequests();
+      if (isSupportManager) await loadAllRequests();
       setDescription("");
       setScreenshotData("");
+      setMeshDeviceId("");
       setShowNewForm(false);
       setSavedMessage("✅ تم إرسال طلب الدعم بنجاح.");
     } catch (e) {
@@ -272,7 +347,9 @@ export default function SupportDrawerButton({ currentUser }) {
               top: 0,
               bottom: 0,
               right: 0,
-              width: "min(430px, 94vw)",
+              width: isSupportManager
+                ? "min(720px, 96vw)"
+                : "min(430px, 94vw)",
               background: "#fff",
               boxShadow: "0 0 40px rgba(15,23,42,0.3)",
               overflowY: "auto",
@@ -291,13 +368,53 @@ export default function SupportDrawerButton({ currentUser }) {
               </button>
             </div>
 
+            {isSupportManager && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginBottom: 14,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  onClick={() => setActiveTab("manage")}
+                  style={{
+                    ...(activeTab === "manage"
+                      ? styles.excelButton
+                      : styles.secondaryButton),
+                    borderRadius: 8,
+                    padding: "9px 14px",
+                    fontSize: 13,
+                  }}
+                >
+                  🛠️ إدارة الدعم الفني
+                </button>
+                <button
+                  onClick={() => setActiveTab("mine")}
+                  style={{
+                    ...(activeTab === "mine"
+                      ? styles.excelButton
+                      : styles.secondaryButton),
+                    borderRadius: 8,
+                    padding: "9px 14px",
+                    fontSize: 13,
+                  }}
+                >
+                  📬 طلباتي
+                </button>
+              </div>
+            )}
+
             {savedMessage && (
               <div style={styles.successBox}>{savedMessage}</div>
             )}
 
             {error && <div style={styles.errorBox}>{error}</div>}
 
-            {showNewForm ? (
+            {isSupportManager && activeTab === "manage" ? (
+              <SupportAdminPanel currentUser={currentUser} />
+            ) : showNewForm ? (
               <>
                 <div style={styles.detailHeader}>
                   <strong>طلب دعم جديد</strong>
@@ -328,6 +445,36 @@ export default function SupportDrawerButton({ currentUser }) {
                     style={styles.input}
                     value={departmentName || "غير محددة"}
                     readOnly
+                  />
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  <label style={styles.label}>
+                    اسم الجهاز{" "}
+                    <small style={{ color: "#94A3B8", fontWeight: 400 }}>
+                      (يُكتشف تلقائيًا ويمكن تعديله)
+                    </small>
+                  </label>
+                  <input
+                    style={styles.input}
+                    value={deviceName}
+                    onChange={(e) => setDeviceName(e.target.value)}
+                    placeholder="مثال: مكتب مسؤول الشؤون - Windows Chrome"
+                  />
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  <label style={styles.label}>
+                    معرف الجهاز في MeshCentral{" "}
+                    <small style={{ color: "#94A3B8", fontWeight: 400 }}>
+                      (اختياري)
+                    </small>
+                  </label>
+                  <input
+                    style={styles.input}
+                    value={meshDeviceId}
+                    onChange={(e) => setMeshDeviceId(e.target.value)}
+                    placeholder="اكتب المعرف من لوحة MeshCentral إن كان متاحًا..."
                   />
                 </div>
 
@@ -494,6 +641,49 @@ export default function SupportDrawerButton({ currentUser }) {
                           >
                             {item.description}
                           </p>
+
+                          {(item.device_name || item.mesh_device_id) && (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                fontSize: 12,
+                                color: "#334155",
+                                background: "#EEF2F6",
+                                borderRadius: 8,
+                                padding: "6px 9px",
+                                display: "inline-block",
+                              }}
+                            >
+                              🖥️ {item.device_name || "جهاز"}
+                              {item.mesh_device_id && (
+                                <span
+                                  style={{
+                                    direction: "ltr",
+                                    display: "inline-block",
+                                  }}
+                                >
+                                  {" "}({item.mesh_device_id})
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {item.resolution_notes && (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                fontSize: 12,
+                                lineHeight: 1.7,
+                                color: "#065F46",
+                                background: "#ECFDF5",
+                                border: "1px solid #A7F3D0",
+                                borderRadius: 8,
+                                padding: "7px 9px",
+                              }}
+                            >
+                              💬 ملاحظات الدعم: {item.resolution_notes}
+                            </div>
+                          )}
 
                           {item.screenshot_url && (
                             <div style={{ marginTop: 8 }}>
