@@ -1898,6 +1898,8 @@ export default function IssuesManagementPage() {
               width: "min(680px, 95%)",
               padding: 0,
               overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1908,6 +1910,7 @@ export default function IssuesManagementPage() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
+                flexShrink: 0,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1941,7 +1944,14 @@ export default function IssuesManagementPage() {
               </button>
             </div>
 
-            <div style={{ padding: "20px 24px" }}>
+            <div
+              style={{
+                flex: "1 1 auto",
+                overflowY: "auto",
+                minHeight: 0,
+                padding: "20px 24px",
+              }}
+            >
               <form onSubmit={handleSaveEdit}>
                 <div
                   style={{
@@ -2173,6 +2183,8 @@ export default function IssuesManagementPage() {
               width: "min(760px, 95%)",
               padding: 0,
               overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2183,6 +2195,7 @@ export default function IssuesManagementPage() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
+                flexShrink: 0,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2216,7 +2229,14 @@ export default function IssuesManagementPage() {
               </button>
             </div>
 
-            <div style={{ padding: "20px 24px" }}>
+            <div
+              style={{
+                flex: "1 1 auto",
+                overflowY: "auto",
+                minHeight: 0,
+                padding: "20px 24px",
+              }}
+            >
               {/* شريط الحالة */}
               <div
                 style={{
