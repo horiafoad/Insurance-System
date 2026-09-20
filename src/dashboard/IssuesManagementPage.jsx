@@ -128,6 +128,12 @@ export default function IssuesManagementPage() {
   const [caseNumber, setCaseNumber] = useState("");
   const [caseTitle, setCaseTitle] = useState("");
   const [caseDescription, setCaseDescription] = useState("");
+  const [caseMonth, setCaseMonth] = useState("");
+  const [caseBaseSalary, setCaseBaseSalary] = useState("");
+  const [caseTotal, setCaseTotal] = useState("");
+  const [caseNet, setCaseNet] = useState("");
+  const [casePayStatus, setCasePayStatus] = useState("");
+  const [casePayDate, setCasePayDate] = useState("");
   const [pdfUploading, setPdfUploading] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -441,8 +447,20 @@ export default function IssuesManagementPage() {
 
   const handlePdfSubmit = async (e) => {
     e.preventDefault();
-    if (!pdfFile || !caseNumber || !caseTitle) {
-      setError("يرجى ملء جميع الحقول المطلوبة واختيار ملف PDF");
+    if (
+      !pdfFile ||
+      !caseNumber ||
+      !caseTitle ||
+      !caseMonth ||
+      !caseBaseSalary ||
+      !caseTotal ||
+      !caseNet ||
+      !casePayStatus ||
+      !casePayDate
+    ) {
+      setError(
+        "يرجى ملء جميع البيانات المطلوبة (رقم القضية، الاسم، الشهر، الأساسي، الإجمالي، الصافي، حالة الصرف، تاريخ الصرف) واختيار ملف PDF"
+      );
       return;
     }
 
@@ -466,25 +484,67 @@ export default function IssuesManagementPage() {
         .from("issues-files")
         .getPublicUrl(fileName);
 
-      const { error: issueError } = await supabase.from("issues").insert({
-        case_number: caseNumber,
-        case_title: caseTitle,
-        case_description: caseDescription,
-        case_type: "individual",
-        file_type: "pdf",
-        file_url: urlData.publicUrl,
-        file_name: pdfFile.name,
-        file_size: pdfFile.size,
-        status: "pending",
-      });
+      const detailsData = {
+        "رقم القضيه": caseNumber,
+        "الاسم": caseTitle,
+        "شهر تغير الاساسي": caseMonth,
+        "الاساسي بعد التغيير": caseBaseSalary,
+        "الاجمالي": caseTotal,
+        "الصافي": caseNet,
+        "حاله الصرف": casePayStatus,
+        "تاريخ الصرف": casePayDate,
+      };
+
+      const { data: issueData, error: issueError } = await supabase
+        .from("issues")
+        .insert({
+          case_number: caseNumber,
+          case_title: caseTitle,
+          case_description: caseDescription,
+          case_type: "individual",
+          file_type: "pdf",
+          file_url: urlData.publicUrl,
+          file_name: pdfFile.name,
+          file_size: pdfFile.size,
+          status: "pending",
+          payment_status: PAYMENT_STATUS_OPTIONS.includes(
+            normalizePaymentStatus(casePayStatus)
+          )
+            ? normalizePaymentStatus(casePayStatus)
+            : casePayStatus,
+          payment_date: casePayDate,
+        })
+        .select()
+        .single();
 
       if (issueError) throw issueError;
+
+      const { error: detailErr } = await supabase
+        .from("issue_details")
+        .insert({
+          issue_id: issueData.id,
+          row_number: 1,
+          data: detailsData,
+        });
+
+      if (detailErr) {
+        throw new Error(
+          "تعذّر حفظ بيانات القضية — شغّل fix_issue_details_save.sql في Supabase ثم أعد المحاولة: " +
+            detailErr.message
+        );
+      }
 
       setSuccess("تم رفع ملف القضية بنجاح!");
       setPdfFile(null);
       setCaseNumber("");
       setCaseTitle("");
       setCaseDescription("");
+      setCaseMonth("");
+      setCaseBaseSalary("");
+      setCaseTotal("");
+      setCaseNet("");
+      setCasePayStatus("");
+      setCasePayDate("");
       loadIssues();
     } catch (err) {
       setError("فشل رفع ملف PDF: " + err.message);
@@ -1473,9 +1533,9 @@ export default function IssuesManagementPage() {
                 📄
               </div>
               <div>
-                <h3>رفع قضية فردية (PDF)</h3>
+                <h3>إضافة قضية فردية (PDF)</h3>
                 <div style={{ fontSize: 11.5, color: "#94A3B8" }}>
-                  إضافة قضية واحدة مع ملف PDF للقضية
+                  كل بيانات الجدول مطلوبة + رفع ملف PDF للقضية
                 </div>
               </div>
             </div>
@@ -1492,7 +1552,7 @@ export default function IssuesManagementPage() {
                 />
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.formLabel}>اسم صاحب القضية *</label>
+                <label style={styles.formLabel}>اسم صاحب القضية / العميل *</label>
                 <input
                   type="text"
                   value={caseTitle}
@@ -1502,6 +1562,100 @@ export default function IssuesManagementPage() {
                   required
                 />
               </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0 14px",
+                }}
+              >
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>شهر تغيير الأساسي *</label>
+                  <select
+                    value={caseMonth}
+                    onChange={(e) => setCaseMonth(e.target.value)}
+                    style={styles.input}
+                    required
+                  >
+                    <option value="">اختار الشهر</option>
+                    {MONTHS_LIST.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>الأساسي بعد التغيير *</label>
+                  <input
+                    type="number"
+                    value={caseBaseSalary}
+                    onChange={(e) => setCaseBaseSalary(e.target.value)}
+                    style={styles.input}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>الإجمالي *</label>
+                  <input
+                    type="number"
+                    value={caseTotal}
+                    onChange={(e) => setCaseTotal(e.target.value)}
+                    style={styles.input}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>الصافي *</label>
+                  <input
+                    type="number"
+                    value={caseNet}
+                    onChange={(e) => setCaseNet(e.target.value)}
+                    style={styles.input}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0 14px",
+                }}
+              >
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>حالة الصرف *</label>
+                  <select
+                    value={casePayStatus}
+                    onChange={(e) => setCasePayStatus(e.target.value)}
+                    style={styles.input}
+                    required
+                  >
+                    <option value="">اختار حالة الصرف</option>
+                    {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>تاريخ الصرف *</label>
+                  <input
+                    type="date"
+                    value={casePayDate}
+                    onChange={(e) => setCasePayDate(e.target.value)}
+                    style={styles.input}
+                    required
+                  />
+                </div>
+              </div>
+
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>وصف القضية</label>
                 <textarea
@@ -1533,7 +1687,7 @@ export default function IssuesManagementPage() {
                 style={{ ...styles.primaryButton, width: "100%", borderRadius: 10 }}
                 disabled={pdfUploading || !pdfFile}
               >
-                {pdfUploading ? "جاري الرفع..." : "📥 رفع ملف PDF"}
+                {pdfUploading ? "جاري الرفع..." : "📥 رفع القضية والملف PDF"}
               </button>
             </form>
           </div>
