@@ -115,84 +115,6 @@ function getIssueClientName(issue) {
   );
 }
 
-// يعرض أهم بيانات كود التعديل (نفس حقول نافذة التعديل) أسفل اسم القضية
-// في الجدول، بفواصل منظمة بين البنود.
-function IssueEditDataSummary({ issue }) {
-  if (!issue) return null;
-  const d = issue.excel_data || {};
-  const items = [];
-
-  const month = normalizeMonthValue(d["شهر تغير الاساسي"]);
-  if (month) items.push({ label: "شهر تغيير الأساسي", value: month });
-
-  const salary = d["الاساسي بعد التغيير"];
-  if (salary != null && String(salary).trim() !== "")
-    items.push({ label: "الأساسي بعد التغيير", value: formatMoneyValue(salary) });
-
-  const total = d["الاجمالي"];
-  if (total != null && String(total).trim() !== "")
-    items.push({ label: "الإجمالي", value: formatMoneyValue(total) });
-
-  const net = d["الصافي"];
-  if (net != null && String(net).trim() !== "")
-    items.push({ label: "الصافي", value: formatMoneyValue(net) });
-
-  const payStatus = normalizePaymentStatus(
-    issue.payment_status || d["حاله الصرف"]
-  );
-  if (payStatus) items.push({ label: "حالة الصرف", value: payStatus });
-
-  const payDate = issue.payment_date || d["تاريخ الصرف"];
-  if (payDate)
-    items.push({ label: "تاريخ الصرف", value: formatIssueDate(payDate) });
-
-  if (items.length === 0) return null;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        marginTop: 7,
-        fontSize: 11.5,
-        lineHeight: 1.9,
-      }}
-    >
-      {items.map((it, i) => (
-        <span
-          key={it.label}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            color: "#334155",
-            fontWeight: 700,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {i > 0 && (
-            <span
-              aria-hidden="true"
-              style={{
-                color: "#CBD5E1",
-                fontWeight: 400,
-                margin: "0 7px",
-                userSelect: "none",
-              }}
-            >
-              │
-            </span>
-          )}
-          <span style={{ color: "#94A3B8", marginLeft: 3 }}>
-            {it.label}:
-          </span>
-          {it.value}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 export default function IssuesManagementPage() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1638,13 +1560,17 @@ export default function IssuesManagementPage() {
             }}
           >
             <div style={{ overflowX: "auto" }}>
-              <table className="issues-table" style={{ minWidth: "880px" }}>
+              <table className="issues-table" style={{ minWidth: "1280px" }}>
                 <thead>
                   <tr>
                     <th style={ui.thNum}>رقم القضية</th>
-                    <th style={ui.th}>اسم القضية</th>
-                    <th style={ui.th}>اسم العميل</th>
-                    <th style={ui.th}>التاريخ</th>
+                    <th style={ui.th}>اسم القضية / العميل</th>
+                    <th style={ui.th}>شهر تغيير الأساسي</th>
+                    <th style={ui.thNum}>الأساسي بعد التغيير</th>
+                    <th style={ui.thNum}>الإجمالي</th>
+                    <th style={ui.thNum}>الصافي</th>
+                    <th style={ui.th}>حالة الصرف</th>
+                    <th style={ui.th}>تاريخ الصرف</th>
                     <th style={ui.th}>الحالة</th>
                     <th style={ui.th}>إجراءات</th>
                   </tr>
@@ -1652,6 +1578,8 @@ export default function IssuesManagementPage() {
                 <tbody>
                   {filteredIssues.slice(0, 300).map((issue) => {
                     const menuOpen = rowMenuOpenId === issue.id;
+                    const d = issue.excel_data || {};
+                    const clientName = getIssueClientName(issue);
                     return (
                       <tr key={issue.id}>
                         <td style={ui.tdNum}>
@@ -1675,6 +1603,19 @@ export default function IssuesManagementPage() {
                           <div style={{ fontWeight: 800, color: "#0F172A" }}>
                             {issue.case_title || "-"}
                           </div>
+                          {clientName !== "-" &&
+                            clientName !== issue.case_title && (
+                              <div
+                                style={{
+                                  fontSize: 11.5,
+                                  color: "#64748B",
+                                  marginTop: 2,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                العميل: {clientName}
+                              </div>
+                            )}
                           {issue.file_url && (
                             <div
                               style={{
@@ -1687,12 +1628,57 @@ export default function IssuesManagementPage() {
                               📎 ملف مرفوع
                             </div>
                           )}
-                          <IssueEditDataSummary issue={issue} />
                         </td>
                         <td style={ui.td}>
-                          <div style={{ fontWeight: 700, color: "#1E293B" }}>
-                            {getIssueClientName(issue)}
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#334155",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
                           </div>
+                        </td>
+                        <td style={ui.tdNum}>
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#334155",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {formatMoneyValue(d["الاساسي بعد التغيير"])}
+                          </div>
+                        </td>
+                        <td style={ui.tdNum}>
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#334155",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {formatMoneyValue(d["الاجمالي"])}
+                          </div>
+                        </td>
+                        <td style={ui.tdNum}>
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#047857",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {formatMoneyValue(d["الصافي"])}
+                          </div>
+                        </td>
+                        <td style={ui.td}>
+                          {getPaymentBadge(issue.payment_status || d["حاله الصرف"])}
                         </td>
                         <td style={ui.td}>
                           <div
@@ -1703,38 +1689,12 @@ export default function IssuesManagementPage() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {formatIssueDate(issue.created_at)}
+                            {formatIssueDate(
+                              issue.payment_date || d["تاريخ الصرف"]
+                            )}
                           </div>
                         </td>
-                        <td style={ui.td}>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "flex-start",
-                              gap: 4,
-                            }}
-                          >
-                            {getStatusBadge(issue.status)}
-                            {issue.payment_status &&
-                              normalizePaymentStatus(issue.payment_status) !==
-                                "لا يوجد" && (
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 5,
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    color: "#64748B",
-                                  }}
-                                  title="حالة الصرف"
-                                >
-                                  {getPaymentBadge(issue.payment_status)}
-                                </div>
-                              )}
-                          </div>
-                        </td>
+                        <td style={ui.td}>{getStatusBadge(issue.status)}</td>
                         <td style={ui.td}>
                           <div
                             style={{
