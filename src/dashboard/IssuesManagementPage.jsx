@@ -150,6 +150,7 @@ export default function IssuesManagementPage() {
 
   // القضية المفتوح منها قائمة الإجراءات (⋯) في الصف.
   const [rowMenuOpenId, setRowMenuOpenId] = useState(null);
+  const [hoverCol, setHoverCol] = useState(null);
 
   useEffect(() => {
     loadIssues();
@@ -917,7 +918,7 @@ export default function IssuesManagementPage() {
       background: "#F1F5F9",
       color: "#475569",
       borderBottom: "2px solid #E2E8F0",
-      textAlign: "left",
+      textAlign: "right",
       direction: "ltr",
       whiteSpace: "nowrap",
       fontSize: 12,
@@ -935,7 +936,7 @@ export default function IssuesManagementPage() {
       borderBottom: "1px solid #EEF2F6",
       verticalAlign: "middle",
       fontSize: 13.5,
-      textAlign: "left",
+      textAlign: "right",
       direction: "ltr",
       fontVariantNumeric: "tabular-nums",
     },
@@ -953,11 +954,20 @@ export default function IssuesManagementPage() {
   const issuesCss = `
     .issues-table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
     .issues-table thead th { position: sticky; top: 0; z-index: 2; }
+    .issues-table thead th:not(:last-child), .issues-table tbody td:not(:last-child) { border-left: 1px solid #E2E8F0; }
     .issues-table tbody tr { transition: background .12s ease; }
     .issues-table tbody tr:hover { background: #F8FBFF; }
     .issues-menu-item:hover { background: #F1F5F9; }
     .issues-upload-card h3 { margin: 0; }
   `;
+
+  // تظليل كامل العمود عند التمرير فوق إحدى خلاياه.
+  const hoverBg = (index) =>
+    hoverCol === index ? "linear-gradient(180deg,#EFF6FF,#DBEAFE)" : undefined;
+  const hoverOutline = (index) =>
+    hoverCol === index
+      ? "inset 0 0 0 1.5px rgba(37,99,235,.25)"
+      : undefined;
 
   const openEditFromDetail = (issue) => {
     setDetailModalIssue(null);
@@ -1559,20 +1569,111 @@ export default function IssuesManagementPage() {
               overflow: "hidden",
             }}
           >
-            <div style={{ overflowX: "auto" }}>
+            <div
+              style={{ overflowX: "auto" }}
+              onMouseMove={(e) => {
+                const cell = e.target && e.target.closest
+                  ? e.target.closest("td, th")
+                  : null;
+                if (cell && typeof cell.cellIndex === "number") {
+                  setHoverCol(cell.cellIndex);
+                }
+              }}
+              onMouseLeave={() => setHoverCol(null)}
+            >
               <table className="issues-table" style={{ minWidth: "1280px" }}>
                 <thead>
                   <tr>
-                    <th style={ui.thNum}>رقم القضية</th>
-                    <th style={ui.th}>اسم القضية / العميل</th>
-                    <th style={ui.th}>شهر تغيير الأساسي</th>
-                    <th style={ui.thNum}>الأساسي بعد التغيير</th>
-                    <th style={ui.thNum}>الإجمالي</th>
-                    <th style={ui.thNum}>الصافي</th>
-                    <th style={ui.th}>حالة الصرف</th>
-                    <th style={ui.th}>تاريخ الصرف</th>
-                    <th style={ui.th}>الحالة</th>
-                    <th style={ui.th}>إجراءات</th>
+                    <th
+                      style={{
+                        ...ui.thNum,
+                        background: hoverCol === 0 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      رقم القضية
+                    </th>
+                    <th
+                      style={{
+                        ...ui.th,
+                        background: hoverCol === 1 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      اسم القضية / العميل
+                    </th>
+                    <th
+                      style={{
+                        ...ui.th,
+                        background: hoverCol === 2 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      شهر تغيير الأساسي
+                    </th>
+                    <th
+                      style={{
+                        ...ui.thNum,
+                        background: hoverCol === 3 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      الأساسي بعد التغيير
+                    </th>
+                    <th
+                      style={{
+                        ...ui.thNum,
+                        background: hoverCol === 4 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      الإجمالي
+                    </th>
+                    <th
+                      style={{
+                        ...ui.thNum,
+                        background: hoverCol === 5 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      الصافي
+                    </th>
+                    <th
+                      style={{
+                        ...ui.th,
+                        background: hoverCol === 6 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      حالة الصرف
+                    </th>
+                    <th
+                      style={{
+                        ...ui.th,
+                        background: hoverCol === 7 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      تاريخ الصرف
+                    </th>
+                    <th
+                      style={{
+                        ...ui.th,
+                        background: hoverCol === 8 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      الحالة
+                    </th>
+                    <th
+                      style={{
+                        ...ui.th,
+                        background: hoverCol === 9 ? "#DBEAFE" : "#F1F5F9",
+                        transition: "background .15s ease",
+                      }}
+                    >
+                      إجراءات
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1582,7 +1683,15 @@ export default function IssuesManagementPage() {
                     const clientName = getIssueClientName(issue);
                     return (
                       <tr key={issue.id}>
-                        <td style={ui.tdNum}>
+                        <td
+                          style={{
+                            ...ui.tdNum,
+                            background: hoverBg(0),
+                            boxShadow: hoverOutline(0),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <span
                             style={{
                               display: "inline-flex",
@@ -1599,7 +1708,15 @@ export default function IssuesManagementPage() {
                             # {issue.case_number || "-"}
                           </span>
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          style={{
+                            ...ui.td,
+                            background: hoverBg(1),
+                            boxShadow: hoverOutline(1),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <div style={{ fontWeight: 800, color: "#0F172A" }}>
                             {issue.case_title || "-"}
                           </div>
@@ -1629,7 +1746,15 @@ export default function IssuesManagementPage() {
                             </div>
                           )}
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          style={{
+                            ...ui.td,
+                            background: hoverBg(2),
+                            boxShadow: hoverOutline(2),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
@@ -1641,46 +1766,89 @@ export default function IssuesManagementPage() {
                             {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
                           </div>
                         </td>
-                        <td style={ui.tdNum}>
+                        <td
+                          style={{
+                            ...ui.tdNum,
+                            background: hoverBg(3),
+                            boxShadow: hoverOutline(3),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
                               fontWeight: 700,
                               color: "#334155",
                               whiteSpace: "nowrap",
+                              unicodeBidi: "isolate",
                             }}
                           >
                             {formatMoneyValue(d["الاساسي بعد التغيير"])}
                           </div>
                         </td>
-                        <td style={ui.tdNum}>
+                        <td
+                          style={{
+                            ...ui.tdNum,
+                            background: hoverBg(4),
+                            boxShadow: hoverOutline(4),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
                               fontWeight: 700,
                               color: "#334155",
                               whiteSpace: "nowrap",
+                              unicodeBidi: "isolate",
                             }}
                           >
                             {formatMoneyValue(d["الاجمالي"])}
                           </div>
                         </td>
-                        <td style={ui.tdNum}>
+                        <td
+                          style={{
+                            ...ui.tdNum,
+                            background: hoverBg(5),
+                            boxShadow: hoverOutline(5),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
                               fontWeight: 700,
                               color: "#047857",
                               whiteSpace: "nowrap",
+                              unicodeBidi: "isolate",
                             }}
                           >
                             {formatMoneyValue(d["الصافي"])}
                           </div>
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          style={{
+                            ...ui.td,
+                            background: hoverBg(6),
+                            boxShadow: hoverOutline(6),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           {getPaymentBadge(issue.payment_status || d["حاله الصرف"])}
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          style={{
+                            ...ui.td,
+                            background: hoverBg(7),
+                            boxShadow: hoverOutline(7),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
@@ -1694,8 +1862,26 @@ export default function IssuesManagementPage() {
                             )}
                           </div>
                         </td>
-                        <td style={ui.td}>{getStatusBadge(issue.status)}</td>
-                        <td style={ui.td}>
+                        <td
+                          style={{
+                            ...ui.td,
+                            background: hoverBg(8),
+                            boxShadow: hoverOutline(8),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
+                          {getStatusBadge(issue.status)}
+                        </td>
+                        <td
+                          style={{
+                            ...ui.td,
+                            background: hoverBg(9),
+                            boxShadow: hoverOutline(9),
+                            transition:
+                              "background .15s ease, box-shadow .15s ease",
+                          }}
+                        >
                           <div
                             style={{
                               display: "flex",
