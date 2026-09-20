@@ -35,6 +35,9 @@ export default function CheckForUpdatesButton({ compact = false }) {
     if (checking) return;
     setChecking(true);
 
+    // رد فوري أول ما يُضغط الزرار حتى لا يبدو بطيئًا.
+    showToast("🔄 جاري سحب آخر إصدار من الخادم...", 1800);
+
     try {
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         showToast(
@@ -52,10 +55,10 @@ export default function CheckForUpdatesButton({ compact = false }) {
         return;
       }
 
-      const reg = await navigator.serviceWorker.getRegistration();
+      let reg = await navigator.serviceWorker.getRegistration();
 
-      if (!reg) {
-        await navigator.serviceWorker.register("./sw.js");
+      if (!reg || !reg.active) {
+        await navigator.serviceWorker.register("./sw.js", { scope: "./" });
         showToast(
           "تم تفعيل التحديثات لأول مرة. أعد فتح التطبيق الآن.",
           4500
@@ -63,50 +66,45 @@ export default function CheckForUpdatesButton({ compact = false }) {
         return;
       }
 
-      // ننتظر ظهور عامل جديد أثناء فحص التحديث اليدوي.
-      let found = false;
-      const updateFound = new Promise((resolve) => {
-        let timer = null;
-        const onFound = () => {
-          if (timer) window.clearTimeout(timer);
-          reg.removeEventListener("updatefound", onFound);
-          resolve(true);
-        };
-        timer = window.setTimeout(() => {
-          reg.removeEventListener("updatefound", onFound);
-          resolve(false);
-        }, 15000);
-        reg.addEventListener("updatefound", onFound);
+      // نسجّل ملف السيرفس وركر بعنوان مختلف (cache-busting) حتى يضطر الخادم
+      // لإرسال أحدث نسخة حتّى لو التعديل حدث قبل ثانية واحدة.
+      const bustUrl = `./sw.js?__v=${Date.now()}`;
+      reloadPending = true;
+      const next = await navigator.serviceWorker.register(bustUrl, {
+        scope: "./",
       });
 
-      await reg.update();
-      found = await updateFound;
-
-      if (found) {
-        reloadPending = true;
-
-        const nextWorker = reg.waiting || reg.installing;
-        if (nextWorker && nextWorker.state !== "activated") {
-          try {
-            nextWorker.postMessage({ type: "SKIP_WAITING" });
-          } catch (e) {
-            // تجاهل — إعادة التحميل الاحتياطية أدناه تقوم بالتحديث.
-          }
+      // العامل الجديد في sw.js يستدعي skipWaiting() وclientsClaim() تلقائيًا،
+      // فيسيطر على الصفحة فور اكتمال تثبيته.
+      const worker = next.waiting || next.installing;
+      if (worker) {
+        try {
+          worker.postMessage({ type: "SKIP_WAITING" });
+        } catch (e) {
+          // تجاهل — التحديث يتم تلقائيًا بدونه.
         }
-
-        showToast(
-          "تم العثور على نسخة جديدة... جاري تحديث التطبيق الآن.",
-          2500
-        );
-
-        window.setTimeout(() => {
-          reloadPending = true;
-          window.location.reload();
-        }, 1400);
-        return;
       }
 
-      showToast("✅ التطبيق على أحدث إصدار.");
+      showToast(
+        "✅ آخر إصدار جاهز — جاري إعادة تشغيل التطبيق...",
+        1800
+      );
+
+      // أعد تحميل الصفحة فور استلام العامل الجديد السيطرة،
+      // مع مهلة أمان لو لم يصل حدث التحكم.
+      await Promise.race([
+        new Promise((resolve) =>
+          navigator.serviceWorker.addEventListener(
+            "controllerchange",
+            resolve,
+            { once: true }
+          )
+        ),
+        new Promise((resolve) => window.setTimeout(resolve, 2500)),
+      ]);
+
+      reloadPending = true;
+      window.location.reload();
     } catch (error) {
       console.error("فشل فحص التحديثات:", error);
       showToast(
