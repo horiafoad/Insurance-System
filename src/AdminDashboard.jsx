@@ -34,6 +34,7 @@ import PushNotificationsPanel from "./dashboard/PushNotificationsPanel";
 import AdminPushDevicesPanel from "./dashboard/AdminPushDevicesPanel";
 import InstallAppButton from "./dashboard/InstallAppButton";
 import CheckForUpdatesButton from "./dashboard/CheckForUpdatesButton";
+import SupportDrawerButton from "./dashboard/SupportDrawerButton";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -1594,37 +1595,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               </div>
             )}
 
-            <button
-              style={styles.secondaryButton}
-              onClick={() => {
-                if (hasPermission(currentUser, "entitlements")) {
-                  loadTasks();
-                  loadClaims();
-                  setStudyLeaves(loadStudyLeaves());
-                }
-              }}
-            >
-              🔄 تحديث
-            </button>
-
-            {activeMenu !== "claims" &&
-              activeMenu !== "study_leaves" &&
-              activeMenu !== "employee_profiles" &&
-              activeMenu !== "letters_tracking" &&
-              activeMenu !== "faculty_salary_archive" &&
-              activeMenu !== "employee_salary_archive" &&
-              hasPermission(currentUser, "entitlements") && (
-                <button
-                  className="header-add-task"
-                  style={styles.primaryButton}
-                  onClick={() => {
-                    setTaskForm(createEmptyTask());
-                    setShowTaskForm(true);
-                  }}
-                >
-                  ＋ إضافة مهمة جديدة
-                </button>
-              )}
+            <SupportDrawerButton currentUser={currentUser} />
           </div>
         </header>
         )}
