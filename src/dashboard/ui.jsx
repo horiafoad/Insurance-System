@@ -13,32 +13,13 @@ export function StatCard({ title, value, icon }) {
   );
 }
 
-export function ClaimStat({ title, value, icon, color, bgColor, borderColor }) {
+export function ClaimStat({ title, value, icon }) {
   return (
-    <div 
-      style={{
-        ...styles.claimStat,
-        background: bgColor || "#f8fafc",
-        border: borderColor ? `1px solid ${borderColor}` : "1px solid #e2e8f0",
-      }}
-    >
-      <div 
-        style={{
-          ...styles.claimStatIcon,
-          color: color || "#334155",
-        }}
-      >
-        {icon}
-      </div>
+    <div style={styles.claimStat}>
+      <div style={styles.claimStatIcon}>{icon}</div>
       <div>
-        <div style={{
-          ...styles.statTitle,
-          color: color || "#334155",
-        }}>{title}</div>
-        <div style={{
-          ...styles.claimStatValue,
-          color: color || "#0f172a",
-        }}>{value}</div>
+        <div style={styles.statTitle}>{title}</div>
+        <div style={styles.claimStatValue}>{value}</div>
       </div>
     </div>
   );

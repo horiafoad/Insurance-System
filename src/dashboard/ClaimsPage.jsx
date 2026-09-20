@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
-import engineering from "../assets/engineering.jpg";
 
 export default function ClaimsPage({
   claims,
@@ -86,69 +85,6 @@ export default function ClaimsPage({
   return (
     <div>
       <div style={styles.card}>
-        {/* Header Image Section */}
-        <div
-          style={{
-            position: "relative",
-            width: "100%",
-            height: "200px",
-            backgroundImage: `linear-gradient(135deg, rgba(15,23,42,0.85) 0%, rgba(37,99,235,0.75) 100%), url(${engineering})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            borderRadius: "18px 18px 0 0",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "linear-gradient(135deg, rgba(15,23,42,0.9) 0%, rgba(37,99,235,0.7) 100%)",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: "24px",
-            }}
-          >
-            <div
-              style={{
-                fontSize: "48px",
-                marginBottom: "12px",
-                textShadow: "0 2px 8px rgba(0,0,0,0.3)",
-              }}
-            >
-              ⚖️
-            </div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "28px",
-                fontWeight: 900,
-                color: "#fff",
-                textShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                marginBottom: "8px",
-              }}
-            >
-              نظام إدارة المطالبات
-            </h2>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "15px",
-                color: "#e2e8f0",
-                fontWeight: 600,
-                textShadow: "0 1px 4px rgba(0,0,0,0.3)",
-              }}
-            >
-              إدارة شاملة للمطالبات المالية والإدارية
-            </p>
-          </div>
-        </div>
-
         <div style={styles.claimsHeader} className="claims-header">
           <div>
             <h2 style={styles.cardTitle}>📋 قسم المطالبات</h2>
@@ -179,38 +115,10 @@ export default function ClaimsPage({
         {error && <div style={styles.errorBox}>{error}</div>}
 
         <div style={styles.claimStats}>
-          <ClaimStat 
-            title="إجمالي السجلات" 
-            value={stats.total} 
-            icon="📋" 
-            color="#3b82f6"
-            bgColor="#eff6ff"
-            borderColor="#bfdbfe"
-          />
-          <ClaimStat 
-            title="قيد المراجعة" 
-            value={stats.pending} 
-            icon="⏳"
-            color="#f59e0b"
-            bgColor="#fffbeb"
-            borderColor="#fde68a"
-          />
-          <ClaimStat 
-            title="جاري التنفيذ" 
-            value={stats.inProgress} 
-            icon="🔄"
-            color="#8b5cf6"
-            bgColor="#f5f3ff"
-            borderColor="#ddd6fe"
-          />
-          <ClaimStat 
-            title="مكتمل" 
-            value={stats.completed} 
-            icon="✅"
-            color="#10b981"
-            bgColor="#ecfdf5"
-            borderColor="#a7f3d0"
-          />
+          <ClaimStat title="إجمالي السجلات" value={stats.total} icon="📋" />
+          <ClaimStat title="قيد المراجعة" value={stats.pending} icon="⏳" />
+          <ClaimStat title="جاري التنفيذ" value={stats.inProgress} icon="🔄" />
+          <ClaimStat title="مكتمل" value={stats.completed} icon="✅" />
           <ClaimStat title="نسبة الإنجاز" value={`${stats.completedRate}%`} icon="�" />
 
           {sheets.map((sheet) => (
@@ -219,9 +127,6 @@ export default function ClaimsPage({
               title={sheet.name}
               value={sheet.count}
               icon="📊"
-              color="#6366f1"
-              bgColor="#e0e7ff"
-              borderColor="#c7d2fe"
             />
           ))}
         </div>
