@@ -66,6 +66,17 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         currentUser.permissions.includes("user_management") ||
         currentUser.permissions.includes("org_structure")));
 
+  // وضع العرض الأعرض: يُطبَّق على حساب «عبد الله» فقط عند دخوله لوحة الإدارة،
+  // لتقليل المسافات البيضاء الجانبية وجعل مساحة العمل أعرض وأكبر.
+  const isWideLayout = Boolean(
+    currentUser &&
+      /عبد\s*الله|abdullah/i.test(
+        [currentUser.full_name, currentUser.username]
+          .filter(Boolean)
+          .join(" ")
+      )
+  );
+
   const [activeMenu, setActiveMenu] = useState(
     qrCodeFromUrl
       ? "letters_tracking"
@@ -1234,7 +1245,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   }
 
   return (
-    <div dir="rtl" style={styles.app} className="admin-app">
+    <div
+      dir="rtl"
+      style={styles.app}
+      className={`admin-app${isWideLayout ? " admin-app-wide" : ""}`}
+    >
       {liveToast && (
         <div
           style={{
