@@ -21,13 +21,6 @@ export const TASK_TYPES = [
     frequency: "حسب الورود",
   },
   {
-    id: "legal",
-    title: "القضايا والمطالبات",
-    icon: "⚖️",
-    color: "#ECE9FE",
-    frequency: "حسب الحالة",
-  },
-  {
     id: "medical",
     title: "فواتير العلاج",
     icon: "🏥",
