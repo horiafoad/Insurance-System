@@ -115,6 +115,84 @@ function getIssueClientName(issue) {
   );
 }
 
+// يعرض أهم بيانات كود التعديل (نفس حقول نافذة التعديل) أسفل اسم القضية
+// في الجدول، بفواصل منظمة بين البنود.
+function IssueEditDataSummary({ issue }) {
+  if (!issue) return null;
+  const d = issue.excel_data || {};
+  const items = [];
+
+  const month = normalizeMonthValue(d["شهر تغير الاساسي"]);
+  if (month) items.push({ label: "شهر تغيير الأساسي", value: month });
+
+  const salary = d["الاساسي بعد التغيير"];
+  if (salary != null && String(salary).trim() !== "")
+    items.push({ label: "الأساسي بعد التغيير", value: formatMoneyValue(salary) });
+
+  const total = d["الاجمالي"];
+  if (total != null && String(total).trim() !== "")
+    items.push({ label: "الإجمالي", value: formatMoneyValue(total) });
+
+  const net = d["الصافي"];
+  if (net != null && String(net).trim() !== "")
+    items.push({ label: "الصافي", value: formatMoneyValue(net) });
+
+  const payStatus = normalizePaymentStatus(
+    issue.payment_status || d["حاله الصرف"]
+  );
+  if (payStatus) items.push({ label: "حالة الصرف", value: payStatus });
+
+  const payDate = issue.payment_date || d["تاريخ الصرف"];
+  if (payDate)
+    items.push({ label: "تاريخ الصرف", value: formatIssueDate(payDate) });
+
+  if (items.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        marginTop: 7,
+        fontSize: 11.5,
+        lineHeight: 1.9,
+      }}
+    >
+      {items.map((it, i) => (
+        <span
+          key={it.label}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            color: "#334155",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {i > 0 && (
+            <span
+              aria-hidden="true"
+              style={{
+                color: "#CBD5E1",
+                fontWeight: 400,
+                margin: "0 7px",
+                userSelect: "none",
+              }}
+            >
+              │
+            </span>
+          )}
+          <span style={{ color: "#94A3B8", marginLeft: 3 }}>
+            {it.label}:
+          </span>
+          {it.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function IssuesManagementPage() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1609,6 +1687,7 @@ export default function IssuesManagementPage() {
                               📎 ملف مرفوع
                             </div>
                           )}
+                          <IssueEditDataSummary issue={issue} />
                         </td>
                         <td style={ui.td}>
                           <div style={{ fontWeight: 700, color: "#1E293B" }}>
