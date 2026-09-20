@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import { useRealtimeSync } from "../utils/realtimeSync";
@@ -150,6 +150,10 @@ export default function IssuesManagementPage() {
 
   // القضية المفتوح منها قائمة الإجراءات (⋯) في الصف.
   const [rowMenuOpenId, setRowMenuOpenId] = useState(null);
+
+  // مؤشر التنقل بين خلايا الجدول بالكيبورد/الماوس.
+  const [cursor, setCursor] = useState({ r: -1, c: -1 });
+  const tableRef = useRef(null);
 
   useEffect(() => {
     loadIssues();
@@ -957,9 +961,7 @@ export default function IssuesManagementPage() {
     .issues-table thead th { border-bottom: 2px solid #AFC7EE; }
     .issues-table tbody tr:nth-child(odd) { background: #FFFFFF; }
     .issues-table tbody tr:nth-child(even) { background: #EEF5FF; }
-    .issues-table tbody td { border-bottom: 2px solid #DCE9FB !important; transition: background .12s ease; }
-    .issues-table tbody td:hover { background: #C7E0FF !important; }
-    .issues-table thead th:hover { background: #AFC9F3 !important; }
+    .issues-table tbody td { border-bottom: 2px solid #DCE9FB !important; transition: background .12s ease, box-shadow .12s ease; }
     .issues-menu-item:hover { background: #F1F5F9; }
     .issues-upload-card h3 { margin: 0; }
   `;
@@ -968,6 +970,91 @@ export default function IssuesManagementPage() {
     setDetailModalIssue(null);
     openEditModal(issue);
   };
+
+  // ===== التنقل بين خلايا الجدول (كيبورد + ماوس) =====
+  const MAX_DISPLAY_ROWS = 300;
+  const TABLE_COLS = 9;
+
+  const isCursorCell = (r, c) => cursor.r === r && cursor.c === c;
+
+  const cursorCellStyle = (r, c) =>
+    isCursorCell(r, c)
+      ? {
+          backgroundColor: "#93C5FD",
+          boxShadow: "inset 0 0 0 2px rgba(37,99,235,.55)",
+        }
+      : {};
+
+  const clampCursor = ({ r, c }) => {
+    const rows = Math.min(filteredIssues.length, MAX_DISPLAY_ROWS);
+    return {
+      r: Math.min(Math.max(r, 0), Math.max(rows - 1, 0)),
+      c: Math.min(Math.max(c, 0), TABLE_COLS - 1),
+    };
+  };
+
+  const moveCursor = (dr, dc) =>
+    setCursor((cur) =>
+      clampCursor({
+        r: cur.r < 0 ? 0 : cur.r + dr,
+        c: cur.c < 0 ? 0 : cur.c + dc,
+      })
+    );
+
+  const handleTableKeyDown = (e) => {
+    const t = e.target;
+    if (
+      t &&
+      (t.tagName === "INPUT" ||
+        t.tagName === "TEXTAREA" ||
+        t.tagName === "SELECT" ||
+        t.tagName === "BUTTON" ||
+        t.isContentEditable)
+    ) {
+      return;
+    }
+    const key = e.key;
+    if (key === "ArrowDown") {
+      e.preventDefault();
+      moveCursor(1, 0);
+    } else if (key === "ArrowUp") {
+      e.preventDefault();
+      moveCursor(-1, 0);
+    } else if (key === "ArrowRight") {
+      e.preventDefault();
+      moveCursor(0, -1); // RTL: العمود الأول في أقصى اليمين
+    } else if (key === "ArrowLeft") {
+      e.preventDefault();
+      moveCursor(0, 1);
+    } else if (key === "Home") {
+      e.preventDefault();
+      setCursor((cur) => clampCursor({ r: 0, c: cur.c < 0 ? 0 : cur.c }));
+    } else if (key === "End") {
+      e.preventDefault();
+      setCursor((cur) =>
+        clampCursor({
+          r: Math.min(filteredIssues.length, MAX_DISPLAY_ROWS) - 1,
+          c: cur.c < 0 ? 0 : cur.c,
+        })
+      );
+    } else if (key === "Enter") {
+      e.preventDefault();
+      if (cursor.r >= 0 && cursor.r < Math.min(filteredIssues.length, MAX_DISPLAY_ROWS)) {
+        openEditModal(filteredIssues[cursor.r]);
+      }
+    }
+  };
+
+  // يُبقي الخلية المحددة ظاهرة داخل منطقة التمرير.
+  useEffect(() => {
+    if (cursor.r < 0 || cursor.c < 0) return;
+    const wrap = tableRef.current;
+    if (!wrap) return;
+    const cell = wrap.querySelector(
+      `td[data-cr="${cursor.r}"][data-cc="${cursor.c}"]`
+    );
+    if (cell) cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [cursor]);
 
   return (
     <div>
@@ -1564,7 +1651,40 @@ export default function IssuesManagementPage() {
               overflow: "hidden",
             }}
           >
-            <div style={{ overflowX: "auto" }}>
+            <div
+              ref={tableRef}
+              tabIndex={0}
+              style={{ overflowX: "auto", outline: "none" }}
+              onKeyDown={handleTableKeyDown}
+              onFocus={() =>
+                setCursor((cur) => (cur.r < 0 ? { r: 0, c: 0 } : cur))
+              }
+              onMouseMove={(e) => {
+                const cell =
+                  e.target && e.target.closest
+                    ? e.target.closest("td")
+                    : null;
+                if (!cell) return;
+                const r = Number(cell.getAttribute("data-cr"));
+                const c = Number(cell.getAttribute("data-cc"));
+                if (Number.isFinite(r) && Number.isFinite(c)) setCursor({ r, c });
+              }}
+              onMouseLeave={() => setCursor({ r: -1, c: -1 })}
+              onClick={(e) => {
+                if (
+                  e.target &&
+                  e.target.closest &&
+                  e.target.closest(
+                    "button, a, input, textarea, select"
+                  )
+                ) {
+                  return;
+                }
+                if (tableRef.current) {
+                  tableRef.current.focus({ preventScroll: true });
+                }
+              }}
+            >
               <table className="issues-table" style={{ minWidth: "1280px" }}>
                 <thead>
                   <tr>
@@ -1576,18 +1696,21 @@ export default function IssuesManagementPage() {
                     <th style={ui.thNum}>الصافي</th>
                     <th style={ui.th}>حالة الصرف</th>
                     <th style={ui.th}>تاريخ الصرف</th>
-                    <th style={ui.th}>الحالة</th>
                     <th style={ui.th}>إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredIssues.slice(0, 300).map((issue) => {
+                  {filteredIssues.slice(0, MAX_DISPLAY_ROWS).map((issue, index) => {
                     const menuOpen = rowMenuOpenId === issue.id;
                     const d = issue.excel_data || {};
                     const clientName = getIssueClientName(issue);
                     return (
                       <tr key={issue.id}>
-                        <td style={ui.tdNum}>
+                        <td
+                          data-cr={index}
+                          data-cc={0}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 0) }}
+                        >
                           <span
                             style={{
                               display: "inline-flex",
@@ -1604,7 +1727,11 @@ export default function IssuesManagementPage() {
                             # {issue.case_number || "-"}
                           </span>
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          data-cr={index}
+                          data-cc={1}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 1) }}
+                        >
                           <div style={{ fontWeight: 800, color: "#0F172A" }}>
                             {issue.case_title || "-"}
                           </div>
@@ -1634,7 +1761,11 @@ export default function IssuesManagementPage() {
                             </div>
                           )}
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          data-cr={index}
+                          data-cc={2}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 2) }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
@@ -1646,7 +1777,11 @@ export default function IssuesManagementPage() {
                             {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
                           </div>
                         </td>
-                        <td style={ui.tdNum}>
+                        <td
+                          data-cr={index}
+                          data-cc={3}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 3) }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
@@ -1659,7 +1794,11 @@ export default function IssuesManagementPage() {
                             {formatMoneyValue(d["الاساسي بعد التغيير"])}
                           </div>
                         </td>
-                        <td style={ui.tdNum}>
+                        <td
+                          data-cr={index}
+                          data-cc={4}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 4) }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
@@ -1672,7 +1811,11 @@ export default function IssuesManagementPage() {
                             {formatMoneyValue(d["الاجمالي"])}
                           </div>
                         </td>
-                        <td style={ui.tdNum}>
+                        <td
+                          data-cr={index}
+                          data-cc={5}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 5) }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
@@ -1685,10 +1828,18 @@ export default function IssuesManagementPage() {
                             {formatMoneyValue(d["الصافي"])}
                           </div>
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          data-cr={index}
+                          data-cc={6}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 6) }}
+                        >
                           {getPaymentBadge(issue.payment_status || d["حاله الصرف"])}
                         </td>
-                        <td style={ui.td}>
+                        <td
+                          data-cr={index}
+                          data-cc={7}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 7) }}
+                        >
                           <div
                             style={{
                               fontSize: 12.5,
@@ -1702,8 +1853,11 @@ export default function IssuesManagementPage() {
                             )}
                           </div>
                         </td>
-                        <td style={ui.td}>{getStatusBadge(issue.status)}</td>
-                        <td style={ui.td}>
+                        <td
+                          data-cr={index}
+                          data-cc={8}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 8) }}
+                        >
                           <div
                             style={{
                               display: "flex",
