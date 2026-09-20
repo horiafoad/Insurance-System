@@ -119,6 +119,9 @@ export default function IssuesManagementPage() {
 
   const [mainPdfUploading, setMainPdfUploading] = useState(false);
 
+  // القضية المفتوح منها قائمة الإجراءات (⋯) في الصف.
+  const [rowMenuOpenId, setRowMenuOpenId] = useState(null);
+
   useEffect(() => {
     loadIssues();
   }, []);
@@ -783,31 +786,49 @@ export default function IssuesManagementPage() {
   const getPaymentBadge = (status) => {
     if (!status)
       return (
-        <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>
+        <span style={{ color: "#94A3B8", fontSize: 12, fontWeight: 600 }}>
+          —
+        </span>
       );
     const map = {
-      "جاري التنفيذ": { bg: "#E0E7FF", color: "#4338CA" },
-      "تم التنفيذ وفي انتظار الصرف": { bg: "#FEF3C7", color: "#92400E" },
-      "تم الصرف": { bg: "#D1FAE5", color: "#047857" },
-      "مرفوضة": { bg: "#FEE2E2", color: "#DC2626" },
+      "جاري التنفيذ": { bg: "#FEF3C7", color: "#B45309", icon: "🟡" },
+      "تم التنفيذ وفي انتظار الصرف": {
+        bg: "#DBEAFE",
+        color: "#1D4ED8",
+        icon: "🔵",
+      },
+      "تم الصرف": { bg: "#D1FAE5", color: "#047857", icon: "🟢" },
+      "مرفوضة": { bg: "#FEE2E2", color: "#DC2626", icon: "🔴" },
     };
     const displayStatus = normalizePaymentStatus(status);
-    const s = map[displayStatus] || { bg: "#F1F5F9", color: "#475569" };
+    const s = map[displayStatus] || { bg: "#F1F5F9", color: "#475569", icon: "⚪" };
     return (
       <span
         style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
           background: s.bg,
           color: s.color,
-          padding: "3px 10px",
-          borderRadius: "20px",
-          fontSize: 11,
-          fontWeight: 700,
+          padding: "5px 11px",
+          borderRadius: 20,
+          fontSize: 11.5,
+          fontWeight: 800,
           whiteSpace: "nowrap",
+          border: "1px solid transparent",
         }}
+        title={displayStatus}
       >
-        {displayStatus}
+        <span style={{ fontSize: 12, lineHeight: 1 }}>{s.icon}</span>
+        <span>{displayStatus}</span>
       </span>
     );
+  };
+
+  const resetFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setPaymentStatusFilter("all");
   };
 
   const stats = {
@@ -815,102 +836,376 @@ export default function IssuesManagementPage() {
     pending: issues.filter((i) => i.status === "pending").length,
     inProgress: issues.filter((i) => i.status === "in_progress").length,
     completed: issues.filter((i) => i.status === "approved").length,
+    paid: issues.filter(
+      (i) => normalizePaymentStatus(i.payment_status) === "تم الصرف"
+    ).length,
+    waiting: issues.filter(
+      (i) =>
+        normalizePaymentStatus(i.payment_status) ===
+        "تم التنفيذ وفي انتظار الصرف"
+    ).length,
+    rejected: issues.filter(
+      (i) =>
+        i.status === "rejected" ||
+        normalizePaymentStatus(i.payment_status) === "مرفوضة"
+    ).length,
+  };
+
+  // ملخص ديناميكي محسوب من البيانات الحقيقية: "26 قضية مكتملة من أصل 27 — قضية واحدة تحتاج متابعة".
+  const summaryText = (() => {
+    if (issues.length === 0) return "";
+    const done = stats.completed;
+    const attention = issues.length - done;
+    const doneLabel = done === 1 ? "قضية مكتملة" : `${done} قضية مكتملة`;
+    if (attention === 0)
+      return `${doneLabel} من أصل ${issues.length} — جميع القضايا مكتملة`;
+    if (attention === 1)
+      return `${doneLabel} من أصل ${issues.length} — قضية واحدة تحتاج متابعة`;
+    return `${doneLabel} من أصل ${issues.length} — ${attention} قضايا تحتاج متابعة`;
+  })();
+
+  const ui = {
+    card: {
+      background: "#fff",
+      border: "1px solid #E7EBF0",
+      borderRadius: 14,
+      padding: "4px 0",
+      boxShadow: "0 2px 10px rgba(15,41,66,.04)",
+    },
+    th: {
+      padding: "13px 14px",
+      background: "#F1F5F9",
+      color: "#475569",
+      borderBottom: "2px solid #E2E8F0",
+      textAlign: "right",
+      whiteSpace: "nowrap",
+      fontSize: 12,
+      fontWeight: 800,
+      letterSpacing: "0.2px",
+    },
+    thNum: {
+      padding: "13px 14px",
+      background: "#F1F5F9",
+      color: "#475569",
+      borderBottom: "2px solid #E2E8F0",
+      textAlign: "left",
+      direction: "ltr",
+      whiteSpace: "nowrap",
+      fontSize: 12,
+      fontWeight: 800,
+      letterSpacing: "0.2px",
+    },
+    td: {
+      padding: "13px 14px",
+      borderBottom: "1px solid #EEF2F6",
+      verticalAlign: "middle",
+      fontSize: 13.5,
+    },
+    tdNum: {
+      padding: "13px 14px",
+      borderBottom: "1px solid #EEF2F6",
+      verticalAlign: "middle",
+      fontSize: 13.5,
+      textAlign: "left",
+      direction: "ltr",
+      fontVariantNumeric: "tabular-nums",
+    },
+    filterSelect: {
+      minWidth: 190,
+      border: "1px solid #CBD5E1",
+      background: "#fff",
+      borderRadius: 10,
+      padding: "11px 12px",
+      fontSize: 14,
+      cursor: "pointer",
+    },
+  };
+
+  const issuesCss = `
+    .issues-table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+    .issues-table thead th { position: sticky; top: 0; z-index: 2; }
+    .issues-table tbody tr { transition: background .12s ease; }
+    .issues-table tbody tr:hover { background: #F8FBFF; }
+    .issues-menu-item:hover { background: #F1F5F9; }
+    .issues-upload-card h3 { margin: 0; }
+  `;
+
+  const openEditFromDetail = (issue) => {
+    setDetailModalIssue(null);
+    openEditModal(issue);
   };
 
   return (
     <div>
-      <div style={styles.card}>
-        <div style={styles.pageHeader}>
-          <div>
-            <h2 style={styles.cardTitle}>⚖️ إدارة القضايا</h2>
-            <p style={styles.cardSub}>
-              رفع وإدارة القضايا مع ملفات Excel و PDF
-            </p>
+      <style>{issuesCss}</style>
+
+      {/* ============ العنوان ============ */}
+      <div
+        style={{
+          background: "linear-gradient(135deg,#0F2F4F 0%,#1D4ED8 100%)",
+          borderRadius: 16,
+          padding: "22px 24px",
+          marginBottom: 18,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 14,
+          flexWrap: "wrap",
+          boxShadow: "0 8px 22px rgba(15,41,66,.14)",
+        }}
+      >
+        <div style={{ color: "#fff" }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              opacity: 0.85,
+              marginBottom: 4,
+            }}
+          >
+            قسم الاستحقاقات / نظام القضايا
           </div>
+          <h2
+            style={{ margin: 0, fontSize: 23, fontWeight: 900, color: "#fff" }}
+          >
+            ⚖️ إدارة القضايا
+          </h2>
+          <p style={{ margin: "6px 0 0", fontSize: 13.5, opacity: 0.9 }}>
+            رفع وإدارة القضايا مع ملفات Excel و PDF — متابعة حالات الصرف
+            لحظيًا
+          </p>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
           <button
             type="button"
             style={{
-              ...styles.primaryButton,
               display: "inline-flex",
               alignItems: "center",
-              gap: 6,
-              background: showAddPanel ? "#DC2626" : "#2563EB",
+              gap: 7,
+              border: "1px solid rgba(255,255,255,.4)",
+              background: showAddPanel ? "rgba(255,255,255,.14)" : "#ffffff",
+              color: showAddPanel ? "#fff" : "#0F2F4F",
+              borderRadius: 11,
+              padding: "11px 16px",
+              fontWeight: 800,
+              fontSize: 13.5,
+              cursor: "pointer",
+              boxShadow: "0 3px 10px rgba(15,41,66,.18)",
             }}
             onClick={() => setShowAddPanel((open) => !open)}
           >
-            <span style={{ fontSize: 15 }}>
-              {showAddPanel ? "✕" : "➕"}
-            </span>
-            <span>
-              {showAddPanel ? "إغلاق" : "إضافة قضية جديدة"}
-            </span>
+            <span style={{ fontSize: 15 }}>{showAddPanel ? "✕" : "➕"}</span>
+            <span>{showAddPanel ? "إغلاق الإضافة" : "إضافة قضية جديدة"}</span>
           </button>
-        </div>
-
-        {error && (
-          <div
+          <button
+            type="button"
+            title="تحديث القائمة من قاعدة البيانات"
+            onClick={loadIssues}
             style={{
-              ...styles.errorBox,
-              whiteSpace: "pre-line",
-              lineHeight: 1.6,
+              border: "1px solid rgba(255,255,255,.35)",
+              background: "rgba(255,255,255,.12)",
+              color: "#fff",
+              borderRadius: 11,
+              width: 42,
+              height: 42,
+              fontSize: 18,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            {error}
-          </div>
-        )}
-        {success && <div style={styles.successBox}>{success}</div>}
-
-        <div style={styles.statsGrid} className="issues-stats-grid">
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>📋</div>
-            <div style={styles.statValue}>{stats.total}</div>
-            <div style={styles.statLabel}>إجمالي القضايا</div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>⏳</div>
-            <div style={styles.statValue}>{stats.pending}</div>
-            <div style={styles.statLabel}>قيد المعالجة</div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>🔄</div>
-            <div style={styles.statValue}>{stats.inProgress}</div>
-            <div style={styles.statLabel}>جاري التنفيذ</div>
-          </div>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>✅</div>
-            <div style={styles.statValue}>{stats.completed}</div>
-            <div style={styles.statLabel}>مكتملة</div>
-          </div>
+            {loading ? "⏳" : "🔄"}
+          </button>
         </div>
+      </div>
 
-        {showAddPanel && (
-        <div style={styles.uploadSections} className="issues-upload-grid">
-          <div style={styles.uploadSection}>
-            <h3 style={styles.uploadSectionTitle}>
-              📊 رفع قائمة قضايا (Excel)
-            </h3>
+      {error && (
+        <div
+          style={{
+            ...styles.errorBox,
+            whiteSpace: "pre-line",
+            lineHeight: 1.6,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {success && <div style={styles.successBox}>{success}</div>}
+
+      {/* ============ الإحصائيات ============ */}
+      <div
+        className="issues-stats-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(168px, 1fr))",
+          gap: 14,
+          marginBottom: 18,
+        }}
+      >
+        {[
+          { icon: "🗂️", label: "إجمالي القضايا", value: stats.total, bg: "#EFF6FF", bd: "#BFDBFE" },
+          { icon: "⏳", label: "قيد المعالجة", value: stats.pending, bg: "#FEF3C7", bd: "#FDE68A" },
+          { icon: "🔄", label: "جاري التنفيذ", value: stats.inProgress, bg: "#DBEAFE", bd: "#93C5FD" },
+          { icon: "💰", label: "تم الصرف", value: stats.paid, bg: "#D1FAE5", bd: "#A7F3D0" },
+          { icon: "⏸️", label: "بانتظار الصرف", value: stats.waiting, bg: "#E0E7FF", bd: "#C7D2FE" },
+          { icon: "🚫", label: "مرفوضة", value: stats.rejected, bg: "#FEE2E2", bd: "#FECACA" },
+        ].map((c) => (
+          <div
+            key={c.label}
+            style={{
+              background: "#fff",
+              border: "1px solid #E7EBF0",
+              borderRadius: 15,
+              padding: "15px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 13,
+              boxShadow: "0 2px 10px rgba(15,41,66,.05)",
+            }}
+          >
+            <div
+              style={{
+                width: 45,
+                height: 45,
+                borderRadius: 12,
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 21,
+                background: c.bg,
+                border: `1px solid ${c.bd}`,
+              }}
+            >
+              {c.icon}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 24,
+                  fontWeight: 900,
+                  lineHeight: 1.05,
+                  color: "#0F172A",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {c.value}
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "#64748B",
+                  marginTop: 4,
+                  fontWeight: 700,
+                }}
+              >
+                {c.label}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ============ ملخص ديناميكي ============ */}
+      {summaryText && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "linear-gradient(135deg,#EFF6FF,#ffffff)",
+            border: "1px solid #BFDBFE",
+            borderRadius: 12,
+            padding: "12px 16px",
+            marginBottom: 18,
+            color: "#1E3A8A",
+            fontSize: 13.5,
+            fontWeight: 700,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>📊</span>
+          <span>{summaryText}</span>
+        </div>
+      )}
+
+      {/* ============ قسم الإضافة (Excel + PDF) ============ */}
+      {showAddPanel && (
+        <div
+          className="issues-upload-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))",
+            gap: 18,
+            marginBottom: 20,
+          }}
+        >
+          <div
+            className="issues-upload-card"
+            style={{
+              background: "#fff",
+              border: "1px solid #E2E8F0",
+              borderRadius: 14,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(15,41,66,.03)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: "#EFF6FF",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 19,
+                }}
+              >
+                📊
+              </div>
+              <div>
+                <h3>رفع قائمة قضايا من Excel</h3>
+                <div style={{ fontSize: 11.5, color: "#94A3B8" }}>
+                  استيراد بالجملة — تُنشأ قضية مستقلة لكل صف
+                </div>
+              </div>
+            </div>
             <form onSubmit={handleExcelSubmit}>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>ملف Excel:</label>
-                <div style={styles.fileUploadArea}>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleExcelUpload}
-                    style={{ display: "none" }}
-                    id="excel-upload"
-                  />
-                  <label
-                    htmlFor="excel-upload"
-                    style={styles.fileUploadLabel}
-                  >
-                    {excelFile ? excelFile.name : "اختر ملف Excel"}
-                  </label>
-                </div>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleExcelUpload}
+                  style={{ display: "none" }}
+                  id="excel-upload"
+                />
+                <label
+                  htmlFor="excel-upload"
+                  style={{ ...styles.fileUploadArea, marginBottom: 0 }}
+                >
+                  {excelFile ? excelFile.name : "اختر ملف Excel"}
+                </label>
               </div>
               <button
                 type="submit"
-                style={styles.primaryButton}
+                style={{ ...styles.primaryButton, width: "100%", borderRadius: 10 }}
                 disabled={excelUploading || !excelFile}
               >
                 {excelUploading ? "جاري الرفع..." : "📥 رفع ملف Excel"}
@@ -918,10 +1213,45 @@ export default function IssuesManagementPage() {
             </form>
           </div>
 
-          <div style={styles.uploadSection}>
-            <h3 style={styles.uploadSectionTitle}>
-              📄 رفع قضية فردية (PDF)
-            </h3>
+          <div
+            className="issues-upload-card"
+            style={{
+              background: "#fff",
+              border: "1px solid #E2E8F0",
+              borderRadius: 14,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(15,41,66,.03)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: "#FEF3C7",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 19,
+                }}
+              >
+                📄
+              </div>
+              <div>
+                <h3>رفع قضية فردية (PDF)</h3>
+                <div style={{ fontSize: 11.5, color: "#94A3B8" }}>
+                  إضافة قضية واحدة مع ملف PDF للقضية
+                </div>
+              </div>
+            </div>
             <form onSubmit={handlePdfSubmit}>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>رقم القضية *</label>
@@ -952,30 +1282,28 @@ export default function IssuesManagementPage() {
                   onChange={(e) => setCaseDescription(e.target.value)}
                   style={styles.textarea}
                   placeholder="أدخل وصف القضية (اختياري)"
-                  rows="3"
+                  rows="2"
                 />
               </div>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>ملف PDF *</label>
-                <div style={styles.fileUploadArea}>
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setPdfFile(e.target.files[0])}
-                    style={{ display: "none" }}
-                    id="pdf-upload"
-                  />
-                  <label
-                    htmlFor="pdf-upload"
-                    style={styles.fileUploadLabel}
-                  >
-                    {pdfFile ? pdfFile.name : "اختر ملف PDF"}
-                  </label>
-                </div>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => setPdfFile(e.target.files[0])}
+                  style={{ display: "none" }}
+                  id="pdf-upload"
+                />
+                <label
+                  htmlFor="pdf-upload"
+                  style={{ ...styles.fileUploadArea, marginBottom: 0 }}
+                >
+                  {pdfFile ? pdfFile.name : "اختر ملف PDF"}
+                </label>
               </div>
               <button
                 type="submit"
-                style={styles.primaryButton}
+                style={{ ...styles.primaryButton, width: "100%", borderRadius: 10 }}
                 disabled={pdfUploading || !pdfFile}
               >
                 {pdfUploading ? "جاري الرفع..." : "📥 رفع ملف PDF"}
@@ -986,168 +1314,318 @@ export default function IssuesManagementPage() {
       )}
 
         {issues.length > 0 && (
-          <div style={styles.filterRow}>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="🔎 بحث برقم القضية أو الاسم"
-              style={styles.searchInput}
-            />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={styles.filterSelect}
+          <div
+            style={{
+              background: "#fff",
+              border: "1px solid #E7EBF0",
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+              boxShadow: "0 2px 10px rgba(15,41,66,.04)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
             >
-              <option value="all">كل الحالات</option>
-              <option value="pending">قيد المعالجة</option>
-              <option value="in_progress">جاري التنفيذ</option>
-              <option value="approved">مكتملة</option>
-              <option value="rejected">مرفوضة</option>
-            </select>
-            <select
-              value={paymentStatusFilter}
-              onChange={(e) => setPaymentStatusFilter(e.target.value)}
-              style={styles.filterSelect}
-            >
-              <option value="all">كل حالات الصرف</option>
-              {PAYMENT_STATUS_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontWeight: 800,
+                  fontSize: 14,
+                  color: "#1E293B",
+                }}
+              >
+                <span style={{ fontSize: 16 }}>🔎</span>
+                البحث والتصفية
+              </div>
+              <span
+                style={{
+                  fontSize: 12.5,
+                  color: "#64748B",
+                  fontWeight: 700,
+                }}
+              >
+                عرض {filteredIssues.length} من أصل {issues.length} قضية
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="بحث برقم القضية أو اسم صاحب القضية..."
+                style={{
+                  flex: "1 1 260px",
+                  border: "1px solid #CBD5E1",
+                  background: "#fff",
+                  borderRadius: 10,
+                  padding: "11px 14px",
+                  fontSize: 14,
+                  outline: "none",
+                }}
+              />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={ui.filterSelect}
+              >
+                <option value="all">كل حالات القضية</option>
+                <option value="pending">قيد المعالجة</option>
+                <option value="in_progress">جاري التنفيذ</option>
+                <option value="approved">مكتملة</option>
+                <option value="rejected">مرفوضة</option>
+              </select>
+              <select
+                value={paymentStatusFilter}
+                onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                style={ui.filterSelect}
+              >
+                <option value="all">كل حالات الصرف</option>
+                {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={resetFilters}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  border: "1px solid #E2E8F0",
+                  background: "#F8FAFC",
+                  color: "#475569",
+                  borderRadius: 10,
+                  padding: "11px 16px",
+                  fontWeight: 700,
+                  fontSize: 13.5,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+                title="إعادة ضبط البحث والفلاتر"
+              >
+                ♻️ إعادة الضبط
+              </button>
+            </div>
           </div>
         )}
 
         {filteredIssues.length > 0 ? (
-          <div style={styles.tableWrapper}>
-            <table style={{ ...styles.table, minWidth: "1200px" }}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>الاسم</th>
-                  <th style={styles.th}>رقم القضية</th>
-                  <th style={styles.th}>شهر تغيير الأساسي</th>
-                  <th style={styles.th}>الأساسي بعد التغيير</th>
-                  <th style={styles.th}>الإجمالي</th>
-                  <th style={styles.th}>الصافي</th>
-                  <th style={styles.th}>حالة الصرف</th>
-                  <th style={styles.th}>تاريخ الصرف</th>
-                  <th style={styles.th}>الحالة</th>
-                  <th style={styles.th}>إجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredIssues.slice(0, 300).map((issue) => {
-                  const d = issue.excel_data || {};
-                  return (
-                    <tr key={issue.id} style={styles.tr}>
-                      <td style={styles.td}>
-                        {issue.case_title || "-"}
-                      </td>
-                      <td style={styles.td}>
-                        {issue.case_number || "-"}
-                      </td>
-                      <td style={styles.td}>
-                        {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
-                      </td>
-                      <td style={styles.td}>
-                        {d["الاساسي بعد التغيير"] || "-"}
-                      </td>
-                      <td style={styles.td}>
-                        {formatMoneyValue(d["الاجمالي"])}
-                      </td>
-                      <td style={styles.td}>
-                        {formatMoneyValue(d["الصافي"])}
-                      </td>
-                      <td style={styles.td}>
-                        {getPaymentBadge(issue.payment_status)}
-                      </td>
-                      <td style={styles.td}>
-                        {issue.payment_date || "-"}
-                      </td>
-                      <td style={styles.td}>
-                        {getStatusBadge(issue.status)}
-                      </td>
-                      <td style={styles.td}>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "4px",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {issue.file_url && (
-                            <a
-                              href={issue.file_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+          <div
+            style={{
+              background: "#fff",
+              border: "1px solid #E7EBF0",
+              borderRadius: 14,
+              boxShadow: "0 2px 10px rgba(15,41,66,.04)",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ overflowX: "auto" }}>
+              <table className="issues-table" style={{ minWidth: "1200px" }}>
+                <thead>
+                  <tr>
+                    <th style={ui.th}>اسم صاحب القضية</th>
+                    <th style={ui.th}>شهر تغيير الأساسي</th>
+                    <th style={ui.thNum}>الأساسي بعد التغيير</th>
+                    <th style={ui.thNum}>الإجمالي</th>
+                    <th style={ui.thNum}>الصافي</th>
+                    <th style={ui.th}>حالة الصرف</th>
+                    <th style={ui.th}>حالة القضية</th>
+                    <th style={ui.th}>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIssues.slice(0, 300).map((issue) => {
+                    const d = issue.excel_data || {};
+                    const menuOpen = rowMenuOpenId === issue.id;
+                    return (
+                      <tr key={issue.id}>
+                        <td style={ui.td}>
+                          <div style={{ fontWeight: 800, color: "#0F172A" }}>
+                            {issue.case_title || "-"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11.5,
+                              color: "#94A3B8",
+                              marginTop: 2,
+                            }}
+                          >
+                            # {issue.case_number || "-"}
+                          </div>
+                        </td>
+                        <td style={ui.td}>
+                          {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
+                        </td>
+                        <td style={ui.tdNum}>
+                          {formatMoneyValue(d["الاساسي بعد التغيير"])}
+                        </td>
+                        <td style={ui.tdNum}>
+                          {formatMoneyValue(d["الاجمالي"])}
+                        </td>
+                        <td style={ui.tdNum}>
+                          {formatMoneyValue(d["الصافي"])}
+                        </td>
+                        <td style={ui.td}>
+                          {getPaymentBadge(issue.payment_status)}
+                        </td>
+                        <td style={ui.td}>{getStatusBadge(issue.status)}</td>
+                        <td style={ui.td}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              position: "relative",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              style={styles.viewButton}
+                              onClick={() => openDetailModal(issue)}
+                              title="تفاصيل وملفات القضية"
+                            >
+                              📁 تفاصيل
+                            </button>
+                            <select
+                              value={issue.status}
+                              onChange={(e) =>
+                                handleUpdateStatus(issue.id, e.target.value)
+                              }
                               style={{
-                                ...styles.viewButton,
-                                textDecoration: "none",
+                                ...styles.statusSelect,
+                                padding: "6px 8px",
+                                fontSize: 12,
+                              }}
+                              title="تحديث حالة القضية بسرعة"
+                            >
+                              <option value="pending">قيد المعالجة</option>
+                              <option value="in_progress">جاري التنفيذ</option>
+                              <option value="approved">مكتملة</option>
+                              <option value="rejected">مرفوضة</option>
+                            </select>
+                            <button
+                              type="button"
+                              title="المزيد من الإجراءات"
+                              onClick={() =>
+                                setRowMenuOpenId(menuOpen ? null : issue.id)
+                              }
+                              style={{
+                                border: "1px solid #E2E8F0",
+                                background: "#F8FAFC",
+                                color: "#475569",
+                                borderRadius: 8,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
                               }}
                             >
-                              👁️ عرض
-                            </a>
-                          )}
-                          <button
-                            style={{
-                              ...styles.viewButton,
-                              background: "#FEF3C7",
-                              color: "#92400E",
-                              borderColor: "#FDE68A",
-                            }}
-                            onClick={() => openDetailModal(issue)}
-                            title="تفاصيل وملفات القضية"
-                          >
-                            📎 تفاصيل
-                          </button>
-                          <button
-                            style={{
-                              ...styles.viewButton,
-                              background: "#ECFDF5",
-                              color: "#047857",
-                            }}
-                            onClick={() => openEditModal(issue)}
-                            title="تعديل البيانات"
-                          >
-                            ✏️ تعديل
-                          </button>
-                          <select
-                            value={issue.status}
-                            onChange={(e) =>
-                              handleUpdateStatus(issue.id, e.target.value)
-                            }
-                            style={{
-                              ...styles.statusSelect,
-                              padding: "4px 6px",
-                              fontSize: 11,
-                            }}
-                          >
-                            <option value="pending">قيد المعالجة</option>
-                            <option value="in_progress">
-                              جاري التنفيذ
-                            </option>
-                            <option value="approved">مكتملة</option>
-                            <option value="rejected">مرفوضة</option>
-                          </select>
-                          <button
-                            style={{
-                              ...styles.deleteButton,
-                              padding: "4px 8px",
-                              fontSize: "12px",
-                            }}
-                            onClick={() => handleDeleteIssue(issue.id)}
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                              ⋮
+                            </button>
+                            {menuOpen && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "calc(100% + 6px)",
+                                  right: 0,
+                                  background: "#fff",
+                                  border: "1px solid #E2E8F0",
+                                  borderRadius: 10,
+                                  boxShadow: "0 10px 26px rgba(15,41,66,.14)",
+                                  padding: 6,
+                                  zIndex: 20,
+                                  minWidth: 150,
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="issues-menu-item"
+                                  onClick={() => {
+                                    setRowMenuOpenId(null);
+                                    openEditModal(issue);
+                                  }}
+                                  style={{
+                                    display: "block",
+                                    width: "100%",
+                                    textAlign: "right",
+                                    padding: "9px 12px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 700,
+                                    color: "#0F172A",
+                                  }}
+                                >
+                                  ✏️ تعديل البيانات
+                                </button>
+                                {issue.file_url && (
+                                  <a
+                                    href={issue.file_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: "block",
+                                      padding: "9px 12px",
+                                      borderRadius: 8,
+                                      textDecoration: "none",
+                                      fontSize: 13.5,
+                                      fontWeight: 700,
+                                      color: "#1D4ED8",
+                                    }}
+                                  >
+                                    👁️ عرض الملف الأصلي
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  className="issues-menu-item"
+                                  onClick={() => {
+                                    setRowMenuOpenId(null);
+                                    handleDeleteIssue(issue.id);
+                                  }}
+                                  style={{
+                                    display: "block",
+                                    width: "100%",
+                                    textAlign: "right",
+                                    padding: "9px 12px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 700,
+                                    color: "#DC2626",
+                                  }}
+                                >
+                                  🗑️ حذف القضية
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
             {filteredIssues.length > 300 && (
               <div style={styles.infoBox}>
                 يتم عرض أول 300 سجل في الشاشة فقط.
@@ -1162,576 +1640,713 @@ export default function IssuesManagementPage() {
           </div>
         ) : null}
 
-        {loading && (
-          <div style={styles.infoBox}>جاري تحميل البيانات...</div>
-        )}
-      </div>
+        {loading && <div style={styles.infoBox}>جاري تحميل البيانات...</div>}
 
-      {/* Modal تعديل البيانات */}
+        {/* Modal تعديل البيانات */}
       {editingIssue && (
-        <div
-          style={styles.overlay}
-          onClick={() => setEditingIssue(null)}
-        >
+        <div style={styles.overlay} onClick={() => setEditingIssue(null)}>
           <div
-            style={{ ...styles.loginBox, width: "min(650px, 95%)" }}
+            style={{
+              ...styles.loginBox,
+              width: "min(680px, 95%)",
+              padding: 0,
+              overflow: "hidden",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              style={styles.closeButton}
-              onClick={() => setEditingIssue(null)}
+            <div
+              style={{
+                background: "linear-gradient(135deg,#0F2F4F 0%,#1D4ED8 100%)",
+                padding: "18px 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
             >
-              ×
-            </button>
-
-            <div style={{ fontSize: "38px", marginBottom: "8px" }}>
-              ✏️
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 24 }}>✏️</span>
+                <div>
+                  <div style={{ color: "#fff", fontWeight: 900, fontSize: 17 }}>
+                    تعديل بيانات القضية
+                  </div>
+                  <div style={{ color: "rgba(255,255,255,.8)", fontSize: 12 }}>
+                    {editForm.case_number
+                      ? `القضية رقم ${editForm.case_number}`
+                      : "تحديث بيانات القضية"}
+                  </div>
+                </div>
+              </div>
+              <button
+                style={{
+                  background: "rgba(255,255,255,.15)",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: 8,
+                  width: 32,
+                  height: 32,
+                  fontSize: 18,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+                onClick={() => setEditingIssue(null)}
+              >
+                ×
+              </button>
             </div>
-            <h3 style={styles.loginTitle}>تعديل بيانات القضية</h3>
 
-            <form onSubmit={handleSaveEdit}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                }}
-                className="issues-modal-grid"
-              >
-                <div>
-                  <label style={styles.formLabel}>رقم القضية</label>
-                  <input
-                    type="text"
-                    value={editForm.case_number ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        case_number: e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div>
-                  <label style={styles.formLabel}>اسم صاحب القضية</label>
-                  <input
-                    type="text"
-                    value={editForm.case_title ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        case_title: e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div>
-                  <label style={styles.formLabel}>
-                    شهر تغيير الأساسي
-                  </label>
-                  <select
-                    value={normalizeMonthValue(
-                      editForm["شهر تغير الاساسي"] ?? ""
-                    )}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        "شهر تغير الاساسي": e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  >
-                    <option value="">— اختر الشهر —</option>
-                    {(() => {
-                      const storedMonth = normalizeMonthValue(
-                        editForm["شهر تغير الاساسي"] ?? ""
-                      );
-                      if (storedMonth && !MONTHS_LIST.includes(storedMonth)) {
-                        return (
-                          <option key={storedMonth} value={storedMonth}>
-                            {storedMonth}
-                          </option>
-                        );
-                      }
-                      return null;
-                    })()}
-                    {MONTHS_LIST.map((month) => (
-                      <option key={month} value={month}>
-                        {month}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={styles.formLabel}>
-                    الأساسي بعد التغيير
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm["الاساسي بعد التغيير"] ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        "الاساسي بعد التغيير": e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div>
-                  <label style={styles.formLabel}>الإجمالي (ج.م)</label>
-                  <input
-                    type="text"
-                    value={editForm["الاجمالي"] ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        الاجمالي: e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div>
-                  <label style={styles.formLabel}>الصافي (ج.م)</label>
-                  <input
-                    type="text"
-                    value={editForm["الصافي"] ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        الصافي: e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div>
-                  <label style={styles.formLabel}>حالة الصرف</label>
-                  <select
-                    value={editForm.payment_status ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        payment_status: e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  >
-                    <option value="">— اختر —</option>
-                    {PAYMENT_STATUS_OPTIONS.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={styles.formLabel}>تاريخ الصرف</label>
-                  <input
-                    type="date"
-                    value={editForm.payment_date ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        payment_date: e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                </div>
-                <div>
-                  <label style={styles.formLabel}>الحالة</label>
-                  <select
-                    value={editForm.status ?? "pending"}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        status: e.target.value,
-                      }))
-                    }
-                    style={styles.input}
-                  >
-                    <option value="pending">قيد المعالجة</option>
-                    <option value="in_progress">جاري التنفيذ</option>
-                    <option value="approved">مكتملة</option>
-                    <option value="rejected">مرفوضة</option>
-                  </select>
-                </div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label style={styles.formLabel}>وصف القضية</label>
-                  <textarea
-                    value={editForm.case_description ?? ""}
-                    onChange={(e) =>
-                      setEditForm((p) => ({
-                        ...p,
-                        case_description: e.target.value,
-                      }))
-                    }
-                    style={styles.textarea}
-                    rows="2"
-                  />
-                </div>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 20,
-                  display: "flex",
-                  gap: 10,
-                  justifyContent: "flex-end",
-                }}
-              >
-                <button
-                  type="button"
-                  style={styles.secondaryButton}
-                  onClick={() => setEditingIssue(null)}
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
+            <div style={{ padding: "20px 24px" }}>
+              <form onSubmit={handleSaveEdit}>
+                <div
                   style={{
-                    ...styles.primaryButton,
-                    position: "relative",
-                    zIndex: 10001,
-                    pointerEvents: "auto",
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 14,
                   }}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    handleSaveEdit(event);
+                  className="issues-modal-grid"
+                >
+                  <div>
+                    <label style={styles.formLabel}>رقم القضية</label>
+                    <input
+                      type="text"
+                      value={editForm.case_number ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          case_number: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>اسم صاحب القضية</label>
+                    <input
+                      type="text"
+                      value={editForm.case_title ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          case_title: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>شهر تغيير الأساسي</label>
+                    <select
+                      value={normalizeMonthValue(
+                        editForm["شهر تغير الاساسي"] ?? ""
+                      )}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          "شهر تغير الاساسي": e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    >
+                      <option value="">— اختر الشهر —</option>
+                      {(() => {
+                        const storedMonth = normalizeMonthValue(
+                          editForm["شهر تغير الاساسي"] ?? ""
+                        );
+                        if (storedMonth && !MONTHS_LIST.includes(storedMonth)) {
+                          return (
+                            <option key={storedMonth} value={storedMonth}>
+                              {storedMonth}
+                            </option>
+                          );
+                        }
+                        return null;
+                      })()}
+                      {MONTHS_LIST.map((month) => (
+                        <option key={month} value={month}>
+                          {month}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>
+                      الأساسي بعد التغيير (ج.م)
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm["الاساسي بعد التغيير"] ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          "الاساسي بعد التغيير": e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>الإجمالي (ج.م)</label>
+                    <input
+                      type="text"
+                      value={editForm["الاجمالي"] ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          الاجمالي: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>الصافي (ج.م)</label>
+                    <input
+                      type="text"
+                      value={editForm["الصافي"] ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          الصافي: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>حالة الصرف</label>
+                    <select
+                      value={editForm.payment_status ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          payment_status: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    >
+                      <option value="">— اختر —</option>
+                      {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>تاريخ الصرف</label>
+                    <input
+                      type="date"
+                      value={editForm.payment_date ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          payment_date: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>الحالة</label>
+                    <select
+                      value={editForm.status ?? "pending"}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          status: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    >
+                      <option value="pending">قيد المعالجة</option>
+                      <option value="in_progress">جاري التنفيذ</option>
+                      <option value="approved">مكتملة</option>
+                      <option value="rejected">مرفوضة</option>
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={styles.formLabel}>وصف القضية</label>
+                    <textarea
+                      value={editForm.case_description ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          case_description: e.target.value,
+                        }))
+                      }
+                      style={styles.textarea}
+                      rows="2"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 20,
+                    display: "flex",
+                    gap: 10,
+                    justifyContent: "flex-end",
                   }}
                 >
-                  💾 حفظ التعديلات
-                </button>
-              </div>
-            </form>
+                  <button
+                    type="button"
+                    style={{ ...styles.secondaryButton, borderRadius: 10 }}
+                    onClick={() => setEditingIssue(null)}
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    style={{
+                      ...styles.primaryButton,
+                      position: "relative",
+                      zIndex: 10001,
+                      pointerEvents: "auto",
+                      borderRadius: 10,
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      handleSaveEdit(event);
+                    }}
+                  >
+                    💾 حفظ التعديلات
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
 
       {/* Modal تفاصيل القضية + الملفات */}
       {detailModalIssue && (
-        <div
-          style={styles.overlay}
-          onClick={() => setDetailModalIssue(null)}
-        >
+        <div style={styles.overlay} onClick={() => setDetailModalIssue(null)}>
           <div
-            style={{ ...styles.loginBox, width: "min(750px, 95%)" }}
+            style={{
+              ...styles.loginBox,
+              width: "min(760px, 95%)",
+              padding: 0,
+              overflow: "hidden",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              style={styles.closeButton}
-              onClick={() => setDetailModalIssue(null)}
-            >
-              ×
-            </button>
-
-            <div style={{ fontSize: "38px", marginBottom: "8px" }}>
-              📎
-            </div>
-            <h3 style={styles.loginTitle}>تفاصيل القضية والملفات</h3>
-
             <div
               style={{
-                background: "#F8FAFC",
-                padding: 15,
-                borderRadius: 10,
-                marginBottom: 20,
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-                fontSize: 13,
+                background: "linear-gradient(135deg,#0F2F4F 0%,#1D4ED8 100%)",
+                padding: "18px 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
               }}
-              className="issues-detail-grid"
             >
-              <div>
-                <strong>رقم القضية:</strong>{" "}
-                {detailModalIssue.case_number}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 24 }}>📎</span>
+                <div>
+                  <div style={{ color: "#fff", fontWeight: 900, fontSize: 17 }}>
+                    تفاصيل القضية والملفات
+                  </div>
+                  <div style={{ color: "rgba(255,255,255,.8)", fontSize: 12 }}>
+                    {detailModalIssue.case_number
+                      ? `القضية رقم ${detailModalIssue.case_number}`
+                      : ""}
+                  </div>
+                </div>
               </div>
-              <div>
-                <strong>الاسم:</strong> {detailModalIssue.case_title}
-              </div>
-              <div>
-                <strong>حالة الصرف:</strong>{" "}
-                {getPaymentBadge(detailModalIssue.payment_status)}
-              </div>
-              <div>
-                <strong>التاريخ:</strong>{" "}
-                {new Date(
-                  detailModalIssue.created_at
-                ).toLocaleDateString("ar-EG")}
-              </div>
-              {detailModalIssue.excel_data && (
-                <>
-                  {CASE_FIELD_ORDER.map((field) => {
-                    const val = detailModalIssue.excel_data[field];
-                    if (!val) return null;
-                    let display = String(val);
-                    if (field === "شهر تغير الاساسي")
-                      display = normalizeMonthValue(val);
-                    if (field === "الاجمالي" || field === "الصافي")
-                      display = formatMoneyValue(val);
-                    return (
-                      <div key={field}>
-                        <strong>{field}:</strong> {display}
-                      </div>
-                    );
-                  })}
-                </>
-              )}
+              <button
+                style={{
+                  background: "rgba(255,255,255,.15)",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: 8,
+                  width: 32,
+                  height: 32,
+                  fontSize: 18,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+                onClick={() => setDetailModalIssue(null)}
+              >
+                ×
+              </button>
             </div>
 
-            {/* جميع مستندات القضية (الأساسي + الإضافية) */}
-            <div
-              style={{
-                border: "1px solid #E2E8F0",
-                borderRadius: 10,
-                padding: 15,
-                marginBottom: 16,
-              }}
-            >
+            <div style={{ padding: "20px 24px" }}>
+              {/* شريط الحالة */}
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 10,
-                }}
-                className="issues-pdf-header"
-              >
-                <h4 style={{ margin: 0, fontSize: 15 }}>
-                  📄 مستندات القضية
-                </h4>
-                <label
-                  style={{
-                    ...styles.primaryButton,
-                    padding: "6px 12px",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
-                >
-                  {mainPdfUploading ? "جاري الرفع..." : "➕ إضافة PDF"}
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file)
-                        handleMainPdfUpload(
-                          detailModalIssue.id,
-                          file
-                        );
-                      e.target.value = "";
-                    }}
-                    disabled={mainPdfUploading}
-                  />
-                </label>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
                   gap: 8,
-                  alignItems: "center",
-                  marginBottom: 12,
                   flexWrap: "wrap",
+                  marginBottom: 16,
+                  padding: "12px 14px",
+                  background: "#F8FAFC",
+                  borderRadius: 12,
+                  border: "1px solid #E7EBF0",
                 }}
               >
-                <label
+                <span
                   style={{
-                    ...styles.excelButton,
-                    padding: "7px 14px",
-                    fontSize: 12,
-                    cursor: "pointer",
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    color: "#475569",
                   }}
                 >
-                  📥 إضافة PDF للقضية
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) setAddDocFile(file);
-                      e.target.value = "";
+                  حالة القضية:
+                </span>
+                {getStatusBadge(detailModalIssue.status)}
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    color: "#475569",
+                    marginRight: 14,
+                  }}
+                >
+                  حالة الصرف:
+                </span>
+                {getPaymentBadge(detailModalIssue.payment_status)}
+                {detailModalIssue.payment_date && (
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      color: "#475569",
+                      marginRight: 14,
                     }}
-                  />
-                </label>
-                {addDocFile && (
-                  <>
-                    <span style={{ fontSize: 12, color: "#475569" }}>
-                      {addDocFile.name}
-                    </span>
-                    <button
-                      style={{
-                        ...styles.primaryButton,
-                        padding: "5px 12px",
-                        fontSize: 11,
-                      }}
-                      onClick={handleAdditionalPdfUpload}
-                      disabled={addDocUploading}
-                    >
-                      {addDocUploading ? "جاري..." : "📥 رفع"}
-                    </button>
-                    <button
-                      style={{
-                        ...styles.deleteButton,
-                        padding: "5px 10px",
-                        fontSize: 11,
-                      }}
-                      onClick={() => setAddDocFile(null)}
-                    >
-                      ✕
-                    </button>
-                  </>
+                  >
+                    تاريخ الصرف:{" "}
+                    <b>{detailModalIssue.payment_date}</b>
+                  </span>
                 )}
               </div>
 
-              {detailModalIssue.file_url || additionalDocs.length > 0 ? (
+              {/* المعلومات الأساسية */}
+              <UISection icon="👤" title="المعلومات الأساسية">
+                <div
+                  className="issues-detail-grid"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <UISubLabel>رقم القضية</UISubLabel>
+                    <UISubValue>
+                      {detailModalIssue.case_number || "-"}
+                    </UISubValue>
+                  </div>
+                  <div>
+                    <UISubLabel>اسم صاحب القضية</UISubLabel>
+                    <UISubValue>
+                      {detailModalIssue.case_title || "-"}
+                    </UISubValue>
+                  </div>
+                  <div>
+                    <UISubLabel>تاريخ الإنشاء</UISubLabel>
+                    <UISubValue>
+                      {detailModalIssue.created_at
+                        ? new Date(
+                            detailModalIssue.created_at
+                          ).toLocaleDateString("ar-EG")
+                        : "-"}
+                    </UISubValue>
+                  </div>
+                  <div>
+                    <UISubLabel>حالة القضية</UISubLabel>
+                    <UISubValue>
+                      {getStatusBadge(detailModalIssue.status)}
+                    </UISubValue>
+                  </div>
+                  {detailModalIssue.case_description && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <UISubLabel>الوصف</UISubLabel>
+                      <UISubValue>
+                        {detailModalIssue.case_description}
+                      </UISubValue>
+                    </div>
+                  )}
+                </div>
+              </UISection>
+
+              {/* البيانات المالية */}
+              {detailModalIssue.excel_data && (
+                <UISection icon="💵" title="البيانات المالية">
+                  <div
+                    className="issues-detail-grid"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 12,
+                    }}
+                  >
+                    {CASE_FIELD_ORDER.map((field) => {
+                      const val = detailModalIssue.excel_data[field];
+                      if (!val) return null;
+                      let display = String(val);
+                      if (field === "شهر تغير الاساسي")
+                        display = normalizeMonthValue(val);
+                      if (
+                        field === "الاساسي بعد التغيير" ||
+                        field === "الاجمالي" ||
+                        field === "الصافي"
+                      )
+                        display = formatMoneyValue(val);
+                      return (
+                        <div key={field}>
+                          <UISubLabel>{field}</UISubLabel>
+                          <UISubValue>{display}</UISubValue>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </UISection>
+              )}
+
+              {/* المستندات */}
+              <UISection icon="📄" title="مستندات القضية">
                 <div
                   style={{
                     display: "flex",
-                    flexDirection: "column",
                     gap: 8,
+                    alignItems: "center",
+                    marginBottom: 12,
+                    flexWrap: "wrap",
                   }}
+                  className="issues-pdf-file"
                 >
-                  {detailModalIssue.file_url && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        background: "#F0FDF4",
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        fontSize: 13,
+                  <label
+                    style={{
+                      ...styles.primaryButton,
+                      padding: "7px 12px",
+                      fontSize: 12,
+                      cursor: "pointer",
+                      marginBottom: 0,
+                    }}
+                    title="تحميل الملف الأصلي أو مستند إضافي للقضية"
+                  >
+                    {mainPdfUploading ? "جاري الرفع..." : "➕ إضافة PDF"}
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file)
+                          handleMainPdfUpload(
+                            detailModalIssue.id,
+                            file
+                          );
+                        e.target.value = "";
                       }}
-                      className="issues-pdf-file"
-                    >
-                      <span>📄</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600 }}>
-                          {detailModalIssue.file_name || "PDF الأساسي"}
-                        </div>
-                        <div style={{ fontSize: 11, color: "#94A3B8" }}>
-                          الملف الأساسي
-                        </div>
-                      </div>
-                      <a
-                        href={detailModalIssue.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          ...styles.viewButton,
-                          textDecoration: "none",
-                        }}
-                      >
-                        👁️ معاينة
-                      </a>
-                      <a
-                        href={detailModalIssue.file_url}
-                        download
-                        style={{
-                          ...styles.viewButton,
-                          textDecoration: "none",
-                          background: "#FEF3C7",
-                          color: "#92400E",
-                        }}
-                      >
-                        ⬇️ تحميل
-                      </a>
-                    </div>
-                  )}
-                  {additionalDocs.map((doc) => (
-                    <div
-                      key={doc.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        background: "#F8FAFC",
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        fontSize: 13,
+                      disabled={mainPdfUploading}
+                    />
+                  </label>
+                  <label
+                    style={{
+                      ...styles.excelButton,
+                      padding: "7px 14px",
+                      fontSize: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    📥 رفع مستند إضافي
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) setAddDocFile(file);
+                        e.target.value = "";
                       }}
-                    >
-                      <span>📄</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600 }}>
-                          {doc.file_name}
-                        </div>
-                        <div style={{ fontSize: 11, color: "#94A3B8" }}>
-                          {new Date(doc.created_at).toLocaleDateString(
-                            "ar-EG"
-                          )}
-                        </div>
-                      </div>
-                      <a
-                        href={doc.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    />
+                  </label>
+                  {addDocFile && (
+                    <>
+                      <span style={{ fontSize: 12, color: "#475569" }}>
+                        {addDocFile.name}
+                      </span>
+                      <button
                         style={{
-                          ...styles.viewButton,
-                          textDecoration: "none",
+                          ...styles.primaryButton,
+                          padding: "5px 12px",
+                          fontSize: 11,
                         }}
+                        onClick={handleAdditionalPdfUpload}
+                        disabled={addDocUploading}
                       >
-                        👁️
-                      </a>
-                      <a
-                        href={doc.file_url}
-                        download
-                        style={{
-                          ...styles.viewButton,
-                          textDecoration: "none",
-                          background: "#FEF3C7",
-                          color: "#92400E",
-                        }}
-                      >
-                        ⬇️
-                      </a>
+                        {addDocUploading ? "جاري..." : "📥 رفع"}
+                      </button>
                       <button
                         style={{
                           ...styles.deleteButton,
-                          padding: "4px 8px",
+                          padding: "5px 10px",
+                          fontSize: 11,
                         }}
-                        onClick={() =>
-                          handleDeleteAdditionalDoc(doc.id)
-                        }
+                        onClick={() => setAddDocFile(null)}
                       >
-                        🗑️
+                        ✕
                       </button>
-                    </div>
-                  ))}
+                    </>
+                  )}
                 </div>
-              ) : (
-                <div
-                  style={{
-                    padding: 10,
-                    color: "#94A3B8",
-                    fontSize: 13,
-                  }}
-                >
-                  لا توجد مستندات مرفقة لهذه القضية
-                </div>
-              )}
-            </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-              }}
-            >
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={() => setDetailModalIssue(null)}
+                {detailModalIssue.file_url || additionalDocs.length > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
+                  >
+                    {detailModalIssue.file_url && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          background: "#F0FDF4",
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          fontSize: 13,
+                        }}
+                      >
+                        <span>📄</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700 }}>
+                            {detailModalIssue.file_name || "PDF الأساسي"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                            الملف الأساسي
+                          </div>
+                        </div>
+                        <a
+                          href={detailModalIssue.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                          }}
+                        >
+                          👁️ معاينة
+                        </a>
+                        <a
+                          href={detailModalIssue.file_url}
+                          download
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                            background: "#FEF3C7",
+                            color: "#92400E",
+                            borderColor: "#FDE68A",
+                          }}
+                        >
+                          ⬇️ تحميل
+                        </a>
+                      </div>
+                    )}
+                    {additionalDocs.map((doc) => (
+                      <div
+                        key={doc.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          background: "#F8FAFC",
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          fontSize: 13,
+                        }}
+                      >
+                        <span>📄</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700 }}>
+                            {doc.file_name}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                            {new Date(doc.created_at).toLocaleDateString(
+                              "ar-EG"
+                            )}
+                          </div>
+                        </div>
+                        <a
+                          href={doc.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                          }}
+                        >
+                          👁️
+                        </a>
+                        <a
+                          href={doc.file_url}
+                          download
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                            background: "#FEF3C7",
+                            color: "#92400E",
+                          }}
+                        >
+                          ⬇️
+                        </a>
+                        <button
+                          style={{
+                            ...styles.deleteButton,
+                            padding: "4px 8px",
+                          }}
+                          onClick={() =>
+                            handleDeleteAdditionalDoc(doc.id)
+                          }
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      padding: 10,
+                      color: "#94A3B8",
+                      fontSize: 13,
+                    }}
+                  >
+                    لا توجد مستندات مرفقة لهذه القضية
+                  </div>
+                )}
+              </UISection>
+
+              {/* أزرار الإجراء */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                  marginTop: 4,
+                }}
               >
-                إغلاق
-              </button>
+                <button
+                  type="button"
+                  style={{
+                    ...styles.primaryButton,
+                    borderRadius: 10,
+                  }}
+                  onClick={() => openEditFromDetail(detailModalIssue)}
+                >
+                  ✏️ تعديل البيانات
+                </button>
+                <button
+                  type="button"
+                  style={{ ...styles.secondaryButton, borderRadius: 10 }}
+                  onClick={() => setDetailModalIssue(null)}
+                >
+                  إغلاق
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1741,42 +2356,112 @@ export default function IssuesManagementPage() {
 }
 
 function getStatusBadge(status) {
+  if (!status) {
+    return (
+      <span style={{ color: "#94A3B8", fontSize: 12, fontWeight: 600 }}>
+        —
+      </span>
+    );
+  }
   const map = {
     pending: {
       bg: "#FEF3C7",
-      color: "#92400E",
+      color: "#B45309",
+      icon: "⏳",
       text: "قيد المعالجة",
+    },
+    in_progress: {
+      bg: "#DBEAFE",
+      color: "#1D4ED8",
+      icon: "🔄",
+      text: "جاري التنفيذ",
     },
     approved: {
       bg: "#D1FAE5",
       color: "#047857",
+      icon: "✅",
       text: "مكتملة",
     },
     rejected: {
       bg: "#FEE2E2",
       color: "#DC2626",
+      icon: "🚫",
       text: "مرفوضة",
     },
-    in_progress: {
-      bg: "#DBEAFE",
-      color: "#1D4ED8",
-      text: "جاري التنفيذ",
-    },
   };
-  const s = map[status] || map.pending;
+  const s = map[status] || { bg: "#F1F5F9", color: "#475569", icon: "⚪", text: status };
   return (
     <span
       style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
         background: s.bg,
         color: s.color,
-        padding: "3px 10px",
-        borderRadius: "20px",
-        fontSize: 11,
-        fontWeight: 700,
+        padding: "5px 11px",
+        borderRadius: 20,
+        fontSize: 11.5,
+        fontWeight: 800,
         whiteSpace: "nowrap",
+        border: "1px solid transparent",
+      }}
+      title={s.text}
+    >
+      <span style={{ fontSize: 12, lineHeight: 1 }}>{s.icon}</span>
+      <span>{s.text}</span>
+    </span>
+  );
+}
+
+function UISection({ icon, title, children }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #E2E8F0",
+        borderRadius: 12,
+        padding: "16px",
+        marginBottom: 14,
       }}
     >
-      {s.text}
-    </span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 12,
+          paddingBottom: 10,
+          borderBottom: "1px solid #EEF2F6",
+        }}
+      >
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontWeight: 900, fontSize: 14, color: "#1E293B" }}>
+          {title}
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function UISubLabel({ children }) {
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        color: "#94A3B8",
+        marginBottom: 3,
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function UISubValue({ children }) {
+  return (
+    <div style={{ fontSize: 14, fontWeight: 700, color: "#0F172A" }}>
+      {children}
+    </div>
   );
 }
