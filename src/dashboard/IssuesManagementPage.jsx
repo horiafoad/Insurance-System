@@ -32,6 +32,37 @@ const CASE_FIELD_ORDER = [
 // الحقول الرقمية داخل بيانات القضية (JSONB data) — تُحوَّل بطريقة آمنة.
 const ISSUE_NUMERIC_FIELDS = ["الاساسي بعد التغيير", "الاجمالي", "الصافي"];
 
+// شهور السنة لقائمة «شهر تغيير الأساسي».
+const MONTHS_LIST = [
+  "يناير",
+  "فبراير",
+  "مارس",
+  "أبريل",
+  "مايو",
+  "يونيو",
+  "يوليو",
+  "أغسطس",
+  "سبتمبر",
+  "أكتوبر",
+  "نوفمبر",
+  "ديسمبر",
+];
+
+// يحوّل أي قيمة محفوظة (اسم شهر أو رقم 1-12) إلى اسم الشهر للعرض/اختيار القائمة.
+function normalizeMonthValue(value) {
+  if (value == null || String(value).trim() === "") return "";
+  const s = String(value).trim();
+  const n = Number(s);
+  if (Number.isFinite(n) && n >= 1 && n <= 12) return MONTHS_LIST[n - 1];
+  return s;
+}
+
+// يعرض المبلغ مع عملة «ج.م» بعده.
+function formatMoneyValue(value) {
+  if (value == null || String(value).trim() === "") return "-";
+  return `${value} ج.م`;
+}
+
 // تحويل رقمي آمن:
 // - الأرقام تُترك أرقامًا.
 // - النص الرقمي الصحيح (مثل "15000" أو "15000.50") يُحول إلى رقم.
@@ -78,6 +109,10 @@ export default function IssuesManagementPage() {
   const [editForm, setEditForm] = useState({});
 
   const [detailModalIssue, setDetailModalIssue] = useState(null);
+
+  // يتحكم في إظهار/إخفاء قسم إضافة قضية جديدة (Excel أو PDF) —
+  // افتراضيًا تظهر القضايا المسجلة فقط ويُفتح القسم من زرار الصفحة.
+  const [showAddPanel, setShowAddPanel] = useState(false);
   const [additionalDocs, setAdditionalDocs] = useState([]);
   const [addDocUploading, setAddDocUploading] = useState(false);
   const [addDocFile, setAddDocFile] = useState(null);
@@ -792,6 +827,24 @@ export default function IssuesManagementPage() {
               رفع وإدارة القضايا مع ملفات Excel و PDF
             </p>
           </div>
+          <button
+            type="button"
+            style={{
+              ...styles.primaryButton,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: showAddPanel ? "#DC2626" : "#2563EB",
+            }}
+            onClick={() => setShowAddPanel((open) => !open)}
+          >
+            <span style={{ fontSize: 15 }}>
+              {showAddPanel ? "✕" : "➕"}
+            </span>
+            <span>
+              {showAddPanel ? "إغلاق" : "إضافة قضية جديدة"}
+            </span>
+          </button>
         </div>
 
         {error && (
@@ -830,6 +883,7 @@ export default function IssuesManagementPage() {
           </div>
         </div>
 
+        {showAddPanel && (
         <div style={styles.uploadSections} className="issues-upload-grid">
           <div style={styles.uploadSection}>
             <h3 style={styles.uploadSectionTitle}>
@@ -929,6 +983,7 @@ export default function IssuesManagementPage() {
             </form>
           </div>
         </div>
+      )}
 
         {issues.length > 0 && (
           <div style={styles.filterRow}>
@@ -994,13 +1049,17 @@ export default function IssuesManagementPage() {
                         {issue.case_number || "-"}
                       </td>
                       <td style={styles.td}>
-                        {d["شهر تغير الاساسي"] || "-"}
+                        {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
                       </td>
                       <td style={styles.td}>
                         {d["الاساسي بعد التغيير"] || "-"}
                       </td>
-                      <td style={styles.td}>{d["الاجمالي"] || "-"}</td>
-                      <td style={styles.td}>{d["الصافي"] || "-"}</td>
+                      <td style={styles.td}>
+                        {formatMoneyValue(d["الاجمالي"])}
+                      </td>
+                      <td style={styles.td}>
+                        {formatMoneyValue(d["الصافي"])}
+                      </td>
                       <td style={styles.td}>
                         {getPaymentBadge(issue.payment_status)}
                       </td>
@@ -1171,9 +1230,10 @@ export default function IssuesManagementPage() {
                   <label style={styles.formLabel}>
                     شهر تغيير الأساسي
                   </label>
-                  <input
-                    type="text"
-                    value={editForm["شهر تغير الاساسي"] ?? ""}
+                  <select
+                    value={normalizeMonthValue(
+                      editForm["شهر تغير الاساسي"] ?? ""
+                    )}
                     onChange={(e) =>
                       setEditForm((p) => ({
                         ...p,
@@ -1181,7 +1241,27 @@ export default function IssuesManagementPage() {
                       }))
                     }
                     style={styles.input}
-                  />
+                  >
+                    <option value="">— اختر الشهر —</option>
+                    {(() => {
+                      const storedMonth = normalizeMonthValue(
+                        editForm["شهر تغير الاساسي"] ?? ""
+                      );
+                      if (storedMonth && !MONTHS_LIST.includes(storedMonth)) {
+                        return (
+                          <option key={storedMonth} value={storedMonth}>
+                            {storedMonth}
+                          </option>
+                        );
+                      }
+                      return null;
+                    })()}
+                    {MONTHS_LIST.map((month) => (
+                      <option key={month} value={month}>
+                        {month}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label style={styles.formLabel}>
@@ -1200,7 +1280,7 @@ export default function IssuesManagementPage() {
                   />
                 </div>
                 <div>
-                  <label style={styles.formLabel}>الإجمالي</label>
+                  <label style={styles.formLabel}>الإجمالي (ج.م)</label>
                   <input
                     type="text"
                     value={editForm["الاجمالي"] ?? ""}
@@ -1214,7 +1294,7 @@ export default function IssuesManagementPage() {
                   />
                 </div>
                 <div>
-                  <label style={styles.formLabel}>الصافي</label>
+                  <label style={styles.formLabel}>الصافي (ج.م)</label>
                   <input
                     type="text"
                     value={editForm["الصافي"] ?? ""}
@@ -1388,9 +1468,14 @@ export default function IssuesManagementPage() {
                   {CASE_FIELD_ORDER.map((field) => {
                     const val = detailModalIssue.excel_data[field];
                     if (!val) return null;
+                    let display = String(val);
+                    if (field === "شهر تغير الاساسي")
+                      display = normalizeMonthValue(val);
+                    if (field === "الاجمالي" || field === "الصافي")
+                      display = formatMoneyValue(val);
                     return (
                       <div key={field}>
-                        <strong>{field}:</strong> {String(val)}
+                        <strong>{field}:</strong> {display}
                       </div>
                     );
                   })}
