@@ -57,15 +57,10 @@ export function canAccessMenu(user, menuId) {
   return hasPermission(user, permission);
 }
 
-// مسؤول الدعم الفني: الحساب القديم (وصول كامل) أو من لديه صلاحية
-// "إعدادات النظام" أو "الاستحقاقات" — يُستخدم لتبويب إدارة الدعم
-// الفني عبر زر 🛠️ الدعم الفني بما يتوافق مع نظام الصلاحيات الحالي.
+// مسؤول الدعم الفني: منشئ البرنامج فقط (حساب horia).
+// تبويب "إدارة الدعم الفني" وعدّاد الطلبات الإدارية متاحان حصريًا له.
 export function canManageSupport(user) {
   if (!user) return false;
-  if (user.permissions == null) return true;
-  if (!Array.isArray(user.permissions)) return false;
-  return (
-    user.permissions.includes("system_settings") ||
-    user.permissions.includes("entitlements")
-  );
+  const username = String(user.username || "").toLowerCase().trim();
+  return username === "horia";
 }
