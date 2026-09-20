@@ -131,7 +131,6 @@ export default function IssuesManagementPage() {
   const [pdfUploading, setPdfUploading] = useState(false);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
 
   const [editingIssue, setEditingIssue] = useState(null);
@@ -808,12 +807,10 @@ export default function IssuesManagementPage() {
       (issue.case_number || "").toLowerCase().includes(q) ||
       (issue.case_title || "").toLowerCase().includes(q) ||
       (issue.case_description || "").toLowerCase().includes(q);
-    const matchStatus =
-      statusFilter === "all" || issue.status === statusFilter;
     const matchPaymentStatus =
       paymentStatusFilter === "all" ||
       normalizePaymentStatus(issue.payment_status) === paymentStatusFilter;
-    return matchSearch && matchStatus && matchPaymentStatus;
+    return matchSearch && matchPaymentStatus;
   });
 
   const getPaymentBadge = (status) => {
@@ -860,7 +857,6 @@ export default function IssuesManagementPage() {
 
   const resetFilters = () => {
     setSearch("");
-    setStatusFilter("all");
     setPaymentStatusFilter("all");
   };
 
@@ -1604,17 +1600,6 @@ export default function IssuesManagementPage() {
                   outline: "none",
                 }}
               />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                style={ui.filterSelect}
-              >
-                <option value="all">كل حالات القضية</option>
-                <option value="pending">قيد المعالجة</option>
-                <option value="in_progress">جاري التنفيذ</option>
-                <option value="approved">مكتملة</option>
-                <option value="rejected">مرفوضة</option>
-              </select>
               <select
                 value={paymentStatusFilter}
                 onChange={(e) => setPaymentStatusFilter(e.target.value)}
