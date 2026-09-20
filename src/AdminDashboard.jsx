@@ -1329,12 +1329,12 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         setActiveMenu={goTo}
         setFilterType={setFilterType}
         setServiceRequestFilter={setServiceRequestFilter}
-        isMobile={isMobile}
+        isMobile={isMobile || isWideLayout}
         sidebarOpen={sidebarOpen}
         onCloseSidebar={() => setSidebarOpen(false)}
       />
 
-      {isMobile && sidebarOpen && (
+      {(isMobile || isWideLayout) && sidebarOpen && (
         <div
           style={{
             position: "fixed",
@@ -1351,11 +1351,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         {!isArchivePage && activeMenu !== "letters_tracking" && (
           <header style={styles.header} className="admin-header">
             <div>
-              {isMobile && (
+              {(isMobile || isWideLayout) && (
                 <button
-                  onClick={() => setSidebarOpen(true)}
-                  title="القائمة"
-                  aria-label="فتح القائمة"
+                  onClick={() => setSidebarOpen((open) => !open)}
+                  title={sidebarOpen ? "إغلاق القائمة" : "فتح القائمة"}
+                  aria-label="فتح أو إغلاق القائمة"
                   style={{
                     ...styles.secondaryButton,
                     display: "flex",
@@ -1368,7 +1368,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                     marginBottom: 8,
                   }}
                 >
-                  ☰
+                  {sidebarOpen ? "✕" : "☰"}
                 </button>
               )}
 
