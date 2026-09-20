@@ -3,6 +3,7 @@ import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import { useRealtimeSync } from "../utils/realtimeSync";
 import * as XLSX from "xlsx";
+import engineering from "../assets/engineering.jpg";
 
 const PAYMENT_STATUS_OPTIONS = [
   "جاري التنفيذ",
@@ -939,11 +940,75 @@ export default function IssuesManagementPage() {
     <div>
       <style>{issuesCss}</style>
 
+      {/* Header Image Section */}
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "200px",
+          backgroundImage: `linear-gradient(135deg, rgba(15,23,42,0.85) 0%, rgba(37,99,235,0.75) 100%), url(${engineering})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          borderRadius: "18px 18px 0 0",
+          overflow: "hidden",
+          marginBottom: 0,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "linear-gradient(135deg, rgba(15,23,42,0.9) 0%, rgba(37,99,235,0.7) 100%)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: "24px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "48px",
+              marginBottom: "12px",
+              textShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            }}
+          >
+            ⚖️
+          </div>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "28px",
+              fontWeight: 900,
+              color: "#fff",
+              textShadow: "0 2px 8px rgba(0,0,0,0.3)",
+              marginBottom: "8px",
+            }}
+          >
+            نظام إدارة القضايا
+          </h2>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "15px",
+              color: "#e2e8f0",
+              fontWeight: 600,
+              textShadow: "0 1px 4px rgba(0,0,0,0.3)",
+            }}
+          >
+            رفع وإدارة القضايا مع ملفات Excel و PDF — متابعة حالات الصرف لحظيًا
+          </p>
+        </div>
+      </div>
+
       {/* ============ العنوان ============ */}
       <div
         style={{
-          background: "linear-gradient(135deg,#0F2F4F 0%,#1D4ED8 100%)",
-          borderRadius: 16,
+          background: "#fff",
+          borderRadius: "0 0 16px 16px",
           padding: "22px 24px",
           marginBottom: 18,
           display: "flex",
@@ -952,25 +1017,27 @@ export default function IssuesManagementPage() {
           gap: 14,
           flexWrap: "wrap",
           boxShadow: "0 8px 22px rgba(15,41,66,.14)",
+          border: "1px solid #E7EBF0",
+          borderTop: "none",
         }}
       >
-        <div style={{ color: "#fff" }}>
+        <div style={{ color: "#0f172a" }}>
           <div
             style={{
               fontSize: 12,
               fontWeight: 700,
-              opacity: 0.85,
+              color: "#64748b",
               marginBottom: 4,
             }}
           >
             قسم الاستحقاقات / نظام القضايا
           </div>
           <h2
-            style={{ margin: 0, fontSize: 23, fontWeight: 900, color: "#fff" }}
+            style={{ margin: 0, fontSize: 23, fontWeight: 900, color: "#0f172a" }}
           >
-            ⚖️ إدارة القضايا
+            📋 إدارة القضايا
           </h2>
-          <p style={{ margin: "6px 0 0", fontSize: 13.5, opacity: 0.9 }}>
+          <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "#64748b" }}>
             رفع وإدارة القضايا مع ملفات Excel و PDF — متابعة حالات الصرف
             لحظيًا
           </p>
@@ -1051,24 +1118,25 @@ export default function IssuesManagementPage() {
         }}
       >
         {[
-          { icon: "🗂️", label: "إجمالي القضايا", value: stats.total, bg: "#EFF6FF", bd: "#BFDBFE" },
-          { icon: "⏳", label: "قيد المعالجة", value: stats.pending, bg: "#FEF3C7", bd: "#FDE68A" },
-          { icon: "🔄", label: "جاري التنفيذ", value: stats.inProgress, bg: "#DBEAFE", bd: "#93C5FD" },
-          { icon: "💰", label: "تم الصرف", value: stats.paid, bg: "#D1FAE5", bd: "#A7F3D0" },
-          { icon: "⏸️", label: "بانتظار الصرف", value: stats.waiting, bg: "#E0E7FF", bd: "#C7D2FE" },
-          { icon: "🚫", label: "مرفوضة", value: stats.rejected, bg: "#FEE2E2", bd: "#FECACA" },
+          { icon: "🗂️", label: "إجمالي القضايا", value: stats.total, bg: "#EFF6FF", bd: "#BFDBFE", color: "#1D4ED8" },
+          { icon: "⏳", label: "قيد المعالجة", value: stats.pending, bg: "#FEF3C7", bd: "#FDE68A", color: "#B45309" },
+          { icon: "🔄", label: "جاري التنفيذ", value: stats.inProgress, bg: "#DBEAFE", bd: "#93C5FD", color: "#1D4ED8" },
+          { icon: "💰", label: "تم الصرف", value: stats.paid, bg: "#D1FAE5", bd: "#A7F3D0", color: "#047857" },
+          { icon: "⏸️", label: "بانتظار الصرف", value: stats.waiting, bg: "#E0E7FF", bd: "#C7D2FE", color: "#4338CA" },
+          { icon: "🚫", label: "مرفوضة", value: stats.rejected, bg: "#FEE2E2", bd: "#FECACA", color: "#DC2626" },
         ].map((c) => (
           <div
             key={c.label}
             style={{
-              background: "#fff",
-              border: "1px solid #E7EBF0",
+              background: c.bg,
+              border: `2px solid ${c.bd}`,
               borderRadius: 15,
               padding: "15px 16px",
               display: "flex",
               alignItems: "center",
               gap: 13,
-              boxShadow: "0 2px 10px rgba(15,41,66,.05)",
+              boxShadow: "0 4px 14px rgba(15,41,66,.08)",
+              transition: "all 0.2s",
             }}
           >
             <div
@@ -1076,38 +1144,35 @@ export default function IssuesManagementPage() {
                 width: 45,
                 height: 45,
                 borderRadius: 12,
-                flexShrink: 0,
+                background: "rgba(255,255,255,0.6)",
+                border: `1px solid ${c.bd}`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 21,
-                background: c.bg,
-                border: `1px solid ${c.bd}`,
               }}
             >
               {c.icon}
             </div>
-            <div style={{ minWidth: 0 }}>
+            <div style={{ flex: 1 }}>
               <div
                 style={{
-                  fontSize: 24,
-                  fontWeight: 900,
-                  lineHeight: 1.05,
-                  color: "#0F172A",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {c.value}
-              </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "#64748B",
-                  marginTop: 4,
+                  fontSize: 12,
                   fontWeight: 700,
+                  color: c.color,
+                  marginBottom: 2,
                 }}
               >
                 {c.label}
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: c.color,
+                }}
+              >
+                {c.value}
               </div>
             </div>
           </div>
