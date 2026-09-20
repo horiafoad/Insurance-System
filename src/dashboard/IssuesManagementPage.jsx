@@ -962,6 +962,8 @@ export default function IssuesManagementPage() {
     .issues-table tbody tr:nth-child(odd) { background: #FFFFFF; }
     .issues-table tbody tr:nth-child(even) { background: #EEF5FF; }
     .issues-table tbody td { border-bottom: 2px solid #DCE9FB !important; transition: background .12s ease, box-shadow .12s ease; }
+    .issues-table tbody td:hover { background: #E2ECF9; }
+    .issues-table thead th:hover { background: #DCE8FA; }
     .issues-menu-item:hover { background: #F1F5F9; }
     .issues-upload-card h3 { margin: 0; }
   `;
@@ -1661,23 +1663,28 @@ export default function IssuesManagementPage() {
             }}
           >
             <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                padding: "8px 14px",
+                background: "#F8FAFD",
+                borderBottom: "1px solid #E7EBF0",
+                fontSize: 11.5,
+                color: "#64748B",
+                fontWeight: 600,
+                gap: 6,
+              }}
+            >
+              ⌨️ تتحرك بالأسهم
+            </div>
+            <div
               ref={tableRef}
               tabIndex={0}
               style={{ overflowX: "auto", outline: "none" }}
               onFocus={() =>
                 setCursor((cur) => (cur.r < 0 ? { r: 0, c: 0 } : cur))
               }
-              onMouseMove={(e) => {
-                const cell =
-                  e.target && e.target.closest
-                    ? e.target.closest("td")
-                    : null;
-                if (!cell) return;
-                const r = Number(cell.getAttribute("data-cr"));
-                const c = Number(cell.getAttribute("data-cc"));
-                if (Number.isFinite(r) && Number.isFinite(c)) setCursor({ r, c });
-              }}
-              onMouseLeave={() => setCursor({ r: -1, c: -1 })}
               onClick={(e) => {
                 if (
                   e.target &&
