@@ -33,6 +33,7 @@ import OrgStructurePage from "./dashboard/OrgStructurePage";
 import PushNotificationsPanel from "./dashboard/PushNotificationsPanel";
 import AdminPushDevicesPanel from "./dashboard/AdminPushDevicesPanel";
 import InstallAppButton from "./dashboard/InstallAppButton";
+import CheckForUpdatesButton from "./dashboard/CheckForUpdatesButton";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -1397,6 +1398,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             }}
           >
             <InstallAppButton />
+
+            <CheckForUpdatesButton compact={isMobile} />
 
             <button
               style={{
