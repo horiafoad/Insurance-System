@@ -10,10 +10,10 @@ import { notifyPushEvent, getAppBase } from "../utils/pushNotifications";
    مرحلة التجربة فقط: بدون WhatsApp API، بدون إرسال فعلي، بدون مفاتيح سرية.
    ========================================================================= */
 
-// رقم الإرسال التجريبي (ليس رقم الإدارة النهائي).
+// خط WhatsApp الرسمي لإدارة الاستحقاقات (رقم الإرسال المعلن).
 const WHATSAPP_DEMO_NUMBER = "01055662546";
 const WHATSAPP_DEMO_NOTE =
-  "للعرض التجريبي فقط – سيتم استبداله برقم الإدارة لاحقًا.";
+  "رقم الإرسال الرسمي – الإرسال الفعلي يتفعل عند تفعيل WhatsApp Business Platform.";
 
 // الرابط العام للمتابعة — نفس نطاق التطبيق مع معامل track (يُفتح منه نموذج متابعة الطلب).
 function requestTrackingUrl(requestId) {
@@ -85,6 +85,65 @@ function buildWhatsAppCompletedMessage(request) {
   return lines.join("\n");
 }
 
+// تجهيز رابط wa.me الرسمي للمحادثة مع مقدم الطلب (لا يرسل أي شيء).
+function getWhatsAppOpenUrl(request) {
+  const hasPhone = Boolean(
+    request?.phone && String(request.phone).trim()
+  );
+
+  if (!hasPhone) {
+    return { ok: false, reason: "no-phone" };
+  }
+
+  const intlNumber = normalizePhoneToIntl(request.phone);
+
+  if (!intlNumber) {
+    return {
+      ok: false,
+      reason: "invalid-phone",
+      phone: request.phone,
+    };
+  }
+
+  return {
+    ok: true,
+    to: intlNumber,
+    url:
+      "https://wa.me/" +
+      intlNumber +
+      "?text=" +
+      encodeURIComponent(buildWhatsAppCompletedMessage(request)),
+  };
+}
+
+// فتح رابط خارجي بطريقة موثوقة (لا يحجزه مانع النوافذ المنبثقة).
+function routeWhatsAppOpen(waUrl) {
+  try {
+    // داخل تطبيق الأندرويد (Capacitor): فتح رسمي خارج التطبيق ليتجه مباشرة إلى WhatsApp.
+    if (
+      typeof window !== "undefined" &&
+      window.Capacitor &&
+      window.Capacitor.isNativePlatform &&
+      window.Capacitor.isNativePlatform()
+    ) {
+      window.open(waUrl, "_system", "noopener,noreferrer");
+      return;
+    }
+
+    // ويب/ديسكتوب: رابط حقيقي في تبويب جديد — أضمن من window.open.
+    const link = document.createElement("a");
+    link.href = waUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (openError) {
+    console.error("Open WhatsApp error:", openError);
+    alert("تعذر فتح WhatsApp، يرجى المحاولة من متصفح آخر.");
+  }
+}
+
 /* =========================================================================
    نافذة معاينة إشعار WhatsApp (تجريبية)
    ========================================================================= */
@@ -100,55 +159,22 @@ function WhatsAppPreviewModal({ request, onClose }) {
   const invalidPhone = hasPhone && !intlNumber;
 
   const handleOpenWhatsApp = () => {
-    if (!hasPhone) {
-      alert("لا يوجد رقم موبايل مسجل لهذا الطلب.");
+    const open = getWhatsAppOpenUrl(request);
+
+    if (!open.ok) {
+      if (open.reason === "no-phone") {
+        alert("لا يوجد رقم موبايل مسجل لهذا الطلب.");
+      } else if (open.reason === "invalid-phone") {
+        alert(
+          "رقم الهاتف غير صالح لفتح محادثة WhatsApp: " + open.phone
+        );
+      }
       return;
     }
-
-    if (!intlNumber) {
-      alert(
-        "رقم الهاتف غير صالح لفتح محادثة WhatsApp: " + request.phone
-      );
-      return;
-    }
-
-    const waUrl =
-      "https://wa.me/" +
-      intlNumber +
-      "?text=" +
-      encodeURIComponent(message);
 
     // فتح المحادثة فقط — لا يتم إرسال أي رسالة تلقائيًا.
     // المستخدم هو الذي يضغط زر الإرسال يدويًا أثناء العرض.
-    routeWhatsAppOpen(waUrl);
-  };
-
-  const routeWhatsAppOpen = (waUrl) => {
-    try {
-      // داخل تطبيق الأندرويد (Capacitor): فتح رسميّ خارج التطبيق ليتجه مباشرة إلى WhatsApp.
-      if (
-        typeof window !== "undefined" &&
-        window.Capacitor &&
-        window.Capacitor.isNativePlatform &&
-        window.Capacitor.isNativePlatform()
-      ) {
-        window.open(waUrl, "_system", "noopener,noreferrer");
-        return;
-      }
-
-      // ويب/ديسكتوب: رابط حقيقي في تبويب جديد — أضمن من window.open
-      // ولا يحجزه مانع النوافذ المنبثقة.
-      const link = document.createElement("a");
-      link.href = waUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (openError) {
-      console.error("Open WhatsApp error:", openError);
-      alert("تعذر فتح WhatsApp، يرجى المحاولة من متصفح آخر.");
-    }
+    routeWhatsAppOpen(open.url);
   };
 
   const handleCopy = async () => {
@@ -765,6 +791,43 @@ export function ServiceRequestsView({
     window.setTimeout(() => setToast(""), 3200);
   };
 
+  // إرسال رسمي حقيقي عبر Meta Cloud API عند اكتمال الطلب.
+  // لا يرسل شيئًا الآن: يتفعل فقط عند توفير رقم إدارة رسمي + مفاتيح،
+  // بوضع VITE_WHATSAPP_OFFICIAL_ENABLED=true في .env وتفعيل edge function
+  // send-whatsapp بمتغيراته السرية.
+  const notifyOfficialWhatsApp = async (row) => {
+    const enabled =
+      import.meta.env.VITE_WHATSAPP_OFFICIAL_ENABLED === "true";
+    if (!enabled) return;
+
+    const open = getWhatsAppOpenUrl(row);
+    if (!open.ok) return;
+
+    try {
+      await supabase.functions.invoke("send-whatsapp", {
+        body: {
+          to: open.to,
+          text: buildWhatsAppCompletedMessage(row),
+        },
+      });
+    } catch (officialError) {
+      console.error("send-whatsapp edge function error:", officialError);
+    }
+  };
+
+  // عند اكتمال الطلب: فتح معاينة الإشعار + محاولة فتح محادثة WhatsApp
+  // إلى مقدم الطلب مباشرة، مع الإرسال الرسمي الاحتياطي عند تفعيله.
+  const autoOpenWhatsAppAfterCompletion = (row) => {
+    setWaPreviewRequest(row);
+
+    const open = getWhatsAppOpenUrl(row);
+    if (open.ok) {
+      routeWhatsAppOpen(open.url);
+    }
+
+    notifyOfficialWhatsApp(row);
+  };
+
   const saveRequestUpdate = async (id, overrideStatus, overrideNotes) => {
     const previous = requests.find((item) => item.id === id);
     if (!previous) return;
@@ -828,6 +891,16 @@ export function ServiceRequestsView({
         notifyPushEvent("note_added", {
           requestId: id,
           requestNumber: id,
+        });
+      }
+
+      // عندما يصبح الطلب "تم التنفيذ" لأول مرة: فتح معاينة إشعار WhatsApp
+      // + محاولة فتح المحادثة مع مقدم الطلب (يدويًا حاليًا ورسميًا لاحقًا).
+      if (newStatus === "تم التنفيذ" && previous.status !== "تم التنفيذ") {
+        autoOpenWhatsAppAfterCompletion({
+          ...previous,
+          status: newStatus,
+          notes: newNotes,
         });
       }
     } catch (updateError) {
@@ -952,6 +1025,15 @@ export function ServiceRequestsView({
           requestId: editingRequest.id,
           requestNumber: editingRequest.id,
         });
+      }
+
+      // عندما يصبح الطلب "تم التنفيذ" لأول مرة: فتح معاينة إشعار WhatsApp
+      // + محاولة فتح المحادثة مع مقدم الطلب (يدويًا حاليًا ورسميًا لاحقًا).
+      if (
+        editingRequest.status === "تم التنفيذ" &&
+        prevRequest.status !== "تم التنفيذ"
+      ) {
+        autoOpenWhatsAppAfterCompletion(confirmedRow);
       }
     } catch (saveException) {
       console.error("Save request exception:", saveException);

@@ -294,6 +294,7 @@ export default function IssuesManagementPage() {
         throw new Error("فشل إنشاء سجل القضية الرئيسي: " + mainErr.message);
 
       let created = 0;
+      let failedDetails = 0;
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
         const caseNumberVal =
@@ -337,17 +338,27 @@ export default function IssuesManagementPage() {
 
         if (issueErr) continue;
 
-        await supabase.from("issue_details").insert({
-          issue_id: issueData.id,
-          row_number: i + 1,
-          data: row,
-        });
+        const { error: detailErr } = await supabase
+          .from("issue_details")
+          .insert({
+            issue_id: issueData.id,
+            row_number: i + 1,
+            data: row,
+          });
+
+        if (detailErr) {
+          failedDetails++;
+          continue;
+        }
 
         created++;
       }
 
       setSuccess(
-        `تم رفع ملف Excel بنجاح! تم إنشاء ${created} قضية منفصلة.`
+        `تم رفع ملف Excel بنجاح! تم إنشاء ${created} قضية منفصلة.` +
+          (failedDetails > 0
+            ? ` تعذّر حفظ تفاصيل ${failedDetails} قضية — شغّل fix_issue_details_save.sql في Supabase ثم أعد الرفع.`
+            : "")
       );
       setExcelFile(null);
       loadIssues();
