@@ -1,0 +1,15 @@
+-- =============================================================================
+-- IMPORT into the NEW project only | table = push_subscriptions | rows = 4
+-- exact count from OLD project: 4
+-- order position: 26 of 29 (parents first)
+-- SENSITIVE: contains real credentials/endpoints. Do not paste into chat.
+-- =============================================================================
+begin;
+insert into public.push_subscriptions
+select (jsonb_populate_record(null::public.push_subscriptions, e.j)).*
+from jsonb_array_elements($json$[{"id":"0dbd16c5-7737-4e8c-b077-95085a9aaeb4","user_id":"c0df117a-19d5-4f19-9c1d-0e184ef1b2d2","endpoint":"https://fcm.googleapis.com/fcm/send/cA0zPEX9P7s:APA91bHuNGZqGxtv6-AnTu81kVFurdQtW_1fB0vtpE19ISV-e-jji-kM0n6ibTIyU09IN2_304N-LF-8d4kCrY9dYcDFNrcYBIaCr5xujrTVVrceSvclDnwVuKCNE4s3yYRPNm24LFYz","p256dh":"BJMvyhrU1mwvKnqV1JFVyV6SvOVMT_-G-l68N-C2TY2WyjDBC3NFw1QHyOxRzvqNgEvQpdu6bL9Ak-Ou85an25U","auth":"pz_3fJCvhnI1dFm2pXbJtQ","device_name":"Android 10 · Chrome 152.0.0.0","platform":"android","created_at":"2026-09-19T15:01:24.206+00:00","updated_at":"2026-09-19T15:30:38.289354+00:00","is_active":true,"fcm_token":null},
+{"id":"50169949-3946-4903-97c1-4294169d3240","user_id":"c0df117a-19d5-4f19-9c1d-0e184ef1b2d2","endpoint":"https://fcm.googleapis.com/fcm/send/fp6CU2fYzAY:APA91bFBOnK3lPCF01-Z-km-whxgzAmLbJhFR60YqtkPyPFNHkL9t6nHVYWahdI_2xFGIKZwe3hc0gUGAjsNXPZAwOkEnBbKMq-vwX6Eqs5aBvghmAIQf2Gr6OuoEbHH5u6T5YsyGwXY","p256dh":"BCK4QON4l7KB71fed15GxlDeX8aL-m2UsI4ZNVs83rBxsIZ5p88kcCBSFUowjYQNv0ac1Zf15VKWc4ap2ZBB5R0","auth":"I4zIoiXJOh7R8c2clH7p9g","device_name":"Android 10 · Chrome 152.0.0.0","platform":"android","created_at":"2026-09-19T14:11:17.83202+00:00","updated_at":"2026-09-19T14:42:54.719707+00:00","is_active":false,"fcm_token":null},
+{"id":"a9b3bf35-fc33-45be-8b4e-06a70f235943","user_id":"d24b90d6-c367-4c28-9f48-c8bdc73cb776","endpoint":"https://web.push.apple.com/QBNaM-pKg1anOiCuBlpzvclSke71Im5ZDpx0jZK9i95V9cSCR9Ah1PEhF88Q0pNcnd0r-I7HHP56aGPRHn323HXIuLUc_8nLeYgkXdQmOQiZk2sYJ13xC5OZaPiD9QhZhjBoJ3rqHDJJVuU7zpUVynXj1sDveUc1gxdG9cDhZ4A","p256dh":"BFrn9rJRp6OxV8zHoBRNZ57zIFLm0dO07hnXFdQqUicEUooWFiRKOEMiKl0sgeXT7UhOB4qi5iLKtEFOMH0IKeg","auth":"VrLJp_o8pRuL8XQLaYPIcw","device_name":"iOS 18.7 · Safari 604.1","platform":"ios","created_at":"2026-09-19T14:04:58.199523+00:00","updated_at":"2026-09-20T07:50:28.909237+00:00","is_active":true,"fcm_token":null},
+{"id":"dff57280-0b69-4727-a8bd-d49ae962cee3","user_id":"c0df117a-19d5-4f19-9c1d-0e184ef1b2d2","endpoint":"https://fcm.googleapis.com/fcm/send/eK_2wHP8saM:APA91bEbLDjh5tkqh85zNtPTE038kEqxyVBqm8U2BuT8GRafx-L5Sni5W6xgt1SpV6-V-9JXgNteAUytupE5PQlmlfDbEVJQQsuhYIY9eeeGoaONaXC_7f7wEavrqeafsUK_C9qoH2NN","p256dh":"BKGZ8pMv6r8WvVAgsdNW1BDvTTHqyP5uqgrMFZjdvzee5yuC3XGha4EY11g_e5WDt-EpF6BTkcRdzNvbHAV5qPQ","auth":"qjYhaTj-LD1rMUwUzEhCpA","device_name":"Android 10 · Chrome 152.0.0.0","platform":"android","created_at":"2026-09-19T14:56:04.93462+00:00","updated_at":"2026-09-19T15:01:35.289399+00:00","is_active":false,"fcm_token":null}]$json$) as e(j);
+commit;
+select 'push_subscriptions' as imported, count(*) as rows_now from public.push_subscriptions;

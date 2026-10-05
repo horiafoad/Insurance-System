@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { createScheduler, createWorker } from "tesseract.js";
 import { supabase } from "../supabaseClient";
+import { uploadFile } from "../services/fileStorage";
 import { FACULTY_SALARY_CONFIG } from "./salaryArchiveConfig";
 
 const RENDER_SCALE = 2.2;
@@ -1052,9 +1053,10 @@ export default function OcrSplitPanel({ currentUser, onImportComplete, onBack, c
     const monthFolder = `${String(batch.month).padStart(2, "0")}`;
     const safeName = batch.fileName.replace(/[^A-Za-z0-9._-]+/g, "_").slice(-40);
     const origPath = `${base}/${monthFolder}/original-${safeName}-${createToken()}.pdf`;
-    const { error: origErr } = await supabase.storage.from(BUCKET).upload(origPath, batch.file, { contentType: "application/pdf", upsert: true });
-    if (origErr) throw new Error(`${batch.fileName}: تعذر رفع الملف الأصلي: ${origErr.message}`);
-    const { data: origPub } = supabase.storage.from(BUCKET).getPublicUrl(origPath);
+    const original = await uploadFile(BUCKET, origPath, batch.file, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
     const duplicateGroups = [];
     const seenCombos = new Set();
     for (const g of batch.groups) {
@@ -1089,10 +1091,18 @@ export default function OcrSplitPanel({ currentUser, onImportComplete, onBack, c
       const previewUrls = [];
       for (let j = 0; j < g.dataUrls.length; j += 1) {
         const pPath = `${memberFolder}/previews/page-${g.pageIndexes[j]}.jpg`;
-        const { error: upErr } = await supabase.storage.from(BUCKET).upload(pPath, dataUrlToBlob(g.dataUrls[j]), { contentType: "image/jpeg", upsert: true });
-        if (upErr) throw new Error(`${g.name} — صفحة ${g.pageIndexes[j]}: ${upErr.message}`);
-        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(pPath);
-        previewUrls.push(pub.publicUrl);
+        let previewUpload;
+        try {
+          previewUpload = await uploadFile(BUCKET, pPath, dataUrlToBlob(g.dataUrls[j]), {
+            contentType: "image/jpeg",
+            upsert: true,
+          });
+        } catch (upErr) {
+          throw new Error(`${g.name} — صفحة ${g.pageIndexes[j]}: ${upErr.message}`, {
+            cause: upErr,
+          });
+        }
+        previewUrls.push(previewUpload.url);
       }
       const rowData = {
         [NAME_COL]: g.name.trim(),
@@ -1100,13 +1110,15 @@ export default function OcrSplitPanel({ currentUser, onImportComplete, onBack, c
         year: gYear,
         month: gMonth,
         sequence: g.pageIndexes[0],
-        file_url: origPub.publicUrl,
+        file_url: original.url,
         preview_url: previewUrls[0] || null,
         preview_urls: previewUrls,
         page_count: g.pageIndexes.length,
         file_path: origPath,
         original_filename: batch.fileName,
         created_by: currentUser?.full_name || currentUser?.username || null,
+        storage_provider: original.provider,
+        storage_key: original.key,
       };
       let insErr = null;
       for (let attempt = 0; attempt < 3; attempt += 1) {

@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
 import { supabase } from "../supabaseClient";
+import {
+  uploadFile,
+  downloadFile as storageDownloadFile,
+  downloadFileToDisk,
+  useFileUrl,
+} from "../services/fileStorage";
+import { FileAnchor, FileDownloadLink } from "../components/FileLink";
 import OcrSplitPanel from "./OcrSplitPanel";
 import { FACULTY_SALARY_CONFIG } from "./salaryArchiveConfig";
 import { useRealtimeSync } from "../utils/realtimeSync";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+import { pdfPageCount } from "../utils/executiveOrderPdf";
+import { renderPdfPageFromSource, renderPdfPageWithCount } from "../utils/pdfPageCache";
 
 const PAGE_SIZE = 60;
 
@@ -159,57 +162,13 @@ function extractMetaFromFilename(rawName) {
   return { year, month, computerNumber };
 }
 
-/* ------------------------------------------------------------------
-   توليد صور معاينة لكل صفحات الـPDF عبر pdfjs (مكتبة موجودة بالفعل)
------------------------------------------------------------------- */
-async function renderPdfPagesToJpeg(arrayBuffer, scale = 1.4) {
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const images = [];
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-
-    await page.render({ canvasContext: context, viewport }).promise;
-    images.push(canvas.toDataURL("image/jpeg", 0.82));
-  }
-
-  return { images, pageCount: pdf.numPages };
-}
-
 function createUniqueToken() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function dataUrlToBlob(dataUrl) {
-  const [header, data] = dataUrl.split(",");
-  const mime = header.match(/:(.*?);/)?.[1] || "image/jpeg";
-  const binary = atob(data);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return new Blob([bytes], { type: mime });
-}
-
 async function uploadToBucket(bucket, path, blob, contentType) {
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(path, blob, { contentType, upsert: true });
-
-  if (error) throw error;
-
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
-}
-
-function downloadQueryUrl(fileUrl, downloadName) {
-  const separator = fileUrl.includes("?") ? "&" : "?";
-  return `${fileUrl}${separator}download=${encodeURIComponent(downloadName || "salary.pdf")}`;
+  // يمر عبر طبقة التخزين الموحّدة: Supabase أو R2 حسب المزوّد المُفعَّل
+  return uploadFile(bucket, path, blob, { contentType, upsert: true });
 }
 
 /* ------------------------------------------------------------------
@@ -283,32 +242,112 @@ function applyCombinedSearch(query, nameCol, computerNumberCol, rawQuery) {
 
 /* ------------------------------------------------------------------
    مودال عرض المفردة: تكبير + تنقل + طباعة + تحميل الـPDF الأصلي
+
+   صفحات الـPDF تُرسم عند الطلب من ملف الـPDF الأصلي (لا توجد صور
+   معاينة مخزَّنة). السجلات القديمة التي ما زالت تحتفظ بـ preview_urls
+   تستخدم روابطها المخزَّنة كبديل احتياطي.
 ------------------------------------------------------------------ */
-function RecordViewer({ record, records, onClose, onNavigate, nameCol, numberLabel }) {
+function RecordViewer({ record, records, onClose, onNavigate, nameCol, numberLabel, bucket }) {
   const [pageIndex, setPageIndex] = useState(0);
+  const [pageImage, setPageImage] = useState("");
+  const [pageCount, setPageCount] = useState(Number(record.page_count) || 0);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const imageCacheRef = useRef({});
   const recordIndex = useMemo(
     () => records.findIndex((r) => r.id === record.id),
     [records, record]
   );
 
-  const previews = useMemo(() => {
-    const urls = Array.isArray(record.preview_urls)
-      ? record.preview_urls
-      : [];
+  const storedPreviews = useMemo(() => {
+    const urls = Array.isArray(record.preview_urls) ? record.preview_urls : [];
     if (urls.length > 0) return urls;
     return record.preview_url ? [record.preview_url] : [];
   }, [record]);
 
-  const currentImage = previews[pageIndex] || record.preview_url || "";
+  const fileSource = useMemo(
+    () => ({ bucket, path: record.file_path, url: record.file_url }),
+    [bucket, record.file_path, record.file_url]
+  );
 
-  const printRecord = () => {
+  const totalPages = storedPreviews.length || pageCount || 1;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const showPage = async () => {
+      if (storedPreviews.length > 0) {
+        setPageImage(storedPreviews[pageIndex] || storedPreviews[0] || "");
+        setPageCount(storedPreviews.length);
+        setPageError("");
+        return;
+      }
+
+      if (!record.file_path && !record.file_url) {
+        setPageImage("");
+        setPageError("لا يوجد ملف أصلي لعرضه لهذه المفردة.");
+        return;
+      }
+
+      const cached = imageCacheRef.current[pageIndex];
+      if (cached) {
+        setPageImage(cached);
+        return;
+      }
+
+      setPageLoading(true);
+      setPageError("");
+      try {
+        const { image, pageCount: total } = await renderPdfPageWithCount(fileSource, pageIndex, 1.4);
+        if (cancelled) return;
+        imageCacheRef.current[pageIndex] = image;
+        setPageImage(image);
+        if (total) setPageCount(total);
+      } catch (err) {
+        console.error("renderRecordPage:", err);
+        if (!cancelled) setPageError(err.message || "تعذر عرض صفحة المفردة.");
+      } finally {
+        if (!cancelled) setPageLoading(false);
+      }
+    };
+
+    showPage();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileSource, pageIndex, record.file_path, record.file_url, storedPreviews]);
+
+  const printRecord = async () => {
     const printWindow = window.open("", "_blank", "width=900,height=1200");
     if (!printWindow) {
       alert("من فضلك اسمحي بالنوافذ المنبثقة لطباعة المفردة.");
       return;
     }
 
-    const content = previews
+    setPageLoading(true);
+    setPageError("");
+
+    let sources;
+    try {
+      if (storedPreviews.length > 0) {
+        sources = storedPreviews;
+      } else {
+        sources = await Promise.all(
+          [...Array(totalPages)].map((_, i) =>
+            imageCacheRef.current[i] || renderPdfPageFromSource(fileSource, i, 1.4)
+          )
+        );
+      }
+    } catch (err) {
+      console.error("printRecord:", err);
+      setPageError(err.message || "تعذر تجهيز الصفحات للطباعة.");
+      setPageLoading(false);
+      printWindow.close();
+      return;
+    }
+    setPageLoading(false);
+
+    const content = sources
       .map(
         (src, i) =>
           `<div style="page-break-after: always; text-align:center;">
@@ -329,7 +368,7 @@ function RecordViewer({ record, records, onClose, onNavigate, nameCol, numberLab
         <body>
           <div class="head">
             ${record[nameCol]} - ${numberLabel}: ${record.computer_number}
-            <br/>${monthName(record.month)} ${record.year} (${previews.length} صفحة)
+            <br/>${monthName(record.month)} ${record.year} (${sources.length} صفحة)
           </div>
           ${content}
         </body>
@@ -428,21 +467,22 @@ function RecordViewer({ record, records, onClose, onNavigate, nameCol, numberLab
               🖨️ طباعة
             </button>
 
-            <a
-              href={downloadQueryUrl(record.file_url, record.original_filename)}
+            <FileDownloadLink
+              fileRef={record.file_url}
+              fileName={record.original_filename}
               style={{ ...navButtonStyle, background: "#ECFDF5", color: "#065F46", textDecoration: "none" }}
             >
               ⬇️ تحميل PDF
-            </a>
+            </FileDownloadLink>
 
-            <a
-              href={record.file_url}
+            <FileAnchor
+              fileRef={record.file_url}
               target="_blank"
               rel="noreferrer"
               style={{ ...navButtonStyle, background: "#F3E8FF", color: "#6B21A8", textDecoration: "none" }}
             >
               📂 فتح الملف الأصلي
-            </a>
+            </FileAnchor>
 
             <button onClick={onClose} style={{ ...navButtonStyle, background: "#FEE2E2", color: "#B91C1C" }}>
               ✕ إغلاق
@@ -451,20 +491,24 @@ function RecordViewer({ record, records, onClose, onNavigate, nameCol, numberLab
         </div>
 
         <div style={{ padding: 12, overflow: "auto", background: "#F1F5F9" }}>
-          {currentImage ? (
+          {pageImage ? (
             <img
-              src={currentImage}
+              src={pageImage}
               alt={`مفردة ${monthName(record.month)} ${record.year} صفحة ${pageIndex + 1}`}
               style={{ display: "block", width: "100%", height: "auto", borderRadius: 8 }}
             />
+          ) : pageLoading ? (
+            <div style={{ padding: 40, textAlign: "center", color: "#64748B" }}>
+              جاري تحميل الصفحة {pageIndex + 1}...
+            </div>
           ) : (
             <div style={{ padding: 40, textAlign: "center", color: "#64748B" }}>
-              لا توجد صورة معاينة لهذه المفردة.
+              {pageError || "لا توجد صورة معاينة لهذه المفردة."}
             </div>
           )}
         </div>
 
-        {previews.length > 1 && (
+        {totalPages > 1 && (
           <div
             style={{
               display: "flex",
@@ -491,18 +535,18 @@ function RecordViewer({ record, records, onClose, onNavigate, nameCol, numberLab
               الصفحة السابقة
             </button>
             <span style={{ fontSize: 13, color: "#475569" }}>
-              صفحة {pageIndex + 1} من {previews.length}
+              صفحة {pageIndex + 1} من {totalPages}
             </span>
             <button
-              onClick={() => setPageIndex((p) => Math.min(previews.length - 1, p + 1))}
-              disabled={pageIndex >= previews.length - 1}
+              onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={pageIndex >= totalPages - 1}
               style={{
                 border: "1px solid #CBD5E1",
                 background: "#fff",
                 borderRadius: 8,
                 padding: "7px 12px",
-                cursor: pageIndex >= previews.length - 1 ? "not-allowed" : "pointer",
-                opacity: pageIndex >= previews.length - 1 ? 0.5 : 1,
+                cursor: pageIndex >= totalPages - 1 ? "not-allowed" : "pointer",
+                opacity: pageIndex >= totalPages - 1 ? 0.5 : 1,
               }}
             >
               الصفحة التالية
@@ -889,6 +933,13 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
     const files = [...(event.target.files || [])];
     if (files.length === 0) return;
 
+    const oversized = files.find((file) => file.size > 50 * 1024 * 1024);
+    if (oversized) {
+      setError(`ملف «${oversized.name}» حجمه يتجاوز 50 ميجابايت`);
+      event.target.value = "";
+      return;
+    }
+
     const stagedFiles = files.map((file) => {
       const meta = extractMetaFromFilename(file.name.replace(/\.pdf$/i, ""));
       return {
@@ -944,16 +995,14 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
     const sequence = (count || 0) + 1;
 
     const pdfPath = `${folder}/${String(currentMonth).padStart(2, "0")}-${sequence}-${safeOriginal}`;
-    const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pdf");
+    const stored = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pdf");
 
-    setImportProgress(`تحويل الـPDF إلى صور (${item.originalName})`);
-    const { images, pageCount } = await renderPdfPagesToJpeg(await item.file.arrayBuffer());
-
-    const previewUrls = [];
-    for (let i = 0; i < images.length; i += 1) {
-      const previewPath = `${folder}/previews/${String(currentMonth).padStart(2, "0")}-${sequence}-page-${i + 1}.jpg`;
-      const url = await uploadToBucket(BUCKET, previewPath, dataUrlToBlob(images[i]), "image/jpeg");
-      previewUrls.push(url);
+    setImportProgress(`قراءة عدد الصفحات (${item.originalName})`);
+    let pageCount = null;
+    try {
+      pageCount = await pdfPageCount(await item.file.arrayBuffer());
+    } catch (countErr) {
+      console.warn("تعذر تحديد عدد صفحات الملف:", item.originalName, countErr);
     }
 
     return {
@@ -962,13 +1011,15 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
       year: currentYear,
       month: currentMonth,
       sequence,
-      file_url: fileUrl,
-      preview_url: previewUrls[0] || null,
-      preview_urls: previewUrls,
-      page_count: pageCount,
+      file_url: stored.url,
+      preview_url: null,
+      preview_urls: [],
+      page_count: pageCount || 1,
       file_path: pdfPath,
       original_filename: item.originalName,
       created_by: currentUser?.full_name || currentUser?.username || null,
+      storage_provider: stored.provider,
+      storage_key: stored.key,
     };
   };
 
@@ -1053,18 +1104,20 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
         const safeOriginal = asciiSafe(item.originalName) || "salary";
         const pdfPath = `${folder}/review-${createUniqueToken()}-${safeOriginal}.pdf`;
 
-const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pdf");
+        const reviewFile = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pdf");
 
         const { error: insertError } = await supabase.from(IMPORTS_TABLE).insert({
           file_name: item.originalName,
           storage_path: pdfPath,
-          file_url: fileUrl,
+          file_url: reviewFile.url,
           extracted_name: item.extracted?.name || null,
           extracted_computer_number: item.extracted?.computerNumber || null,
           extracted_year: item.extracted?.year || null,
           extracted_month: item.extracted?.month || null,
           status: "needs_review",
           notes: "بيانات غير مؤكدة - تحتاج مراجعة يدوية",
+          storage_provider: reviewFile.provider,
+          storage_key: reviewFile.key,
         });
 
         if (insertError) throw new Error(`${item.originalName}: ${insertError.message}`);
@@ -1134,13 +1187,10 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
     setError("");
 
     try {
-      const { data: fileData, error: downloadError } = await supabase.storage
-        .from(BUCKET)
-        .download(row.storage_path);
-
-      if (downloadError || !fileData) {
-        throw new Error(`تعذر تحميل الملف من التخزين: ${row.storage_path}`);
-      }
+      const fileData = await storageDownloadFile(row.file_url, {
+        bucket: BUCKET,
+        path: row.storage_path,
+      });
 
       const stagedItem = {
         file: new File([fileData], row.file_name || "salary.pdf", { type: "application/pdf" }),
@@ -1284,12 +1334,11 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
     const filename =
       record.original_filename ||
       `${record[NAME_COL]} - ${record.year} - ${monthName(record.month)}.pdf`;
-    const link = document.createElement("a");
-    link.href = record.file_url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // يمر عبر الطبقة الموحّدة: Supabase يُنزَّل مباشرة، وR2 يُوقَّع أولًا
+    await downloadFileToDisk(record.file_url, filename, {
+      bucket: BUCKET,
+      path: record.file_path,
+    });
   };
 
   /* ------------------ الواجهة ------------------ */
@@ -2029,6 +2078,7 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
                                 <ThumbnailCard
                                   key={record.id}
                                   record={record}
+                                  bucket={BUCKET}
                                   onOpen={openRecord}
                                   onDownload={handleDownload}
                                 />
@@ -2074,6 +2124,7 @@ const fileUrl = await uploadToBucket(BUCKET, pdfPath, item.file, "application/pd
           records={records}
           nameCol={NAME_COL}
           numberLabel={cfg.numberLabel}
+          bucket={BUCKET}
           onClose={() => setSelectedRecord(null)}
           onNavigate={navigateRecord}
         />
@@ -2643,8 +2694,8 @@ function ReviewRow({ row, index, yearOptions, onChange, onConfirm, onDiscard, bu
           🗑 تجاهل
         </button>
         {row.file_url && (
-          <a
-            href={row.file_url}
+          <FileAnchor
+            fileRef={row.file_url}
             target="_blank"
             rel="noreferrer"
             style={{
@@ -2659,7 +2710,7 @@ function ReviewRow({ row, index, yearOptions, onChange, onConfirm, onDiscard, bu
             }}
           >
             📂 فتح الـPDF
-          </a>
+          </FileAnchor>
         )}
       </div>
     </div>
@@ -2669,12 +2720,69 @@ function ReviewRow({ row, index, yearOptions, onChange, onConfirm, onDiscard, bu
 /* ------------------------------------------------------------------
    بطاقة مصغرة لمفردة
 ------------------------------------------------------------------ */
-function ThumbnailCard({ record, onOpen, onDownload }) {
-  const previewSrc = record.preview_url || "";
+/* ------------------------------------------------------------------
+   بطاقة مصغرة لمفردة
+   تستخدم رابط المعاينة المخزن إن وُجد (سجلات قديمة)، وإلا ترسم
+   الصفحة الأولى من الـPDF عند ظهور البطاقة فقط (تحميل كسول)
+------------------------------------------------------------------ */
+function ThumbnailCard({ record, onOpen, onDownload, bucket }) {
+  const containerRef = useRef(null);
+  const [renderedThumb, setRenderedThumb] = useState("");
+  const [thumbError, setThumbError] = useState("");
+  const storedPreviewUrl = useFileUrl(record.preview_url);
+  const previewSrc = storedPreviewUrl || renderedThumb;
   const fileName = record.original_filename || `${monthName(record.month)}-${record.year}`;
+
+  useEffect(() => {
+    if (previewSrc) return undefined;
+    if (!record.file_path && !record.file_url) return undefined;
+
+    let cancelled = false;
+    const target = containerRef.current;
+    if (!target) return undefined;
+
+    const draw = async () => {
+      try {
+        const image = await renderPdfPageFromSource(
+          { bucket, path: record.file_path, url: record.file_url },
+          0,
+          0.35,
+          { release: true }
+        );
+        if (!cancelled) setRenderedThumb(image);
+      } catch (err) {
+        console.warn("تعذر رسم مصغرة المفردة:", record.id, err);
+        if (!cancelled) setThumbError("لا توجد معاينة");
+      }
+    };
+
+    if (typeof IntersectionObserver === "undefined") {
+      draw();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          draw();
+        }
+      },
+      { rootMargin: "250px" }
+    );
+    observer.observe(target);
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [bucket, previewSrc, record.file_path, record.file_url, record.id]);
 
   return (
     <div
+      ref={containerRef}
       style={{
         background: "#fff",
         border: "1px solid #E2E9F2",
@@ -2719,7 +2827,6 @@ function ThumbnailCard({ record, onOpen, onDownload }) {
             <img
               src={previewSrc}
               alt={`مفردة ${monthName(record.month)} ${record.year}`}
-              loading="lazy"
               style={{
                 width: "100%",
                 height: "100%",
@@ -2738,7 +2845,7 @@ function ThumbnailCard({ record, onOpen, onDownload }) {
                 fontSize: 13,
               }}
             >
-              لا توجد صورة
+              {thumbError || (record.file_path || record.file_url ? "جاري تحميل المعاينة..." : "لا توجد صورة")}
             </div>
           )}
 

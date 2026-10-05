@@ -7,6 +7,11 @@ import { supabase } from "./supabaseClient";
 import { hasPermission } from "./utils/permissions";
 import { notifyPushEvent } from "./utils/pushNotifications";
 import { useRealtimeSync } from "./utils/realtimeSync";
+import {
+  getSessionToken,
+  setSessionToken,
+  clearSessionToken,
+} from "./utils/authSession";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
 
@@ -109,7 +114,16 @@ function App() {
 
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem("currentUser");
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.password) {
+        delete parsed.password;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
   });
 
   const qrCodeFromUrl =
@@ -134,11 +148,15 @@ function App() {
     if (!isLoggedIn || !currentUser?.id) return;
     let cancelled = false;
     (async () => {
-      const { enableNativePush } = await import("./utils/nativePush");
-      if (cancelled) return;
-      const result = await enableNativePush(currentUser);
-      if (result && result.ok) {
-        console.log("FCM device registered:", result.token?.slice(0, 16) + "…");
+      try {
+        const { enableNativePush } = await import("./utils/nativePush");
+        if (cancelled) return;
+        const result = await enableNativePush(currentUser);
+        if (result && result.ok) {
+          console.log("FCM device registered:", result.token?.slice(0, 16) + "…");
+        }
+      } catch (err) {
+        console.error("خطأ في تسجيل الجهاز للإشعارات:", err);
       }
     })();
     return () => {
@@ -146,6 +164,55 @@ function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn, currentUser?.id]);
+
+  // تحقّق الجلسة عند الإقلاع: لا جلسة موثوقة بلا توكن سليم من الخادم.
+  useEffect(() => {
+    let cancelled = false;
+    const token = getSessionToken();
+
+    const dropSession = () => {
+      clearSessionToken();
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("isLoggedIn");
+      if (!cancelled) {
+        setCurrentUser(null);
+        setIsLoggedIn(false);
+      }
+    };
+
+    const restoreSession = async () => {
+      if (!token) {
+        dropSession();
+        return;
+      }
+      try {
+        const { data, error } = await supabase.functions.invoke("auth-login", {
+          headers: { "x-session-token": token },
+          body: { action: "verify" },
+        });
+        if (cancelled) return;
+        if (!error && data?.ok && data?.user) {
+          if (data.token) setSessionToken(data.token);
+          localStorage.setItem("isLoggedIn", "true");
+          localStorage.setItem("currentUser", JSON.stringify(data.user));
+          setCurrentUser(data.user);
+          setIsLoggedIn(true);
+        } else {
+          dropSession();
+        }
+      } catch (err) {
+        // انقطاع الشبكة فقط: نُبقي الجلسة الحالية ليعمل التطبيق دون اتصال.
+        console.warn("تعذر التحقق من الجلسة (غير متصل؟):", err);
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [qrLetter, setQrLetter] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
@@ -155,6 +222,8 @@ function App() {
   const [qrReturnNotes, setQrReturnNotes] = useState("");
   const [qrSuccessMessage, setQrSuccessMessage] = useState("");
   const [qrRefreshTick, setQrRefreshTick] = useState(0);
+
+  const qrSuccessTimerRef = useRef(null);
 
   const qrActiveMovement = useMemo(
     () => getQrActionMovement(qrLetter?.movements || []),
@@ -420,8 +489,23 @@ const qrHasPreviousCompletedStation = useMemo(
 
   const showQrSuccess = (message) => {
     setQrSuccessMessage(message);
-    setTimeout(() => setQrSuccessMessage(""), 4000);
+    if (qrSuccessTimerRef.current) {
+      window.clearTimeout(qrSuccessTimerRef.current);
+    }
+    qrSuccessTimerRef.current = window.setTimeout(() => {
+      setQrSuccessMessage("");
+      qrSuccessTimerRef.current = null;
+    }, 4000);
   };
+
+  useEffect(() => {
+    return () => {
+      if (qrSuccessTimerRef.current) {
+        window.clearTimeout(qrSuccessTimerRef.current);
+        qrSuccessTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // تسجيل استلام الخطاب فقط
   const handleQrReceive = async () => {
@@ -787,11 +871,11 @@ const updatedMovements = qrLetter.movements.map((movement) =>
         localStorage.getItem(SAVED_LOGIN_KEY) || "null"
       );
 
-      if (savedLogin?.username && savedLogin?.password) {
-        setLoginForm({
+      if (savedLogin?.username) {
+        setLoginForm((prev) => ({
+          ...prev,
           username: savedLogin.username,
-          password: savedLogin.password,
-        });
+        }));
       }
     } catch (error) {
       console.error(
@@ -891,12 +975,16 @@ const updatedMovements = qrLetter.movements.map((movement) =>
     filter: trackedRequest ? { id: `eq.${trackedRequest.id}` } : undefined,
     apply: async () => {
       if (!trackedRequest) return;
-      const { data, error } = await supabase
-        .from("service_requests")
-        .select("id, service_type, name, status, notes, created_at, updated_at")
-        .eq("id", trackedRequest.id)
-        .maybeSingle();
-      if (!error && data) setTrackedRequest(data);
+      try {
+        const { data, error } = await supabase
+          .from("service_requests")
+          .select("id, service_type, name, status, notes, created_at, updated_at")
+          .eq("id", trackedRequest.id)
+          .maybeSingle();
+        if (!error && data) setTrackedRequest(data);
+      } catch (err) {
+        console.error("خطأ في تحديث حالة الطلب المتتبَّع:", err);
+      }
     },
   });
 
@@ -1309,80 +1397,58 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       setLoginLoading(true);
       setLoginError("");
 
-      const {
-        data: allUsers,
-        error: allError,
-      } = await supabase
-        .from("users")
-        .select("username, password")
-        .eq("username", loginForm.username)
-        .limit(1);
-
-      if (allError) {
-        console.error(
-          "خطأ في جلب المستخدمين:",
-          allError
-        );
-
-        setLoginError(
-          "خطأ في الاتصال بقاعدة البيانات: " +
-            allError.message
-        );
-
-        return;
-      }
-
-      const matchedUser = allUsers?.find(
-        (user) =>
-          user.username ===
-            loginForm.username &&
-          user.password ===
-            loginForm.password
+      // التحقق من كلمة المرور يتم على الخادم (auth-login) وليس في المتصفح.
+      const { data, error } = await supabase.functions.invoke(
+        "auth-login",
+        {
+          body: {
+            action: "login",
+            username: loginForm.username,
+            password: loginForm.password,
+          },
+        }
       );
 
-      if (!matchedUser) {
-        setLoginError(
-          "اسم المستخدم أو كلمة المرور غير صحيحة."
-        );
-        return;
-      }
-
-      const {
-        data: fullUser,
-        error: fullError,
-      } = await supabase
-        .from("users")
-        .select("*")
-        .eq(
-          "username",
-          matchedUser.username
-        )
-        .single();
-
-      if (fullError) {
+      if (error) {
         console.error(
-          "خطأ في جلب بيانات المستخدم الكاملة:",
-          fullError
+          "خطأ في خدمة تسجيل الدخول:",
+          error
         );
 
         setLoginError(
-          "خطأ في جلب بيانات المستخدم: " +
-            fullError.message
+          "تعذر الاتصال بخدمة تسجيل الدخول: " +
+            error.message
         );
 
         return;
       }
 
-      console.log(
-        "تم تسجيل الدخول بنجاح:",
-        fullUser
-      );
+      if (!data?.ok || !data?.user) {
+        if (
+          data?.error ===
+          "Server not configured (AUTH_SESSION_SECRET)"
+        ) {
+          setLoginError(
+            "خدمة تسجيل الدخول غير جاهزة بعد على الخادم."
+          );
+        } else {
+          setLoginError(
+            "اسم المستخدم أو كلمة المرور غير صحيحة."
+          );
+        }
 
-      setCurrentUser(fullUser);
+        return;
+      }
+
+      if (data.token) {
+        setSessionToken(data.token);
+      }
+
+      setCurrentUser(data.user);
 
       localStorage.setItem(
         "currentUser",
-        JSON.stringify(fullUser)
+        JSON.stringify(data.user)
       );
 
       setIsLoggedIn(true);
@@ -1410,6 +1476,8 @@ const updatedMovements = qrLetter.movements.map((movement) =>
 
   const handleLogout = () => {
     setCurrentUser(null);
+
+    clearSessionToken();
 
     localStorage.removeItem(
       "currentUser"

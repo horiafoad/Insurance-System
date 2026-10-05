@@ -553,27 +553,32 @@ export default function CriteriaView() {
 
   useEffect(() => {
     const loadIndicators = async () => {
-      const [
-        { data: requestData, error: requestError },
-        { data: feedbackData, error: feedbackError },
-        { data: evaluationData, error: evaluationError },
-        { data: taskData, error: taskError },
-      ] =
-        await Promise.all([
-          supabase.from("service_requests").select("*"),
-          supabase.from("public_feedback").select("*"),
-          supabase.from("performance_evaluations").select("*"),
-          supabase.from("employee_tasks").select("*"),
-        ]);
+      try {
+        const [
+          { data: requestData, error: requestError },
+          { data: feedbackData, error: feedbackError },
+          { data: evaluationData, error: evaluationError },
+          { data: taskData, error: taskError },
+        ] =
+          await Promise.all([
+            supabase.from("service_requests").select("*"),
+            supabase.from("public_feedback").select("*"),
+            supabase.from("performance_evaluations").select("*"),
+            supabase.from("employee_tasks").select("*"),
+          ]);
 
-      if (requestError || feedbackError || evaluationError || taskError) {
-        console.error("خطأ في تحميل المؤشرات:", requestError || feedbackError || evaluationError || taskError);
+        if (requestError || feedbackError || evaluationError || taskError) {
+          console.error("خطأ في تحميل المؤشرات:", requestError || feedbackError || evaluationError || taskError);
+        }
+        setRequests(requestData || []);
+        setFeedback(feedbackData || []);
+        setEvaluations(evaluationData || []);
+        setTasks(taskData || []);
+      } catch (err) {
+        console.error("تعذر تحميل المؤشرات:", err);
+      } finally {
+        setLoading(false);
       }
-      setRequests(requestData || []);
-      setFeedback(feedbackData || []);
-      setEvaluations(evaluationData || []);
-      setTasks(taskData || []);
-      setLoading(false);
     };
 
     loadIndicators();

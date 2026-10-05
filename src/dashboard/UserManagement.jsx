@@ -3,6 +3,7 @@ import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import { PERMISSIONS } from "../utils/permissions";
 import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
+import { getSessionToken } from "../utils/authSession";
 
 export default function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -28,34 +29,43 @@ export default function UserManagement({ currentUser }) {
   const [permissionsEnabled, setPermissionsEnabled] = useState(false);
 
   const checkPermissionsColumn = async () => {
-    const { error } = await supabase
-      .from("users")
-      .select("permissions")
-      .limit(1);
+    try {
+      const { error } = await supabase
+        .from("users")
+        .select("permissions")
+        .limit(1);
 
-    setPermissionsEnabled(!error);
+      setPermissionsEnabled(!error);
+    } catch (err) {
+      console.error("تحقق الصلاحيات فشل:", err);
+      setPermissionsEnabled(false);
+    }
   };
 
   const loadOrgData = async () => {
-    const sectorsRes = await supabase
-      .from("letter_sectors")
-      .select("id,name,is_active,sort_order")
-      .eq("is_active", true)
-      .order("sort_order")
-      .order("id");
+    try {
+      const sectorsRes = await supabase
+        .from("letter_sectors")
+        .select("id,name,is_active,sort_order")
+        .eq("is_active", true)
+        .order("sort_order")
+        .order("id");
 
-    if (!sectorsRes.error) {
-      setSectors(sectorsRes.data || []);
-    }
+      if (!sectorsRes.error) {
+        setSectors(sectorsRes.data || []);
+      }
 
-    const deptsRes = await supabase
-      .from("letter_departments")
-      .select("id,name,is_active,sector_id")
-      .eq("is_active", true)
-      .order("name");
+      const deptsRes = await supabase
+        .from("letter_departments")
+        .select("id,name,is_active,sector_id")
+        .eq("is_active", true)
+        .order("name");
 
-    if (!deptsRes.error) {
-      setDepartments(deptsRes.data || []);
+      if (!deptsRes.error) {
+        setDepartments(deptsRes.data || []);
+      }
+    } catch (err) {
+      console.error("خطأ في تحميل الهيكل التنظيمي:", err);
     }
   };
 
@@ -65,7 +75,7 @@ export default function UserManagement({ currentUser }) {
       setError("");
       const { data, error } = await supabase
         .from("users")
-        .select("*")
+        .select("id, username, full_name, role, department_id, sector_id, permissions, created_at, updated_at")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -93,12 +103,26 @@ export default function UserManagement({ currentUser }) {
   useRealtimeSync({
     table: "users",
     apply: (payload) => {
+      const clean = (row) => {
+        if (!row || typeof row !== "object") return row;
+        const { password, ...rest } = row;
+        return rest;
+      };
       setUsers((prev) =>
-        applyRowChange(prev, payload, {
-          pk: "id",
-          insert: "head",
-          sort: (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
-        })
+        applyRowChange(
+          prev,
+          {
+            ...payload,
+            new: clean(payload.new),
+            old: clean(payload.old),
+          },
+          {
+            pk: "id",
+            insert: "head",
+            sort: (a, b) =>
+              new Date(b.created_at || 0) - new Date(a.created_at || 0),
+          }
+        )
       );
     },
   });
@@ -149,7 +173,7 @@ export default function UserManagement({ currentUser }) {
     setEditingUserId(user.id);
     setFormData({
       username: user.username || "",
-      password: user.password || "",
+      password: "",
       fullName: user.full_name || "",
       role: user.role || "admin",
       sectorId:

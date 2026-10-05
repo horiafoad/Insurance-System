@@ -1,5 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
+import {
+  uploadFile,
+  downloadFile as storageDownloadFile,
+  deleteFile,
+} from "../services/fileStorage";
+import { FileAnchor, FileDownloadLink } from "../components/FileLink";
 import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
 import { styles } from "./styles";
 import { EXECUTIVE_ORDERS_CONFIG } from "./executiveOrdersConfig";
@@ -51,11 +57,6 @@ function blobToDataUrl(blob) {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
-}
-
-function downloadQueryUrl(fileUrl, downloadName) {
-  const separator = fileUrl.includes("?") ? "&" : "?";
-  return `${fileUrl}${separator}download=${encodeURIComponent(downloadName || "order.pdf")}`;
 }
 
 function formatDate(value) {
@@ -295,7 +296,7 @@ export default function ExecutiveOrdersPage({ currentUser, view = "add", onNavig
       const { data, error: fetchErr } = await supabase
         .from(CFG.personsTable)
         .select(
-          "id, full_name, full_name_norm, file_path, file_url, page_count, order_count, created_at, updated_at"
+          "id, full_name, full_name_norm, file_path, file_url, storage_provider, storage_key, page_count, order_count, created_at, updated_at"
         )
         .order("full_name");
       if (fetchErr) throw fetchErr;
@@ -318,7 +319,7 @@ useEffect(() => {
       const { data, error } = await supabase
         .from("scanner_inbox")
         .select(
-          "id, file_path, file_url, file_name, file_mime, file_size, status, scanned_at"
+          "id, file_path, file_url, storage_provider, storage_key, file_name, file_mime, file_size, status, scanned_at"
         )
         .eq("status", "pending")
         .order("scanned_at", { ascending: false })
@@ -431,6 +432,10 @@ useEffect(() => {
     if (!file) return;
     setError("");
     setSuccess("");
+    if (file.size > 50 * 1024 * 1024) {
+      setError("حجم الملف يجب ألا يتجاوز 50 ميجابايت");
+      return;
+    }
     const type = String(file.type || "").toLowerCase();
     try {
       if (type === "application/pdf" || /\.pdf$/i.test(file.name)) {
@@ -464,6 +469,11 @@ useEffect(() => {
     if (!files.length) return;
     setError("");
     setSuccess("");
+    const oversized = files.find((f) => f.size > 50 * 1024 * 1024);
+    if (oversized) {
+      setError(`تعذر اختيار الملفات: «${oversized.name}» حجمه يتجاوز 50 ميجابايت`);
+      return;
+    }
     const accepted = files.filter((f) => {
       const type = String(f.type || "").toLowerCase();
       return (
@@ -581,11 +591,13 @@ useEffect(() => {
         full_name_norm: normalizeArabicText(name),
         file_path: null,
         file_url: null,
+        storage_provider: null,
+        storage_key: null,
         page_count: 0,
         order_count: 0,
         created_by: createdBy,
       })
-      .select("id, full_name, full_name_norm, file_path, file_url, page_count, order_count")
+      .select("id, full_name, full_name_norm, file_path, file_url, storage_provider, storage_key, page_count, order_count")
       .single();
     if (insErr) throw insErr;
     return data;
@@ -635,16 +647,16 @@ useEffect(() => {
 
       let existingBytes = null;
       if (person.file_path) {
-        const { data: blob, error: dlErr } = await supabase.storage
-          .from(CFG.bucket)
-          .download(person.file_path);
-        if (!dlErr && blob) {
+        try {
+          const blob = await storageDownloadFile(person.file_url, {
+            bucket: CFG.bucket,
+            path: person.file_path,
+          });
           existingBytes = new Uint8Array(await blob.arrayBuffer());
-        } else if (
-          dlErr &&
-          !/no such object|404|Object not found/i.test(String(dlErr.message || dlErr))
-        ) {
-          throw dlErr;
+        } catch (dlErr) {
+          if (!/no such object|404|Object not found|غير موجود/i.test(String(dlErr.message || dlErr))) {
+            throw dlErr;
+          }
         }
       }
 
@@ -652,23 +664,22 @@ useEffect(() => {
         await mergeOrderIntoArchive(existingBytes, additionBytes);
 
       const path = `${person.id}/archive.pdf`;
-      const { error: upErr } = await supabase.storage
-        .from(CFG.bucket)
-        .upload(path, mergedBytes, { contentType: "application/pdf", upsert: true });
-      if (upErr) throw upErr;
-
-      const { data: pub } = supabase.storage.from(CFG.bucket).getPublicUrl(path);
-      const fileUrl = pub?.publicUrl;
+      const merged = await uploadFile(CFG.bucket, path, mergedBytes, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
 
       const { error: persErr } = await supabase
         .from(CFG.personsTable)
         .update({
           file_path: path,
-          file_url: fileUrl,
+          file_url: merged.url,
           page_count: newCount,
           order_count: (person.order_count || 0) + 1,
           full_name_norm: normalizeArabicText(person.full_name),
           updated_at: new Date().toISOString(),
+          storage_provider: merged.provider,
+          storage_key: merged.key,
         })
         .eq("id", person.id);
       if (persErr) throw persErr;
@@ -716,10 +727,13 @@ useEffect(() => {
     setInboxSaving(true);
     setError("");
     try {
-      const { data: blob, error: dlErr } = await supabase.storage
-        .from("scanner-inbox")
-        .download(row.file_path);
-      if (dlErr || !blob) throw dlErr || new Error("تعذر تحميل المسحوبة من التخزين.");
+      // file_url إما رابط http (مسحوبات قديمة على Supabase) أو مرجع ثابت
+      // r2://scanner-inbox/... (المسحوبات الجديدة). fileStorage.js يحوّل
+      // مرجع r2 إلى رابط موقّع عند الطلب، فلا حاجة لأي معالجة هنا.
+      const blob = await storageDownloadFile(row.file_url, {
+        bucket: "scanner-inbox",
+        path: row.file_path,
+      });
 
       const isPdf =
         /\.pdf$/i.test(row.file_name || "") ||
@@ -772,11 +786,13 @@ useEffect(() => {
         full_name_norm: normalizeArabicText(name),
         file_path: null,
         file_url: null,
+        storage_provider: null,
+        storage_key: null,
         page_count: 0,
         order_count: 0,
         created_by: createdBy,
       })
-      .select("id, full_name, full_name_norm, file_path, file_url, page_count, order_count, updated_at")
+      .select("id, full_name, full_name_norm, file_path, file_url, storage_provider, storage_key, page_count, order_count, updated_at")
       .single();
     if (insErr) throw insErr;
     return data;
@@ -903,10 +919,11 @@ useEffect(() => {
           if (!isNew && person.file_path) {
             let existingBytes = null;
             try {
-              const { data: blob, error: dlErr } = await supabase.storage
-                .from(CFG.bucket)
-                .download(person.file_path);
-              if (!dlErr && blob && blob.size > 0) {
+              const blob = await storageDownloadFile(person.file_url, {
+                bucket: CFG.bucket,
+                path: person.file_path,
+              });
+              if (blob && blob.size > 0) {
                 const existingBuf = await blob.arrayBuffer();
                 const existingPages = await pdfPageCount(existingBuf);
                 if (existingPages > 0) {
@@ -927,22 +944,22 @@ useEffect(() => {
           }
 
           const path = `${person.id}/archive.pdf`;
-          const { error: upErr } = await supabase.storage
-            .from(CFG.bucket)
-            .upload(path, merged, { contentType: "application/pdf", upsert: true });
-          if (upErr) throw upErr;
-
-          const { data: pub } = supabase.storage.from(CFG.bucket).getPublicUrl(path);
+          const stored = await uploadFile(CFG.bucket, path, merged, {
+            contentType: "application/pdf",
+            upsert: true,
+          });
 
           const { error: persErr } = await supabase
             .from(CFG.personsTable)
             .update({
               file_path: path,
-              file_url: pub?.publicUrl,
+              file_url: stored.url,
               page_count: newCount,
               order_count: (person.order_count || 0) + 1,
               full_name_norm: norm,
               updated_at: new Date().toISOString(),
+              storage_provider: stored.provider,
+              storage_key: stored.key,
             })
             .eq("id", person.id);
           if (persErr) throw persErr;
@@ -1027,12 +1044,11 @@ useEffect(() => {
     setFilePageCount(0);
     fileImageCacheRef.current = {};
     try {
-      const { data: blob, error: dlErr } = await supabase.storage
-        .from(CFG.bucket)
-        .download(`${person.id}/archive.pdf`);
-      if (dlErr || !blob) {
-        throw dlErr || new Error("الملف غير موجود في البكت.");
-      }
+      const blob = await storageDownloadFile(person.file_url, {
+        bucket: CFG.bucket,
+        path: `${person.id}/archive.pdf`,
+      });
+      if (!blob) throw new Error("الملف غير موجود في البكت.");
       if (blob.size === 0) {
         throw new Error(
           "⚠️ الملف المخزّن لهذا الشخص فارغ (0 بايت) — على الأرجح من الاستيراد الأول قبل الإصلاح. أعد استيراد ملفه من «استيراد الأرشيف القديم» مع إلغاء خيار «تخطي المكرر» وسيُرفع الملف سليمًا تلقائيًا."
@@ -1102,11 +1118,12 @@ useEffect(() => {
     try {
       // 1) حذف ملف PDF من البكت — أفضل جهد؛ لو فشل نكمل على أي حال وننبه فقط
       try {
-        const { error: rmErr } = await supabase.storage
-          .from(CFG.bucket)
-          .remove([`${person.id}/archive.pdf`]);
-        if (rmErr && !/not\s*found|does\s*not\s*exist|404|not find/i.test(rmErr.message)) {
-          fileRemoveWarn = rmErr.message;
+        const removed = await deleteFile(person.file_url, {
+          bucket: CFG.bucket,
+          path: `${person.id}/archive.pdf`,
+        });
+        if (removed && removed.ok === false && removed.skipped) {
+          fileRemoveWarn = "تعذر تحديد مسار الملف للحذف.";
         }
       } catch (rmErr) {
         if (rmErr?.message && !/not\s*found|does\s*not\s*exist|404|not find/i.test(rmErr.message)) {
@@ -2558,8 +2575,8 @@ useEffect(() => {
                           )}
                       </div>
                       {person.file_url && (
-                        <a
-                          href={person.file_url}
+                        <FileAnchor
+                          fileRef={person.file_url}
                           target="_blank"
                           rel="noreferrer"
                           title="فتح الملف الأصلي"
@@ -2575,7 +2592,7 @@ useEffect(() => {
                           }}
                         >
                           🖥️ عرض الملف الأصلي
-                        </a>
+                        </FileAnchor>
                       )}
                     </div>
                   </div>
@@ -2671,8 +2688,9 @@ useEffect(() => {
                     </button>
 
                     {person.file_url && (
-                      <a
-                        href={downloadQueryUrl(person.file_url, `${person.full_name}.pdf`)}
+                      <FileDownloadLink
+                        fileRef={person.file_url}
+                        fileName={`${person.full_name}.pdf`}
                         target="_blank"
                         rel="noreferrer"
                         style={{
@@ -2693,7 +2711,7 @@ useEffect(() => {
                       >
                         <span>⬇️</span>
                         <span>تحميل</span>
-                      </a>
+                      </FileDownloadLink>
                     )}
 
                     <button
@@ -2789,8 +2807,9 @@ useEffect(() => {
                   🖨️ طباعة
                 </button>
                 {filePerson.file_url && (
-                  <a
-                    href={downloadQueryUrl(filePerson.file_url, `${filePerson.full_name}.pdf`)}
+                  <FileDownloadLink
+                    fileRef={filePerson.file_url}
+                    fileName={`${filePerson.full_name}.pdf`}
                     target="_blank"
                     rel="noreferrer"
                     style={{
@@ -2801,7 +2820,7 @@ useEffect(() => {
                     }}
                   >
                     ⬇️ تحميل
-                  </a>
+                  </FileDownloadLink>
                 )}
                 <button style={styles.closeButton} onClick={() => setFileModalOpen(false)}>
                   ✕

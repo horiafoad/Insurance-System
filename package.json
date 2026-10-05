@@ -1,7 +1,7 @@
 {
   "name": "asu-engineering-system",
   "private": true,
-  "version": "1.0.29",
+  "version": "1.0.34",
   "type": "module",
   "main": "main.js",
   "author": "ASU Engineering",
@@ -9,6 +9,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "node scripts/export-old-data/selftest.mjs && node scripts/migration/tests/guard.test.mjs && node scripts/migration/tests/schema-audit.test.mjs",
+    "schema:build": "node scripts/migration/build-new-schema.mjs",
+    "schema:audit": "node scripts/migration/tests/schema-audit.test.mjs",
+    "migrate:schema": "node scripts/migration/auto-migrate.mjs --phase schema",
+    "migrate:import": "node scripts/migration/auto-migrate.mjs --phase import",
+    "migrate:reconcile": "node scripts/migration/auto-migrate.mjs --phase reconcile",
+    "migrate:verify": "node scripts/migration/verify-columns.mjs && node scripts/migration/verify-passwords.mjs && node scripts/migration/find-import-blockers.mjs",
     "electron": "electron .",
     "dist": "electron-builder --win",
     "dist:portable": "electron-builder --win portable",
@@ -19,7 +26,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "scan:watch": "node scanner-bridge/bridge.cjs",
-    "generate-icon": "node scripts/generate-icon.cjs"
+    "generate-icon": "node scripts/generate-icon.cjs",
+    "cleanup:previews": "node scripts/cleanup-salary-previews.mjs",
+    "compress:storage": "node scripts/compress-storage.mjs",
+    "storage:check": "node scripts/migrate-storage-to-r2.mjs --check",
+    "storage:migrate": "node scripts/migrate-storage-to-r2.mjs"
   },
   "build": {
     "appId": "com.insurance.system",

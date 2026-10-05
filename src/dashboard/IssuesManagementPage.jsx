@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { uploadFile } from "../services/fileStorage";
+import { FileAnchor, FileDownloadLink } from "../components/FileLink";
 import { useRealtimeSync } from "../utils/realtimeSync";
 import * as XLSX from "xlsx";
-import issuesHeaderImage from "../assets/ط.jpg";
 
 const PAYMENT_STATUS_OPTIONS = [
   "جاري التنفيذ",
@@ -177,28 +178,57 @@ export default function IssuesManagementPage() {
 
       if (issuesError) throw issuesError;
 
-      const issuesWithDocs = await Promise.all(
-        (data || []).map(async (issue) => {
-          let excel_data = null;
-          if (issue.case_type === "individual") {
-            const { data: details } = await supabase
-              .from("issue_details")
-              .select("data")
-              .eq("issue_id", issue.id)
-              .order("id", { ascending: false })
-              .limit(1);
-            excel_data = details?.[0]?.data ?? null;
+      const issuesData = data || [];
+
+      const chunk = (arr, size) => {
+        const out = [];
+        for (let i = 0; i < arr.length; i += size) {
+          out.push(arr.slice(i, i + size));
+        }
+        return out;
+      };
+
+      const individualIds = issuesData
+        .filter((issue) => issue.case_type === "individual")
+        .map((issue) => issue.id);
+
+      const detailsByIssue = {};
+      for (const ids of chunk(individualIds, 800)) {
+        const { data: details } = await supabase
+          .from("issue_details")
+          .select("issue_id, data")
+          .in("issue_id", ids)
+          .order("id", { ascending: false });
+        for (const d of details || []) {
+          if (detailsByIssue[d.issue_id] == null) {
+            detailsByIssue[d.issue_id] = d.data;
           }
+        }
+      }
 
-          const { data: docs } = await supabase
-            .from("case_documents")
-            .select("*")
-            .eq("case_id", issue.id)
-            .order("created_at", { ascending: true });
+      const allIds = issuesData.map((issue) => issue.id);
 
-          return { ...issue, excel_data, additionalDocs: docs || [] };
-        })
-      );
+      const docsByIssue = {};
+      for (const ids of chunk(allIds, 800)) {
+        const { data: docs } = await supabase
+          .from("case_documents")
+          .select("*")
+          .in("case_id", ids)
+          .order("created_at", { ascending: true });
+        for (const d of docs || []) {
+          (docsByIssue[d.case_id] =
+            docsByIssue[d.case_id] || []).push(d);
+        }
+      }
+
+      const issuesWithDocs = issuesData.map((issue) => ({
+        ...issue,
+        excel_data:
+          issue.case_type === "individual"
+            ? detailsByIssue[issue.id] ?? null
+            : null,
+        additionalDocs: docsByIssue[issue.id] || [],
+      }));
 
       setIssues(issuesWithDocs);
     } catch (err) {
@@ -209,12 +239,17 @@ export default function IssuesManagementPage() {
   };
 
   const loadAdditionalDocs = async (issueId) => {
-    const { data } = await supabase
-      .from("case_documents")
-      .select("*")
-      .eq("case_id", issueId)
-      .order("created_at", { ascending: true });
-    setAdditionalDocs(data || []);
+    try {
+      const { data } = await supabase
+        .from("case_documents")
+        .select("*")
+        .eq("case_id", issueId)
+        .order("created_at", { ascending: true });
+      setAdditionalDocs(data || []);
+    } catch (err) {
+      console.error("خطأ في تحميل مستندات القضية:", err);
+      setAdditionalDocs([]);
+    }
   };
 
   /* ===== المزامنة اللحظية (Supabase Realtime) — القضية المتأثرة فقط =====
@@ -223,31 +258,36 @@ export default function IssuesManagementPage() {
      دون إعادة جلب كل القضايا. */
   const loadIssueRow = async (id) => {
     if (id == null) return null;
-    const { data, error } = await supabase
-      .from("issues")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-    if (error || !data) return null;
+    try {
+      const { data, error } = await supabase
+        .from("issues")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      if (error || !data) return null;
 
-    let excel_data = null;
-    if (data.case_type === "individual") {
-      const { data: details } = await supabase
-        .from("issue_details")
-        .select("data")
-        .eq("issue_id", data.id)
-        .order("id", { ascending: false })
-        .limit(1);
-      excel_data = details?.[0]?.data ?? null;
+      let excel_data = null;
+      if (data.case_type === "individual") {
+        const { data: details } = await supabase
+          .from("issue_details")
+          .select("data")
+          .eq("issue_id", data.id)
+          .order("id", { ascending: false })
+          .limit(1);
+        excel_data = details?.[0]?.data ?? null;
+      }
+
+      const { data: docs } = await supabase
+        .from("case_documents")
+        .select("*")
+        .eq("case_id", data.id)
+        .order("created_at", { ascending: true });
+
+      return { ...data, excel_data, additionalDocs: docs || [] };
+    } catch (err) {
+      console.error("خطأ في تحميل صف القضية:", err);
+      return null;
     }
-
-    const { data: docs } = await supabase
-      .from("case_documents")
-      .select("*")
-      .eq("case_id", data.id)
-      .order("created_at", { ascending: true });
-
-    return { ...data, excel_data, additionalDocs: docs || [] };
   };
 
   const upsertIssue = (row) => {
@@ -263,9 +303,13 @@ export default function IssuesManagementPage() {
 
   const reloadIssueByExternalId = (id) => {
     if (id == null) return;
-    loadIssueRow(id).then((row) => {
-      if (row) upsertIssue(row);
-    });
+    loadIssueRow(id)
+      .then((row) => {
+        if (row) upsertIssue(row);
+      })
+      .catch((err) => {
+        console.error("خطأ في تحديث القضية لحظيًا:", err);
+      });
   };
 
   useRealtimeSync({
@@ -278,9 +322,13 @@ export default function IssuesManagementPage() {
         }
         return;
       }
-      loadIssueRow(payload.new?.id ?? payload.old?.id).then((row) => {
-        if (row) upsertIssue(row);
-      });
+      loadIssueRow(payload.new?.id ?? payload.old?.id)
+        .then((row) => {
+          if (row) upsertIssue(row);
+        })
+        .catch((err) => {
+          console.error("خطأ في تحديث القضية لحظيًا:", err);
+        });
     },
   });
 
@@ -307,6 +355,10 @@ export default function IssuesManagementPage() {
     ];
     if (!validTypes.includes(file.type)) {
       setError("يرجى اختيار ملف Excel صالح (.xlsx أو .xls)");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setError("حجم ملف Excel يجب ألا يتجاوز 25 ميجابايت");
       return;
     }
     setExcelFile(file);
@@ -340,17 +392,16 @@ export default function IssuesManagementPage() {
       const cleanName = cleanFileName(excelFile.name);
       const fileName = `excel_${Date.now()}_${cleanName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("issues-files")
-        .upload(fileName, excelFile);
-      if (uploadError)
-        throw new Error("فشل رفع الملف إلى Storage: " + uploadError.message);
-
-      const { data: urlData } = supabase.storage
-        .from("issues-files")
-        .getPublicUrl(fileName);
-      const publicUrl = urlData.publicUrl;
-
+      const uploaded = await uploadFile("issues-files", fileName, excelFile, {
+        upsert: false,
+      }).catch((err) => {
+        throw new Error("فشل رفع الملف إلى Storage: " + err.message);
+      });
+      const publicUrl = uploaded.url;
+      const storageMeta = {
+        storage_provider: uploaded.provider,
+        storage_key: uploaded.key,
+      };
       const { data: mainIssue, error: mainErr } = await supabase
         .from("issues")
         .insert({
@@ -363,6 +414,7 @@ export default function IssuesManagementPage() {
           file_name: excelFile.name,
           file_size: excelFile.size,
           status: "pending",
+          ...storageMeta,
         })
         .select()
         .single();
@@ -403,6 +455,7 @@ export default function IssuesManagementPage() {
             file_name: excelFile.name,
             file_size: excelFile.size,
             status: "pending",
+            ...storageMeta,
             payment_status: PAYMENT_STATUS_OPTIONS.includes(
               normalizePaymentStatus(paymentStatusVal)
             )
@@ -473,17 +526,16 @@ export default function IssuesManagementPage() {
       if (pdfFile.type !== "application/pdf") {
         throw new Error("يرجى اختيار ملف PDF صالح");
       }
+      if (pdfFile.size > 50 * 1024 * 1024) {
+        throw new Error("حجم ملف PDF يجب ألا يتجاوز 50 ميجابايت");
+      }
 
       const fileName = `pdf_${Date.now()}_${cleanFileName(pdfFile.name)}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("issues-files")
-        .upload(fileName, pdfFile);
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("issues-files")
-        .getPublicUrl(fileName);
+      const uploaded = await uploadFile("issues-files", fileName, pdfFile, {
+        upsert: false,
+        contentType: "application/pdf",
+      });
 
       const detailsData = {
         "رقم القضيه": caseNumber,
@@ -504,10 +556,12 @@ export default function IssuesManagementPage() {
           case_description: caseDescription,
           case_type: "individual",
           file_type: "pdf",
-          file_url: urlData.publicUrl,
+          file_url: uploaded.url,
           file_name: pdfFile.name,
           file_size: pdfFile.size,
           status: "pending",
+          storage_provider: uploaded.provider,
+          storage_key: uploaded.key,
           payment_status: PAYMENT_STATUS_OPTIONS.includes(
             normalizePaymentStatus(casePayStatus)
           )
@@ -560,6 +614,10 @@ export default function IssuesManagementPage() {
       setError("يرجى اختيار ملف PDF صالح");
       return;
     }
+    if (file.size > 50 * 1024 * 1024) {
+      setError("حجم ملف PDF يجب ألا يتجاوز 50 ميجابايت");
+      return;
+    }
 
     try {
       setMainPdfUploading(true);
@@ -567,23 +625,21 @@ export default function IssuesManagementPage() {
 
       const fileName = `pdf_${issueId}_${Date.now()}_${cleanFileName(file.name)}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("issues-files")
-        .upload(fileName, file);
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("issues-files")
-        .getPublicUrl(fileName);
+      const uploaded = await uploadFile("issues-files", fileName, file, {
+        upsert: false,
+        contentType: "application/pdf",
+      });
 
       const { error: insertError } = await supabase
         .from("case_documents")
         .insert({
           case_id: issueId,
           file_name: file.name,
-          file_url: urlData.publicUrl,
+          file_url: uploaded.url,
           file_size: file.size,
           doc_type: "additional_pdf",
+          storage_provider: uploaded.provider,
+          storage_key: uploaded.key,
         });
 
       if (insertError) throw insertError;
@@ -607,6 +663,10 @@ export default function IssuesManagementPage() {
       setError("يرجى اختيار ملف PDF صالح");
       return;
     }
+    if (addDocFile.size > 50 * 1024 * 1024) {
+      setError("حجم ملف PDF يجب ألا يتجاوز 50 ميجابايت");
+      return;
+    }
 
     try {
       setAddDocUploading(true);
@@ -614,23 +674,21 @@ export default function IssuesManagementPage() {
 
       const fileName = `doc_${detailModalIssue.id}_${Date.now()}_${cleanFileName(addDocFile.name)}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("issues-files")
-        .upload(fileName, addDocFile);
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("issues-files")
-        .getPublicUrl(fileName);
+      const uploaded = await uploadFile("issues-files", fileName, addDocFile, {
+        upsert: false,
+        contentType: "application/pdf",
+      });
 
       const { error: insertError } = await supabase
         .from("case_documents")
         .insert({
           case_id: detailModalIssue.id,
           file_name: addDocFile.name,
-          file_url: urlData.publicUrl,
+          file_url: uploaded.url,
           file_size: addDocFile.size,
           doc_type: "additional_pdf",
+          storage_provider: uploaded.provider,
+          storage_key: uploaded.key,
         });
 
       if (insertError) throw insertError;
@@ -1225,7 +1283,7 @@ export default function IssuesManagementPage() {
       <div
         className="iss-hero"
         style={{
-          backgroundImage: `linear-gradient(135deg, rgba(7,27,58,0.90), rgba(11,42,91,0.78), rgba(29,95,209,0.55)), url(${issuesHeaderImage})`,
+          backgroundImage: `linear-gradient(135deg, rgba(7,27,58,0.97), rgba(11,42,91,0.9), rgba(29,95,209,0.8))`,
         }}
       >
         <div
@@ -1259,7 +1317,7 @@ export default function IssuesManagementPage() {
             <div className="iss-hero-title-row">
               <div className="iss-hero-icon">⚖️</div>
               <h1 className="iss-hero-title">
-                النظام الإلكتروني للمعاملات الإدارية
+                إدارة القضايا
               </h1>
             </div>
             <p className="iss-hero-college">
@@ -2248,8 +2306,8 @@ export default function IssuesManagementPage() {
                                   ✏️ تعديل البيانات
                                 </button>
                                 {issue.file_url && (
-                                  <a
-                                    href={issue.file_url}
+                                  <FileAnchor
+                                    fileRef={issue.file_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     style={{
@@ -2263,7 +2321,7 @@ export default function IssuesManagementPage() {
                                     }}
                                   >
                                     👁️ عرض الملف الأصلي
-                                  </a>
+                                  </FileAnchor>
                                 )}
                                 <button
                                   type="button"
@@ -2912,8 +2970,8 @@ export default function IssuesManagementPage() {
                             الملف الأساسي
                           </div>
                         </div>
-                        <a
-                          href={detailModalIssue.file_url}
+                        <FileAnchor
+                          fileRef={detailModalIssue.file_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
@@ -2922,10 +2980,10 @@ export default function IssuesManagementPage() {
                           }}
                         >
                           👁️ معاينة
-                        </a>
-                        <a
-                          href={detailModalIssue.file_url}
-                          download
+                        </FileAnchor>
+                        <FileDownloadLink
+                          fileRef={detailModalIssue.file_url}
+                          fileName={detailModalIssue.file_name || "file.pdf"}
                           style={{
                             ...styles.viewButton,
                             textDecoration: "none",
@@ -2935,7 +2993,7 @@ export default function IssuesManagementPage() {
                           }}
                         >
                           ⬇️ تحميل
-                        </a>
+                        </FileDownloadLink>
                       </div>
                     )}
                     {additionalDocs.map((doc) => (
@@ -2962,8 +3020,8 @@ export default function IssuesManagementPage() {
                             )}
                           </div>
                         </div>
-                        <a
-                          href={doc.file_url}
+                        <FileAnchor
+                          fileRef={doc.file_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
@@ -2972,10 +3030,10 @@ export default function IssuesManagementPage() {
                           }}
                         >
                           👁️
-                        </a>
-                        <a
-                          href={doc.file_url}
-                          download
+                        </FileAnchor>
+                        <FileDownloadLink
+                          fileRef={doc.file_url}
+                          fileName={doc.file_name}
                           style={{
                             ...styles.viewButton,
                             textDecoration: "none",
@@ -2984,7 +3042,7 @@ export default function IssuesManagementPage() {
                           }}
                         >
                           ⬇️
-                        </a>
+                        </FileDownloadLink>
                         <button
                           style={{
                             ...styles.deleteButton,

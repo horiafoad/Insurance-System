@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { sessionHeaders } from "./authSession";
 
 // VAPID public key من إعدادات البناء.
 const VAPID_PUBLIC_KEY =
@@ -107,6 +108,7 @@ export async function enablePushNotifications(user) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",
     {
+      headers: sessionHeaders(),
       body: {
         action: "register",
         userId: user?.id,
@@ -141,6 +143,7 @@ export async function disablePushNotifications(user) {
     const subscription = await registration.pushManager.getSubscription();
     if (subscription && user?.id) {
       await supabase.functions.invoke("push-notifications", {
+        headers: sessionHeaders(),
         body: {
           action: "deactivate",
           userId: user.id,
@@ -158,7 +161,7 @@ export async function disablePushNotifications(user) {
 export async function listPushDevices(userId) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",
-    { body: { action: "list", userId } }
+    { headers: sessionHeaders(), body: { action: "list", userId } }
   );
   if (error) {
     console.error("push list error:", error);
@@ -171,7 +174,7 @@ export async function listPushDevices(userId) {
 export async function listAllPushDevices(userId) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",
-    { body: { action: "list_all", userId } }
+    { headers: sessionHeaders(), body: { action: "list_all", userId } }
   );
   if (error) {
     console.error("push list-all error:", error);
@@ -184,7 +187,10 @@ export async function listAllPushDevices(userId) {
 export async function setPushDeviceActive(userId, endpoint, isActive) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",
-    { body: { action: "set_active", userId, endpoint, is_active: isActive } }
+    {
+      headers: sessionHeaders(),
+      body: { action: "set_active", userId, endpoint, is_active: isActive },
+    }
   );
   if (error) {
     console.error("push set-active error:", error);
@@ -196,7 +202,10 @@ export async function setPushDeviceActive(userId, endpoint, isActive) {
 export async function deactivatePushDevice(userId, endpoint) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",
-    { body: { action: "deactivate", userId, endpoint } }
+    {
+      headers: sessionHeaders(),
+      body: { action: "deactivate", userId, endpoint },
+    }
   );
   if (error) {
     console.error("push deactivate error:", error);
@@ -213,6 +222,7 @@ export async function sendTestNotification(userId) {
   const { data, error } = await supabase.functions.invoke(
     "push-notifications",
     {
+      headers: sessionHeaders(),
       body: {
         action: "test",
         userId,
@@ -232,6 +242,7 @@ export function notifyPushEvent(eventType, payload = {}) {
   if (!isPushSupported()) return;
   Promise.resolve(
     supabase.functions.invoke("push-notifications", {
+      headers: sessionHeaders(),
       body: {
         action: "notify",
         eventType,

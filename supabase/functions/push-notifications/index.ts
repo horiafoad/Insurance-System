@@ -13,6 +13,12 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
+import {
+  type SessionClaims,
+  verifySession,
+  tokenFromRequest,
+  isAdminClaims,
+} from "../_shared/session.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -42,7 +48,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-session-token",
 };
 
 function json(body: Record<string, unknown>, status = 200): Response {
@@ -425,11 +431,13 @@ async function resolveLetterRecipients(letterId): Promise<{ userIds: string[]; d
   };
 }
 
-async function handleRegister(body): Promise<Record<string, unknown>> {
-  const { userId, endpoint, p256dh, auth, deviceName, platform, fcmToken } =
-    body || {};
-
-  if (!userId) return { ok: false, error: "Missing userId" };
+async function handleRegister(
+  claims: SessionClaims | null,
+  body
+): Promise<Record<string, unknown>> {
+  const userId = claims?.sub;
+  if (!userId) return { ok: false, error: "Unauthorized" };
+  const { endpoint, p256dh, auth, deviceName, platform, fcmToken } = body || {};
 
   // تسجيل جهاز تطبيق الأندرويد الأصلي عبر رمز FCM
   if (fcmToken) {
@@ -500,9 +508,12 @@ async function handleRegister(body): Promise<Record<string, unknown>> {
   return { ok: true, id: data?.id };
 }
 
-async function handleList(body): Promise<Record<string, unknown>> {
-  const userId = body?.userId;
-  if (!userId) return { ok: false, error: "Missing userId" };
+async function handleList(
+  claims: SessionClaims | null,
+  body
+): Promise<Record<string, unknown>> {
+  const userId = claims?.sub;
+  if (!userId) return { ok: false, error: "Unauthorized" };
 
   const { data, error } = await supabase
     .from("push_subscriptions")
@@ -514,8 +525,12 @@ async function handleList(body): Promise<Record<string, unknown>> {
   return { ok: true, devices: data || [] };
 }
 
-async function handleDeactivate(body): Promise<Record<string, unknown>> {
-  const { userId, endpoint, fcmToken } = body || {};
+async function handleDeactivate(
+  claims: SessionClaims | null,
+  body
+): Promise<Record<string, unknown>> {
+  const userId = claims?.sub;
+  const { endpoint, fcmToken } = body || {};
   if (!userId || (!endpoint && !fcmToken)) {
     return { ok: false, error: "Missing data" };
   }
@@ -537,9 +552,13 @@ async function handleDeactivate(body): Promise<Record<string, unknown>> {
   return { ok: true };
 }
 
-async function handleTest(body, selfUrl): Promise<Record<string, unknown>> {
-  const userId = body?.userId;
-  if (!userId) return { ok: false, error: "Missing userId" };
+async function handleTest(
+  claims: SessionClaims | null,
+  body,
+  selfUrl
+): Promise<Record<string, unknown>> {
+  const userId = claims?.sub;
+  if (!userId) return { ok: false, error: "Unauthorized" };
 
   const subs = await getActiveSubscriptions(userId);
   const appBase = resolveAppBase(body?.appUrl, selfUrl);
@@ -579,25 +598,14 @@ async function handleTest(body, selfUrl): Promise<Record<string, unknown>> {
 }
 
 // هل المتصل مسؤول (منشئ البرنامج/مدير) يمكنه إدارة أجهزة جميع المستخدمين؟
-async function isAdminCaller(callerUserId): Promise<boolean> {
-  const { data: caller } = await supabase
-    .from("users")
-    .select("role, permissions")
-    .eq("id", callerUserId)
-    .maybeSingle();
-  if (!caller) return false;
-  return (
-    caller.role === "super_admin" ||
-    caller.role === "admin" ||
-    caller.permissions == null
-  );
-}
+// الهوية تأتي من توكن الجلسة الموقّع (لا من userId المرسل في body).
 
 // قائمة بجميع الأجهزة المشتركة في الإشعارات لكل المستخدمين (للمسؤول فقط).
-async function handleListAllDevices(body): Promise<Record<string, unknown>> {
-  const callerId = body?.userId;
-  if (!callerId) return { ok: false, error: "Missing userId" };
-  if (!(await isAdminCaller(callerId))) {
+async function handleListAllDevices(
+  claims: SessionClaims | null,
+  body
+): Promise<Record<string, unknown>> {
+  if (!isAdminClaims(claims)) {
     return { ok: false, error: "Forbidden" };
   }
 
@@ -627,12 +635,14 @@ async function handleListAllDevices(body): Promise<Record<string, unknown>> {
 }
 
 // تفعيل/تعطيل أي جهاز من أي مستخدم (للمسؤول فقط).
-async function handleSetDeviceActive(body): Promise<Record<string, unknown>> {
-  const callerId = body?.userId;
+async function handleSetDeviceActive(
+  claims: SessionClaims | null,
+  body
+): Promise<Record<string, unknown>> {
   const endpoint = body?.endpoint;
   const isActive = Boolean(body?.is_active);
-  if (!callerId || !endpoint) return { ok: false, error: "Missing data" };
-  if (!(await isAdminCaller(callerId))) {
+  if (!endpoint) return { ok: false, error: "Missing data" };
+  if (!isAdminClaims(claims)) {
     return { ok: false, error: "Forbidden" };
   }
 
@@ -644,7 +654,12 @@ async function handleSetDeviceActive(body): Promise<Record<string, unknown>> {
   return { ok: true };
 }
 
-async function handleNotify(body, selfUrl): Promise<Record<string, unknown>> {
+async function handleNotify(
+  claims: SessionClaims | null,
+  body,
+  selfUrl
+): Promise<Record<string, unknown>> {
+  if (!claims) return { ok: false, error: "Unauthorized" };
   const { eventType, requestNumber, status, requestId, letterId } = body || {};
   if (!eventType) return { ok: false, error: "Missing eventType" };
 
@@ -727,28 +742,31 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const action = body?.action;
 
+    // هوية المتصل تُستنتج من توكن الجلسة الموقّع فقط
+    const claims = await verifySession(tokenFromRequest(req));
+
     let result: Record<string, unknown>;
     switch (action) {
       case "register":
-        result = await handleRegister(body);
+        result = await handleRegister(claims, body);
         break;
       case "list":
-        result = await handleList(body);
+        result = await handleList(claims, body);
         break;
       case "deactivate":
-        result = await handleDeactivate(body);
+        result = await handleDeactivate(claims, body);
         break;
       case "test":
-        result = await handleTest(body, selfUrl);
+        result = await handleTest(claims, body, selfUrl);
         break;
       case "list_all":
-        result = await handleListAllDevices(body);
+        result = await handleListAllDevices(claims, body);
         break;
       case "set_active":
-        result = await handleSetDeviceActive(body);
+        result = await handleSetDeviceActive(claims, body);
         break;
       case "notify":
-        result = await handleNotify(body, selfUrl);
+        result = await handleNotify(claims, body, selfUrl);
         break;
       default:
         return json({ ok: false, error: "Unknown action" }, 400);

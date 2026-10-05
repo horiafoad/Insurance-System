@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { sessionHeaders } from "./authSession";
 
 // كشف بيئة التطبيق الأصلي (Capacitor) — وليس المتصفح.
 export function isNativePlatform() {
@@ -30,14 +31,31 @@ export async function enableNativePush(user) {
 
     const token = await new Promise((resolve) => {
       let done = false;
+      let sub;
       const finish = (value) => {
-        if (!done) {
-          done = true;
-          resolve(value);
+        if (done) return;
+        done = true;
+        if (sub && typeof sub.remove === "function") {
+          try {
+            sub.remove();
+          } catch {
+            // ignore
+          }
         }
+        resolve(value);
       };
 
-      PushNotifications.addListener("registration", (e) => finish(e?.value || null));
+      const add = async () => {
+        try {
+          sub = await PushNotifications.addListener("registration", (e) =>
+            finish(e?.value || null)
+          );
+        } catch (listenerErr) {
+          console.warn("native push listener error:", listenerErr);
+          finish(null);
+        }
+      };
+      add();
 
       try {
         PushNotifications.register();
@@ -59,6 +77,7 @@ export async function enableNativePush(user) {
     const { data, error } = await supabase.functions.invoke(
       "push-notifications",
       {
+        headers: sessionHeaders(),
         body: {
           action: "register",
           userId: user.id,
@@ -104,6 +123,7 @@ export async function disableNativePush(user) {
       async (e) => {
         if (e?.value) {
           await supabase.functions.invoke("push-notifications", {
+            headers: sessionHeaders(),
             body: {
               action: "deactivate",
               userId: user.id,

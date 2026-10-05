@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { supabase } from "../supabaseClient";
+import { uploadFile } from "../services/fileStorage";
 import { analyzeSalaryPDF, groupPagesIntoSalarySlips } from "../utils/salaryPDFParser";
 import { EMPLOYEE_SALARY_CONFIG, FACULTY_SALARY_CONFIG } from "./salaryArchiveConfig";
 
@@ -112,25 +113,22 @@ export default function SalaryImportReview({ currentUser, config }) {
     setError("");
 
     try {
+      // حماية من الملفات الضخمة
+      if (pdfFile?.size > 50 * 1024 * 1024) {
+        throw new Error("حجم ملف PDF يجب ألا يتجاوز 50 ميجابايت");
+      }
+
       // رفع الملف الأصلي إلى Storage
       const timestamp = Date.now();
       const storagePath = `${STORAGE_ROOT}/imports/${timestamp}_${pdfFile.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(storagePath, pdfFile);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from(BUCKET)
-        .getPublicUrl(storagePath);
+      const stored = await uploadFile(BUCKET, storagePath, pdfFile);
 
       // إنشاء سجل في جدول ملفات الاستيراد
       const { data: importFile, error: importFileError } = await supabase
         .from('salary_import_files')
         .insert({
           original_filename: pdfFile.name,
-          file_url: publicUrl,
+          file_url: stored.url,
           file_size: pdfFile.size,
           total_pages: analysis.totalPages,
           total_slips: analysis.totalSlips,
@@ -138,7 +136,9 @@ export default function SalaryImportReview({ currentUser, config }) {
           needs_review_slips: analysis.needsReviewSlips,
           import_type: importType,
           uploaded_by: currentUser?.username || 'system',
-          status: 'completed'
+          status: 'completed',
+          storage_provider: stored.provider,
+          storage_key: stored.key
         })
         .select()
         .single();
@@ -179,7 +179,9 @@ export default function SalaryImportReview({ currentUser, config }) {
             pages_count: slip.pages.length,
             source_file_id: importFile.id,
             original_filename: pdfFile.name,
-            file_url: publicUrl,
+            file_url: stored.url,
+            storage_provider: stored.provider,
+            storage_key: stored.key,
             status: slip.needsReview ? 'needs_review' : 'verified',
             import_notes: slip.needsReview ? 'تحتاج مراجعة يدوية' : null,
             created_by: currentUser?.username || 'system'

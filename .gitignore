@@ -12,6 +12,19 @@ dist
 dist-ssr
 *.local
 
+# Environment variables
+.env
+.env.production
+.env.development
+# أي ملف بيئة آخر (env.local, .env.staging, ...) يُتجاهل.
+# نُبقي القالب فقط لأنه لا يحتوي أسرارًا.
+.env.*
+!.env.example
+
+# تقارير وفحوصات الترحيل (تحتوي أسماء ملفات ومسارات)
+.storage-r2-migration-report-*.json
+storage-migration-report*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -45,5 +58,26 @@ release.token
 # Supabase CLI temp
 supabase/.temp
 
+# Old-database READ-ONLY export (scripts/export-old-data)
+# raw/ and ndjson/ contain real production data incl. users.password
+scripts/export-old-data/raw/
+scripts/export-old-data/ndjson/
+scripts/export-old-data/run-plan/
+
+# Storage compression reports (scripts/compress-storage.mjs)
+.storage-compress-*.json
+storage-compress-cache/
+
+# جسر السكانر: قفل مثيل واحد وقت التشغيل (يحتوي PID)
+# state.json مُتعمَّد: هو سجل الجسر ولا بد أن يبقى مع المشروع.
+scanner-bridge/instance.lock
+
 # Built APK artifacts
 *.apk
+
+# local-only R2 credentials for the NEW Supabase project (never commit)
+.r2-secrets.local
+
+# local migration progress ledger
+scripts/migration/.schema-progress.json
+scripts/migration/.import-progress.json

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
+import { sessionHeaders } from "../utils/authSession";
 import {
   isPushSupported,
   getDeviceInfo,
@@ -216,6 +217,7 @@ export default function AndroidPushDiagnostics({ currentUser }) {
       const { data, error } = await supabase.functions.invoke(
         "push-notifications",
         {
+          headers: sessionHeaders(),
           body: {
             action: "test",
             userId: currentUser.id,

@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../supabaseClient";
+import { uploadFile, useFileUrl } from "../services/fileStorage";
 import LetterCreationPanel from "./LetterCreationPanel";
 import LetterTemplatesManager from "./LetterTemplatesManager";
 import lettersHeaderImage from "../assets/letters-header.jpg";
@@ -373,26 +374,22 @@ function LetterImageUpload({
       const ext = file.name.split(".").pop();
       const path = `letters/${letterId}-${Date.now()}.${ext}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("letter-images")
-        .upload(path, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("letter-images")
-        .getPublicUrl(path);
-
-      const publicUrl = publicUrlData?.publicUrl;
+      const uploaded = await uploadFile("letter-images", path, file, {
+        upsert: true,
+      });
 
       const { error: updateError } = await supabase
         .from("letters")
-        .update({ image_url: publicUrl })
+        .update({
+          image_url: uploaded.url,
+          storage_provider: uploaded.provider,
+          storage_key: uploaded.key,
+        })
         .eq("id", letterId);
 
       if (updateError) throw updateError;
 
-      onUploaded?.(publicUrl);
+      onUploaded?.(uploaded.url);
     } catch (err) {
       console.error("Image upload error:", err);
       setError("حصل خطأ أثناء رفع الصورة، حاول تاني");
@@ -401,11 +398,13 @@ function LetterImageUpload({
     }
   };
 
+  const resolvedImageUrl = useFileUrl(currentImageUrl);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {currentImageUrl && (
+      {resolvedImageUrl && (
         <img
-          src={currentImageUrl}
+          src={resolvedImageUrl}
           alt="صورة الخطاب"
           style={{
             width: "100%",
@@ -2324,39 +2323,52 @@ const startQrScanner = async () => {
   const loadQRCodes = async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("archive_qr_codes")
-      .select("id, code, status, created_at, letter_id, used_at")
-      .order("id", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("archive_qr_codes")
+        .select("id, code, status, created_at, letter_id, used_at")
+        .order("id", { ascending: false });
 
-    if (error) {
-      console.error("Error loading QR codes:", error);
+      if (error) {
+        console.error("Error loading QR codes:", error);
+        alert("حدث خطأ أثناء تحميل أكواد QR.");
+      } else {
+        setQrCodes(data || []);
+      }
+    } catch (err) {
+      console.error("Unexpected QR codes loading error:", err);
       alert("حدث خطأ أثناء تحميل أكواد QR.");
-    } else {
-      setQrCodes(data || []);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const loadLetterTemplates = async () => {
-    const { data, error } = await supabase
-      .from("letter_templates")
-      .select(
-        "id, name, letter_type, department_name, title, fixed_text, variable_fields, is_active, default_route"
-      )
-      .order("name");
+    try {
+      const { data, error } = await supabase
+        .from("letter_templates")
+        .select(
+          "id, name, letter_type, department_name, title, fixed_text, variable_fields, is_active, default_route"
+        )
+        .order("name");
 
-    if (error) {
-      console.warn(
-        "تعذر تحميل قوالب الخطابات (قد لا يكون الجدول مفعّلًا بعد):",
-        error
+      if (error) {
+        console.warn(
+          "تعذر تحميل قوالب الخطابات (قد لا يكون الجدول مفعّلًا بعد):",
+          error
+        );
+        setLetterTemplates([]);
+        return;
+      }
+
+      setLetterTemplates(data || []);
+    } catch (err) {
+      console.error(
+        "Unexpected letter templates loading error:",
+        err
       );
       setLetterTemplates([]);
-      return;
     }
-
-    setLetterTemplates(data || []);
   };
 
   useEffect(() => {
@@ -2588,22 +2600,26 @@ const startQrScanner = async () => {
 
   // عدد الإدارات النشطة وعدد الموظفين لعرضها في بطاقات الإحصائيات الحية.
   const loadOrgStats = async () => {
-    const [departmentsRes, employeesRes] = await Promise.all([
-      supabase
-        .from("letter_departments")
-        .select("id", { count: "exact", head: true })
-        .eq("is_active", true),
-      supabase
-        .from("users")
-        .select("id", { count: "exact", head: true }),
-    ]);
+    try {
+      const [departmentsRes, employeesRes] = await Promise.all([
+        supabase
+          .from("letter_departments")
+          .select("id", { count: "exact", head: true })
+          .eq("is_active", true),
+        supabase
+          .from("users")
+          .select("id", { count: "exact", head: true }),
+      ]);
 
-    if (!departmentsRes.error && departmentsRes.count != null) {
-      setDepartmentsCount(departmentsRes.count);
-    }
+      if (!departmentsRes.error && departmentsRes.count != null) {
+        setDepartmentsCount(departmentsRes.count);
+      }
 
-    if (!employeesRes.error && employeesRes.count != null) {
-      setEmployeesCount(employeesRes.count);
+      if (!employeesRes.error && employeesRes.count != null) {
+        setEmployeesCount(employeesRes.count);
+      }
+    } catch (err) {
+      console.error("Unexpected org stats loading error:", err);
     }
   };
 

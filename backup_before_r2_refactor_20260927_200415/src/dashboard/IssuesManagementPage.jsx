@@ -1,0 +1,3220 @@
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { styles } from "./styles";
+import { supabase } from "../supabaseClient";
+import { useRealtimeSync } from "../utils/realtimeSync";
+import * as XLSX from "xlsx";
+
+const PAYMENT_STATUS_OPTIONS = [
+  "جاري التنفيذ",
+  "تم التنفيذ وفي انتظار الصرف",
+  "تم الصرف",
+  "مرفوضة",
+];
+
+function normalizePaymentStatus(status) {
+  if (status === "تم التنفيذ" || status === "في انتظار الصرف") {
+    return "تم التنفيذ وفي انتظار الصرف";
+  }
+  return status;
+}
+
+const CASE_FIELD_ORDER = [
+  "الاسم",
+  "رقم القضيه",
+  "شهر تغير الاساسي",
+  "الاساسي بعد التغيير",
+  "الاجمالي",
+  "الصافي",
+  "حاله الصرف",
+  "تاريخ الصرف",
+];
+
+// الحقول الرقمية داخل بيانات القضية (JSONB data) — تُحوَّل بطريقة آمنة.
+const ISSUE_NUMERIC_FIELDS = ["الاساسي بعد التغيير", "الاجمالي", "الصافي"];
+
+// شهور السنة لقائمة «شهر تغيير الأساسي».
+const MONTHS_LIST = [
+  "يناير",
+  "فبراير",
+  "مارس",
+  "أبريل",
+  "مايو",
+  "يونيو",
+  "يوليو",
+  "أغسطس",
+  "سبتمبر",
+  "أكتوبر",
+  "نوفمبر",
+  "ديسمبر",
+];
+
+// يحوّل أي قيمة محفوظة (اسم شهر أو رقم 1-12) إلى اسم الشهر للعرض/اختيار القائمة.
+function normalizeMonthValue(value) {
+  if (value == null || String(value).trim() === "") return "";
+  const s = String(value).trim();
+  const n = Number(s);
+  if (Number.isFinite(n) && n >= 1 && n <= 12) return MONTHS_LIST[n - 1];
+  return s;
+}
+
+// يعرض المبلغ مع عملة «ج.م» بعده.
+function formatMoneyValue(value) {
+  if (value == null || String(value).trim() === "") return "-";
+  return `${value} ج.م`;
+}
+
+// تحويل رقمي آمن:
+// - الأرقام تُترك أرقامًا.
+// - النص الرقمي الصحيح (مثل "15000" أو "15000.50") يُحول إلى رقم.
+// - القيم الفارغة تبقى فارغة (لا تتحول إلى 0).
+// - أي نص غير رقمي يُرجع كما هو بدون كسر.
+function normalizeIssueNumber(value) {
+  if (value == null) return value;
+  if (typeof value === "number") return value;
+  const trimmed = String(value).trim();
+  if (trimmed === "") return "";
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  return trimmed;
+}
+
+function cleanFileName(name) {
+  return name
+    .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, "")
+    .replace(/[^\w\s.-]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_{2,}/g, "_")
+    .trim();
+}
+
+// تنسيق تاريخ القضية للعرض في الجدول (بصيغة عربية موجزة).
+function formatIssueDate(value) {
+  if (!value) return "-";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("ar-EG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "-";
+  }
+}
+
+// اسم العميل/صاحب القضية: يُستخرج من بيانات القضية (JSONB) أو من عنوانها.
+function getIssueClientName(issue) {
+  if (!issue) return "-";
+  const d = issue.excel_data || {};
+  return (
+    d["الاسم"] ||
+    d["اسم صاحب القضية"] ||
+    d["Client Name"] ||
+    issue.case_title ||
+    "-"
+  );
+}
+
+export default function IssuesManagementPage() {
+  const [issues, setIssues] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const [excelFile, setExcelFile] = useState(null);
+  const [excelUploading, setExcelUploading] = useState(false);
+
+  const [pdfFile, setPdfFile] = useState(null);
+  const [caseNumber, setCaseNumber] = useState("");
+  const [caseTitle, setCaseTitle] = useState("");
+  const [caseDescription, setCaseDescription] = useState("");
+  const [caseMonth, setCaseMonth] = useState("");
+  const [caseBaseSalary, setCaseBaseSalary] = useState("");
+  const [caseTotal, setCaseTotal] = useState("");
+  const [caseNet, setCaseNet] = useState("");
+  const [casePayStatus, setCasePayStatus] = useState("");
+  const [casePayDate, setCasePayDate] = useState("");
+  const [pdfUploading, setPdfUploading] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+
+  const [editingIssue, setEditingIssue] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
+  const [detailModalIssue, setDetailModalIssue] = useState(null);
+
+  // يتحكم في إظهار/إخفاء قسم إضافة قضية جديدة (Excel أو PDF) —
+  // افتراضيًا تظهر القضايا المسجلة فقط ويُفتح القسم من زرار الصفحة.
+  const [showAddPanel, setShowAddPanel] = useState(false);
+  const [additionalDocs, setAdditionalDocs] = useState([]);
+  const [addDocUploading, setAddDocUploading] = useState(false);
+  const [addDocFile, setAddDocFile] = useState(null);
+
+  const [mainPdfUploading, setMainPdfUploading] = useState(false);
+
+  // القضية المفتوح منها قائمة الإجراءات (⋯) في الصف.
+  const [rowMenuOpenId, setRowMenuOpenId] = useState(null);
+
+  // مؤشر التنقل بين خلايا الجدول بالكيبورد/الماوس.
+  const [cursor, setCursor] = useState({ r: -1, c: -1 });
+  const tableRef = useRef(null);
+
+  useEffect(() => {
+    loadIssues();
+  }, []);
+
+  const loadIssues = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const { data, error: issuesError } = await supabase
+        .from("issues")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (issuesError) throw issuesError;
+
+      const issuesData = data || [];
+
+      const chunk = (arr, size) => {
+        const out = [];
+        for (let i = 0; i < arr.length; i += size) {
+          out.push(arr.slice(i, i + size));
+        }
+        return out;
+      };
+
+      const individualIds = issuesData
+        .filter((issue) => issue.case_type === "individual")
+        .map((issue) => issue.id);
+
+      const detailsByIssue = {};
+      for (const ids of chunk(individualIds, 800)) {
+        const { data: details } = await supabase
+          .from("issue_details")
+          .select("issue_id, data")
+          .in("issue_id", ids)
+          .order("id", { ascending: false });
+        for (const d of details || []) {
+          if (detailsByIssue[d.issue_id] == null) {
+            detailsByIssue[d.issue_id] = d.data;
+          }
+        }
+      }
+
+      const allIds = issuesData.map((issue) => issue.id);
+
+      const docsByIssue = {};
+      for (const ids of chunk(allIds, 800)) {
+        const { data: docs } = await supabase
+          .from("case_documents")
+          .select("*")
+          .in("case_id", ids)
+          .order("created_at", { ascending: true });
+        for (const d of docs || []) {
+          (docsByIssue[d.case_id] =
+            docsByIssue[d.case_id] || []).push(d);
+        }
+      }
+
+      const issuesWithDocs = issuesData.map((issue) => ({
+        ...issue,
+        excel_data:
+          issue.case_type === "individual"
+            ? detailsByIssue[issue.id] ?? null
+            : null,
+        additionalDocs: docsByIssue[issue.id] || [],
+      }));
+
+      setIssues(issuesWithDocs);
+    } catch (err) {
+      setError("فشل تحميل القضايا: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAdditionalDocs = async (issueId) => {
+    try {
+      const { data } = await supabase
+        .from("case_documents")
+        .select("*")
+        .eq("case_id", issueId)
+        .order("created_at", { ascending: true });
+      setAdditionalDocs(data || []);
+    } catch (err) {
+      console.error("خطأ في تحميل مستندات القضية:", err);
+      setAdditionalDocs([]);
+    }
+  };
+
+  /* ===== المزامنة اللحظية (Supabase Realtime) — القضية المتأثرة فقط =====
+     البيانات المعروضة متداخلة (تفاصيل + مستندات مرفقة)، لذا عند أي حدث
+     نعيد جلب صف القضية الواحد بملحقاته ثم نستبدله في القائمة محليًا
+     دون إعادة جلب كل القضايا. */
+  const loadIssueRow = async (id) => {
+    if (id == null) return null;
+    try {
+      const { data, error } = await supabase
+        .from("issues")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      if (error || !data) return null;
+
+      let excel_data = null;
+      if (data.case_type === "individual") {
+        const { data: details } = await supabase
+          .from("issue_details")
+          .select("data")
+          .eq("issue_id", data.id)
+          .order("id", { ascending: false })
+          .limit(1);
+        excel_data = details?.[0]?.data ?? null;
+      }
+
+      const { data: docs } = await supabase
+        .from("case_documents")
+        .select("*")
+        .eq("case_id", data.id)
+        .order("created_at", { ascending: true });
+
+      return { ...data, excel_data, additionalDocs: docs || [] };
+    } catch (err) {
+      console.error("خطأ في تحميل صف القضية:", err);
+      return null;
+    }
+  };
+
+  const upsertIssue = (row) => {
+    if (!row) return;
+    setIssues((prev) => {
+      const index = prev.findIndex((item) => item.id === row.id);
+      if (index === -1) return [row, ...prev];
+      const next = [...prev];
+      next[index] = row;
+      return next;
+    });
+  };
+
+  const reloadIssueByExternalId = (id) => {
+    if (id == null) return;
+    loadIssueRow(id)
+      .then((row) => {
+        if (row) upsertIssue(row);
+      })
+      .catch((err) => {
+        console.error("خطأ في تحديث القضية لحظيًا:", err);
+      });
+  };
+
+  useRealtimeSync({
+    table: "issues",
+    apply: (payload) => {
+      if (payload.eventType === "DELETE") {
+        const oldId = payload.old?.id ?? payload.new?.id;
+        if (oldId != null) {
+          setIssues((prev) => prev.filter((item) => item.id !== oldId));
+        }
+        return;
+      }
+      loadIssueRow(payload.new?.id ?? payload.old?.id)
+        .then((row) => {
+          if (row) upsertIssue(row);
+        })
+        .catch((err) => {
+          console.error("خطأ في تحديث القضية لحظيًا:", err);
+        });
+    },
+  });
+
+  useRealtimeSync({
+    table: "issue_details",
+    apply: (payload) => {
+      reloadIssueByExternalId(payload.new?.issue_id ?? payload.old?.issue_id);
+    },
+  });
+
+  useRealtimeSync({
+    table: "case_documents",
+    apply: (payload) => {
+      reloadIssueByExternalId(payload.new?.case_id ?? payload.old?.case_id);
+    },
+  });
+
+  const handleExcelUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const validTypes = [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+    ];
+    if (!validTypes.includes(file.type)) {
+      setError("يرجى اختيار ملف Excel صالح (.xlsx أو .xls)");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setError("حجم ملف Excel يجب ألا يتجاوز 25 ميجابايت");
+      return;
+    }
+    setExcelFile(file);
+    setError("");
+  };
+
+  const handleExcelSubmit = async (e) => {
+    e.preventDefault();
+    if (!excelFile) {
+      setError("يرجى اختيار ملف Excel أولاً");
+      return;
+    }
+
+    try {
+      setExcelUploading(true);
+      setError("");
+      setSuccess("");
+
+      const arrayBuf = await excelFile.arrayBuffer();
+      const workbook = XLSX.read(arrayBuf);
+      if (workbook.SheetNames.length === 0)
+        throw new Error("الملف لا يحتوي على أي أوراق");
+
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      if (jsonData.length === 0)
+        throw new Error("الملف فارغ أو لا يحتوي على بيانات");
+
+      const cleanName = cleanFileName(excelFile.name);
+      const fileName = `excel_${Date.now()}_${cleanName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("issues-files")
+        .upload(fileName, excelFile);
+      if (uploadError)
+        throw new Error("فشل رفع الملف إلى Storage: " + uploadError.message);
+
+      const { data: urlData } = supabase.storage
+        .from("issues-files")
+        .getPublicUrl(fileName);
+      const publicUrl = urlData.publicUrl;
+
+      const { data: mainIssue, error: mainErr } = await supabase
+        .from("issues")
+        .insert({
+          case_number: `EXCEL_${Date.now()}`,
+          case_title: `قائمة قضايا من Excel - ${excelFile.name}`,
+          case_description: `قائمة تحتوي على ${jsonData.length} قضية`,
+          case_type: "bulk",
+          file_type: "excel",
+          file_url: publicUrl,
+          file_name: excelFile.name,
+          file_size: excelFile.size,
+          status: "pending",
+        })
+        .select()
+        .single();
+
+      if (mainErr)
+        throw new Error("فشل إنشاء سجل القضية الرئيسي: " + mainErr.message);
+
+      let created = 0;
+      let failedDetails = 0;
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        const caseNumberVal =
+          row["رقم القضيه"] ||
+          row["رقم القضية"] ||
+          row["Case Number"] ||
+          row["رقم"] ||
+          `CASE_${Date.now()}_${i + 1}`;
+        const caseTitleVal =
+          row["الاسم"] ||
+          row["عنوان القضية"] ||
+          row["Case Title"] ||
+          row["العنوان"] ||
+          `قضية ${i + 1}`;
+
+        const paymentStatusVal =
+          row["حاله الصرف"] || row["حالة الصرف"] || null;
+        const paymentDateVal = row["تاريخ الصرف"] || null;
+
+        const { data: issueData, error: issueErr } = await supabase
+          .from("issues")
+          .insert({
+            case_number: caseNumberVal,
+            case_title: caseTitleVal,
+            case_description: row["وصف"] || row["Description"] || "",
+            case_type: "individual",
+            file_type: "excel",
+            file_url: publicUrl,
+            file_name: excelFile.name,
+            file_size: excelFile.size,
+            status: "pending",
+            payment_status: PAYMENT_STATUS_OPTIONS.includes(
+              normalizePaymentStatus(paymentStatusVal)
+            )
+              ? normalizePaymentStatus(paymentStatusVal)
+              : null,
+            payment_date: paymentDateVal || null,
+          })
+          .select()
+          .single();
+
+        if (issueErr) continue;
+
+        const { error: detailErr } = await supabase
+          .from("issue_details")
+          .insert({
+            issue_id: issueData.id,
+            row_number: i + 1,
+            data: row,
+          });
+
+        if (detailErr) {
+          failedDetails++;
+          continue;
+        }
+
+        created++;
+      }
+
+      setSuccess(
+        `تم رفع ملف Excel بنجاح! تم إنشاء ${created} قضية منفصلة.` +
+          (failedDetails > 0
+            ? ` تعذّر حفظ تفاصيل ${failedDetails} قضية — شغّل fix_issue_details_save.sql في Supabase ثم أعد الرفع.`
+            : "")
+      );
+      setExcelFile(null);
+      loadIssues();
+    } catch (err) {
+      setError("فشل رفع ملف Excel: " + err.message);
+    } finally {
+      setExcelUploading(false);
+    }
+  };
+
+  const handlePdfSubmit = async (e) => {
+    e.preventDefault();
+    if (
+      !pdfFile ||
+      !caseNumber ||
+      !caseTitle ||
+      !caseMonth ||
+      !caseBaseSalary ||
+      !caseTotal ||
+      !caseNet ||
+      !casePayStatus ||
+      !casePayDate
+    ) {
+      setError(
+        "يرجى ملء جميع البيانات المطلوبة (رقم القضية، الاسم، الشهر، الأساسي، الإجمالي، الصافي، حالة الصرف، تاريخ الصرف) واختيار ملف PDF"
+      );
+      return;
+    }
+
+    try {
+      setPdfUploading(true);
+      setError("");
+      setSuccess("");
+
+      if (pdfFile.type !== "application/pdf") {
+        throw new Error("يرجى اختيار ملف PDF صالح");
+      }
+      if (pdfFile.size > 50 * 1024 * 1024) {
+        throw new Error("حجم ملف PDF يجب ألا يتجاوز 50 ميجابايت");
+      }
+
+      const fileName = `pdf_${Date.now()}_${cleanFileName(pdfFile.name)}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("issues-files")
+        .upload(fileName, pdfFile);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("issues-files")
+        .getPublicUrl(fileName);
+
+      const detailsData = {
+        "رقم القضيه": caseNumber,
+        "الاسم": caseTitle,
+        "شهر تغير الاساسي": caseMonth,
+        "الاساسي بعد التغيير": caseBaseSalary,
+        "الاجمالي": caseTotal,
+        "الصافي": caseNet,
+        "حاله الصرف": casePayStatus,
+        "تاريخ الصرف": casePayDate,
+      };
+
+      const { data: issueData, error: issueError } = await supabase
+        .from("issues")
+        .insert({
+          case_number: caseNumber,
+          case_title: caseTitle,
+          case_description: caseDescription,
+          case_type: "individual",
+          file_type: "pdf",
+          file_url: urlData.publicUrl,
+          file_name: pdfFile.name,
+          file_size: pdfFile.size,
+          status: "pending",
+          payment_status: PAYMENT_STATUS_OPTIONS.includes(
+            normalizePaymentStatus(casePayStatus)
+          )
+            ? normalizePaymentStatus(casePayStatus)
+            : casePayStatus,
+          payment_date: casePayDate,
+        })
+        .select()
+        .single();
+
+      if (issueError) throw issueError;
+
+      const { error: detailErr } = await supabase
+        .from("issue_details")
+        .insert({
+          issue_id: issueData.id,
+          row_number: 1,
+          data: detailsData,
+        });
+
+      if (detailErr) {
+        throw new Error(
+          "تعذّر حفظ بيانات القضية — شغّل fix_issue_details_save.sql في Supabase ثم أعد المحاولة: " +
+            detailErr.message
+        );
+      }
+
+      setSuccess("تم رفع ملف القضية بنجاح!");
+      setPdfFile(null);
+      setCaseNumber("");
+      setCaseTitle("");
+      setCaseDescription("");
+      setCaseMonth("");
+      setCaseBaseSalary("");
+      setCaseTotal("");
+      setCaseNet("");
+      setCasePayStatus("");
+      setCasePayDate("");
+      loadIssues();
+    } catch (err) {
+      setError("فشل رفع ملف PDF: " + err.message);
+    } finally {
+      setPdfUploading(false);
+    }
+  };
+
+  const handleMainPdfUpload = async (issueId, file) => {
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      setError("يرجى اختيار ملف PDF صالح");
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setError("حجم ملف PDF يجب ألا يتجاوز 50 ميجابايت");
+      return;
+    }
+
+    try {
+      setMainPdfUploading(true);
+      setError("");
+
+      const fileName = `pdf_${issueId}_${Date.now()}_${cleanFileName(file.name)}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("issues-files")
+        .upload(fileName, file);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("issues-files")
+        .getPublicUrl(fileName);
+
+      const { error: insertError } = await supabase
+        .from("case_documents")
+        .insert({
+          case_id: issueId,
+          file_name: file.name,
+          file_url: urlData.publicUrl,
+          file_size: file.size,
+          doc_type: "additional_pdf",
+        });
+
+      if (insertError) throw insertError;
+
+      setSuccess("تم إضافة PDF للقضية بنجاح!");
+      loadIssues();
+      if (detailModalIssue && detailModalIssue.id === issueId) {
+        loadAdditionalDocs(issueId);
+      }
+    } catch (err) {
+      setError("فشل إضافة PDF للقضية: " + err.message);
+    } finally {
+      setMainPdfUploading(false);
+    }
+  };
+
+  const handleAdditionalPdfUpload = async () => {
+    if (!addDocFile || !detailModalIssue) return;
+
+    if (addDocFile.type !== "application/pdf") {
+      setError("يرجى اختيار ملف PDF صالح");
+      return;
+    }
+    if (addDocFile.size > 50 * 1024 * 1024) {
+      setError("حجم ملف PDF يجب ألا يتجاوز 50 ميجابايت");
+      return;
+    }
+
+    try {
+      setAddDocUploading(true);
+      setError("");
+
+      const fileName = `doc_${detailModalIssue.id}_${Date.now()}_${cleanFileName(addDocFile.name)}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("issues-files")
+        .upload(fileName, addDocFile);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("issues-files")
+        .getPublicUrl(fileName);
+
+      const { error: insertError } = await supabase
+        .from("case_documents")
+        .insert({
+          case_id: detailModalIssue.id,
+          file_name: addDocFile.name,
+          file_url: urlData.publicUrl,
+          file_size: addDocFile.size,
+          doc_type: "additional_pdf",
+        });
+
+      if (insertError) throw insertError;
+
+      setSuccess("تم إضافة الملف بنجاح!");
+      setAddDocFile(null);
+      loadAdditionalDocs(detailModalIssue.id);
+      loadIssues();
+    } catch (err) {
+      setError("فشل إضافة الملف: " + err.message);
+    } finally {
+      setAddDocUploading(false);
+    }
+  };
+
+  const handleDeleteAdditionalDoc = async (docId) => {
+    if (!confirm("هل أنت متأكد من حذف هذا الملف؟")) return;
+    try {
+      const { error } = await supabase
+        .from("case_documents")
+        .delete()
+        .eq("id", docId);
+      if (error) throw error;
+      setSuccess("تم حذف الملف بنجاح");
+      if (detailModalIssue) loadAdditionalDocs(detailModalIssue.id);
+      loadIssues();
+    } catch (err) {
+      setError("فشل حذف الملف: " + err.message);
+    }
+  };
+
+  const handleDeleteIssue = async (issueId) => {
+    if (!confirm("هل أنت متأكد من حذف هذه القضية؟")) return;
+    try {
+      setError("");
+      const { error } = await supabase
+        .from("issues")
+        .delete()
+        .eq("id", issueId);
+      if (error) throw error;
+      setSuccess("تم حذف القضية بنجاح");
+      loadIssues();
+    } catch (err) {
+      setError("فشل حذف القضية: " + err.message);
+    }
+  };
+
+  const handleUpdateStatus = async (issueId, newStatus) => {
+    try {
+      setError("");
+      const { error } = await supabase
+        .from("issues")
+        .update({ status: newStatus })
+        .eq("id", issueId);
+      if (error) throw error;
+      setSuccess("تم تحديث الحالة بنجاح");
+      loadIssues();
+    } catch (err) {
+      setError("فشل تحديث الحالة: " + err.message);
+    }
+  };
+
+  const handleUpdatePaymentStatus = async (issueId, newPaymentStatus) => {
+    try {
+      setError("");
+      const { error } = await supabase
+        .from("issues")
+        .update({ payment_status: newPaymentStatus })
+        .eq("id", issueId);
+      if (error) throw error;
+      setSuccess("تم تحديث حالة الصرف بنجاح");
+      loadIssues();
+    } catch (err) {
+      setError("فشل تحديث حالة الصرف: " + err.message);
+    }
+  };
+
+  const openEditModal = (issue) => {
+    const formData = {
+      id: issue.id,
+      case_number: issue.case_number ?? "",
+      case_title: issue.case_title ?? "",
+      case_description: issue.case_description ?? "",
+      status: issue.status ?? "pending",
+      payment_status: issue.payment_status ?? "",
+      payment_date: issue.payment_date ?? "",
+    };
+    if (issue.excel_data) {
+      CASE_FIELD_ORDER.forEach((field) => {
+        if (!(field in formData)) {
+          formData[field] = issue.excel_data[field] ?? "";
+        }
+      });
+    }
+    setEditingIssue(issue);
+    setEditForm(formData);
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    console.log("SAVE BUTTON CLICKED");
+    if (!editingIssue) return;
+
+    try {
+      setError("");
+      setSuccess("");
+      const { id, case_number, case_title, case_description, status, payment_status, payment_date, ...rest } = editForm;
+
+      const issuesPayload = {
+        case_number: case_number ?? "",
+        case_title: case_title ?? "",
+        case_description: case_description ?? "",
+        status: status ?? "pending",
+        payment_status: payment_status !== "" ? payment_status : null,
+        payment_date: payment_date !== "" ? payment_date : null,
+      };
+
+      console.log("SAVE DATA:", editForm);
+
+      // تحديث جدول القضايا مع التحقق الفعلي من أن الصف اكتمل تحديثه.
+      console.log("START SUPABASE UPDATE");
+      const { data: updatedIssues, error: updateErr } = await supabase
+        .from("issues")
+        .update(issuesPayload)
+        .eq("id", id)
+        .select("id");
+
+      console.log("SUPABASE RESULT:", { data: updatedIssues, error: updateErr });
+
+      if (updateErr) throw updateErr;
+      if (!updatedIssues || updatedIssues.length === 0) {
+        throw new Error(
+          "لم يتم تحديث القضية — سياسات قاعدة البيانات (RLS) تمنع التعديل. شغّل create_issues_tables.sql ثم أعد المحاولة."
+        );
+      }
+
+      if (editingIssue.case_type === "individual") {
+        const { data: existing, error: selectErr } = await supabase
+          .from("issue_details")
+          .select('id, "row_number", data')
+          .eq("issue_id", id)
+          .order("id", { ascending: false })
+          .limit(1);
+        if (selectErr) throw selectErr;
+
+        // نبدأ من آخر بيانات محفوظة (لا نمسح الأعمدة الأخرى غير المعروضة في النموذج).
+        const baseData = (existing && existing.length > 0 && existing[0].data) ? { ...existing[0].data } : {};
+        CASE_FIELD_ORDER.forEach((field) => {
+          let value = rest[field] !== undefined ? rest[field] : "";
+          if (ISSUE_NUMERIC_FIELDS.includes(field)) {
+            value = normalizeIssueNumber(value);
+          }
+          baseData[field] = value;
+        });
+
+        const rowNumber = existing?.[0]?.row_number ?? 1;
+
+        if (existing && existing.length > 0) {
+          const { data: updatedRows, error: detailErr } = await supabase
+            .from("issue_details")
+            .update({ data: baseData })
+            .eq("issue_id", id)
+            .select("id");
+
+          console.log("DETAIL RESULT:", { updatedRows, detailErr });
+
+          if (detailErr) throw detailErr;
+
+          // إذا لم يتأثر أي صف (سياسات RLS تمنع UPDATE بصمت)،
+          // نضيف صفًا جديدًا بأحدث البيانات بدل الحذف — تُبقى كل البيانات
+          // ويقرأ النظام دائمًا أحدث صف (ترتيب تنازلي على id).
+          if (!updatedRows || updatedRows.length === 0) {
+            const { data: insertedRows, error: insErr } = await supabase
+              .from("issue_details")
+              .insert({
+                issue_id: id,
+                row_number: rowNumber,
+                data: baseData,
+              })
+              .select("id");
+            if (insErr) throw insErr;
+            if (!insertedRows || insertedRows.length === 0) {
+              throw new Error(
+                "سياسات قاعدة البيانات تمنع حفظ تفاصيل القضية - شغّل ملف fix_issue_details_update_policy.sql (أو create_issues_tables.sql) في Supabase SQL Editor"
+              );
+            }
+          }
+        } else {
+          const newDetailData = {};
+          CASE_FIELD_ORDER.forEach((field) => {
+            let value = rest[field] !== undefined ? rest[field] : "";
+            if (ISSUE_NUMERIC_FIELDS.includes(field)) {
+              value = normalizeIssueNumber(value);
+            }
+            newDetailData[field] = value;
+          });
+
+          const { error: detailErr, data: insertedRows } = await supabase
+            .from("issue_details")
+            .insert({
+              issue_id: id,
+              row_number: 1,
+              data: newDetailData,
+            })
+            .select("id");
+          if (detailErr) throw detailErr;
+          if (!insertedRows || insertedRows.length === 0) {
+            throw new Error(
+              "سياسات قاعدة البيانات تمنع إضافة تفاصيل القضية - شغّل create_issues_tables.sql ثم أعد المحاولة."
+            );
+          }
+        }
+      }
+
+      // إعادة تحميل القضية من قاعدة البيانات لضمان أن الشاشة تعكس ما حُفظ فعلاً.
+      const refreshed = await loadIssueRow(id);
+      if (refreshed) upsertIssue(refreshed);
+
+      setSuccess("تم حفظ التعديلات بنجاح");
+      setEditingIssue(null);
+    } catch (err) {
+      setError("فشل حفظ التعديلات: " + err.message);
+    }
+  };
+
+  const openDetailModal = (issue) => {
+    setDetailModalIssue(issue);
+    loadAdditionalDocs(issue.id);
+    setAddDocFile(null);
+  };
+
+  const filteredIssues = issues.filter((issue) => {
+    const q = search.toLowerCase();
+    const matchSearch =
+      (issue.case_number || "").toLowerCase().includes(q) ||
+      (issue.case_title || "").toLowerCase().includes(q) ||
+      (issue.case_description || "").toLowerCase().includes(q);
+    const matchPaymentStatus =
+      paymentStatusFilter === "all" ||
+      normalizePaymentStatus(issue.payment_status) === paymentStatusFilter;
+    return matchSearch && matchPaymentStatus;
+  });
+
+  const getPaymentBadge = (status) => {
+    if (!status)
+      return (
+        <span style={{ color: "#94A3B8", fontSize: 12, fontWeight: 600 }}>
+          —
+        </span>
+      );
+    const map = {
+      "جاري التنفيذ": { bg: "#FEF3C7", color: "#B45309", icon: "🟡" },
+      "تم التنفيذ وفي انتظار الصرف": {
+        bg: "#DBEAFE",
+        color: "#1D4ED8",
+        icon: "🔵",
+      },
+      "تم الصرف": { bg: "#D1FAE5", color: "#047857", icon: "🟢" },
+      "مرفوضة": { bg: "#FEE2E2", color: "#DC2626", icon: "🔴" },
+    };
+    const displayStatus = normalizePaymentStatus(status);
+    const s = map[displayStatus] || { bg: "#F1F5F9", color: "#475569", icon: "⚪" };
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          background: s.bg,
+          color: s.color,
+          padding: "5px 11px",
+          borderRadius: 20,
+          fontSize: 11.5,
+          fontWeight: 800,
+          whiteSpace: "nowrap",
+          border: "1px solid transparent",
+        }}
+        title={displayStatus}
+      >
+        <span style={{ fontSize: 12, lineHeight: 1 }}>{s.icon}</span>
+        <span>{displayStatus}</span>
+      </span>
+    );
+  };
+
+  const resetFilters = () => {
+    setSearch("");
+    setPaymentStatusFilter("all");
+  };
+
+  const stats = {
+    total: issues.length,
+    pending: issues.filter((i) => i.status === "pending").length,
+    inProgress: issues.filter((i) => i.status === "in_progress").length,
+    completed: issues.filter((i) => i.status === "approved").length,
+    paid: issues.filter(
+      (i) => normalizePaymentStatus(i.payment_status) === "تم الصرف"
+    ).length,
+    waiting: issues.filter(
+      (i) =>
+        normalizePaymentStatus(i.payment_status) ===
+        "تم التنفيذ وفي انتظار الصرف"
+    ).length,
+    rejected: issues.filter(
+      (i) =>
+        i.status === "rejected" ||
+        normalizePaymentStatus(i.payment_status) === "مرفوضة"
+    ).length,
+  };
+
+  // ملخص ديناميكي محسوب من البيانات الحقيقية: "26 قضية مكتملة من أصل 27 — قضية واحدة تحتاج متابعة".
+  const summaryText = (() => {
+    if (issues.length === 0) return "";
+    const done = stats.completed;
+    const attention = issues.length - done;
+    const doneLabel = done === 1 ? "قضية مكتملة" : `${done} قضية مكتملة`;
+    if (attention === 0)
+      return `${doneLabel} من أصل ${issues.length} — جميع القضايا مكتملة`;
+    if (attention === 1)
+      return `${doneLabel} من أصل ${issues.length} — قضية واحدة تحتاج متابعة`;
+    return `${doneLabel} من أصل ${issues.length} — ${attention} قضايا تحتاج متابعة`;
+  })();
+
+  const ui = {
+    card: {
+      background: "#fff",
+      border: "1px solid #E7EBF0",
+      borderRadius: 14,
+      padding: "4px 0",
+      boxShadow: "0 2px 10px rgba(15,41,66,.04)",
+    },
+    th: {
+      padding: "13px 14px",
+      background: "#E9F1FD",
+      color: "#334E78",
+      borderBottom: "2px solid #AFC7EE",
+      textAlign: "right",
+      whiteSpace: "nowrap",
+      fontSize: 12,
+      fontWeight: 800,
+      letterSpacing: "0.2px",
+    },
+    thNum: {
+      padding: "13px 14px",
+      background: "#E9F1FD",
+      color: "#334E78",
+      borderBottom: "2px solid #AFC7EE",
+      textAlign: "right",
+      direction: "ltr",
+      whiteSpace: "nowrap",
+      fontSize: 12,
+      fontWeight: 800,
+      letterSpacing: "0.2px",
+    },
+    td: {
+      padding: "13px 14px",
+      borderBottom: "1px solid #EEF2F6",
+      verticalAlign: "middle",
+      fontSize: 13.5,
+    },
+    tdNum: {
+      padding: "13px 14px",
+      borderBottom: "1px solid #EEF2F6",
+      verticalAlign: "middle",
+      fontSize: 13.5,
+      textAlign: "right",
+      direction: "ltr",
+      fontVariantNumeric: "tabular-nums",
+    },
+    filterSelect: {
+      minWidth: 190,
+      border: "1px solid #CBD5E1",
+      background: "#fff",
+      borderRadius: 10,
+      padding: "11px 12px",
+      fontSize: 14,
+      cursor: "pointer",
+    },
+  };
+
+  const issuesCss = `
+    .issues-table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+    .issues-table thead th { position: sticky; top: 0; z-index: 2; }
+    .issues-table thead th:not(:last-child), .issues-table tbody td:not(:last-child) { border-left: 1px solid #D6E4F6; }
+    .issues-table thead th { border-bottom: 2px solid #AFC7EE; }
+    .issues-table tbody tr:nth-child(odd) { background: #FFFFFF; }
+    .issues-table tbody tr:nth-child(even) { background: #EEF5FF; }
+    .issues-table tbody td { border-bottom: 2px solid #DCE9FB !important; transition: background .12s ease, box-shadow .12s ease; }
+    .issues-table tbody td:hover { background: #E2ECF9; }
+    .issues-table thead th:hover { background: #DCE8FA; }
+    .issues-menu-item:hover { background: #F1F5F9; }
+    .issues-upload-card h3 { margin: 0; }
+
+    .iss-hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: 0 0 24px 24px;
+      background-size: cover;
+      background-position: center;
+      margin-bottom: 24px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+      color: #fff;
+      height: 300px;
+    }
+    .iss-hero-inner {
+      position: relative;
+      height: 100%;
+      box-sizing: border-box;
+      padding: clamp(20px, 3vw, 32px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+    }
+    .iss-hero-head {
+      text-align: center;
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .iss-hero-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+    .iss-hero-icon {
+      width: 58px;
+      height: 58px;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 0 12px rgba(253, 224, 71, 0.55));
+    }
+    .iss-hero-title {
+      margin: 0;
+      font-size: 42px;
+      font-weight: 800;
+      line-height: 1.35;
+      color: #fff;
+      text-align: center;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+    .iss-hero-college {
+      margin: 16px 0 0;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.5;
+      color: #fff;
+      text-align: center;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+    .iss-hero-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 55%;
+      max-width: 700px;
+      margin: 20px auto 0;
+    }
+    .iss-hero-divider .iss-hero-line {
+      flex: 1;
+      height: 2px;
+      background: #60a5fa;
+      border-radius: 2px;
+      opacity: 0.8;
+    }
+    .iss-hero-divider .iss-hero-diamond {
+      width: 10px;
+      height: 10px;
+      background: #60a5fa;
+      border-radius: 2px;
+      transform: rotate(45deg);
+      opacity: 0.95;
+    }
+    @media (max-width: 1024px) {
+      .iss-hero { height: 280px; }
+      .iss-hero-title { font-size: 34px; }
+    }
+    @media (max-width: 640px) {
+      .iss-hero { height: 380px; min-height: 380px; }
+      .iss-hero-title { font-size: 26px; line-height: 1.5; }
+      .iss-hero-icon { width: 42px; height: 42px; }
+      .iss-hero-college { font-size: 16px; }
+    }
+  `;
+
+  const openEditFromDetail = (issue) => {
+    setDetailModalIssue(null);
+    openEditModal(issue);
+  };
+
+  // ===== التنقل بين خلايا الجدول (كيبورد + ماوس) =====
+  const MAX_DISPLAY_ROWS = 300;
+  const TABLE_COLS = 9;
+
+  const isCursorCell = (r, c) => cursor.r === r && cursor.c === c;
+
+  const cursorCellStyle = (r, c) =>
+    isCursorCell(r, c)
+      ? {
+          backgroundColor: "#93C5FD",
+          boxShadow: "inset 0 0 0 2px rgba(37,99,235,.55)",
+        }
+      : {};
+
+  const clampCursor = ({ r, c }) => {
+    const rows = Math.min(filteredIssues.length, MAX_DISPLAY_ROWS);
+    return {
+      r: Math.min(Math.max(r, 0), Math.max(rows - 1, 0)),
+      c: Math.min(Math.max(c, 0), TABLE_COLS - 1),
+    };
+  };
+
+  const moveCursor = (dr, dc) =>
+    setCursor((cur) =>
+      clampCursor({
+        r: cur.r < 0 ? 0 : cur.r + dr,
+        c: cur.c < 0 ? 0 : cur.c + dc,
+      })
+    );
+
+  const handleTableKeyDown = (e) => {
+    const t = e.target;
+    if (
+      t &&
+      (t.tagName === "INPUT" ||
+        t.tagName === "TEXTAREA" ||
+        t.tagName === "SELECT" ||
+        t.tagName === "BUTTON" ||
+        t.isContentEditable)
+    ) {
+      return;
+    }
+    // لا نحرّك المؤشر بينما نافذة التعديل أو التفاصيل مفتوحة.
+    if (editingIssue || detailModalIssue) return;
+    const key = e.key;
+    if (key === "ArrowDown") {
+      e.preventDefault();
+      moveCursor(1, 0);
+    } else if (key === "ArrowUp") {
+      e.preventDefault();
+      moveCursor(-1, 0);
+    } else if (key === "ArrowRight") {
+      e.preventDefault();
+      moveCursor(0, -1); // RTL: العمود الأول في أقصى اليمين
+    } else if (key === "ArrowLeft") {
+      e.preventDefault();
+      moveCursor(0, 1);
+    } else if (key === "Home") {
+      e.preventDefault();
+      setCursor((cur) => clampCursor({ r: 0, c: cur.c < 0 ? 0 : cur.c }));
+    } else if (key === "End") {
+      e.preventDefault();
+      setCursor((cur) =>
+        clampCursor({
+          r: Math.min(filteredIssues.length, MAX_DISPLAY_ROWS) - 1,
+          c: cur.c < 0 ? 0 : cur.c,
+        })
+      );
+    } else if (key === "Enter") {
+      e.preventDefault();
+      if (cursor.r >= 0 && cursor.r < Math.min(filteredIssues.length, MAX_DISPLAY_ROWS)) {
+        openEditModal(filteredIssues[cursor.r]);
+      }
+    }
+  };
+
+  // تُبقي الخلية المحددة ظاهرة داخل منطقة التمرير.
+  useEffect(() => {
+    if (cursor.r < 0 || cursor.c < 0) return;
+    const wrap = tableRef.current;
+    if (!wrap) return;
+    const cell = wrap.querySelector(
+      `td[data-cr="${cursor.r}"][data-cc="${cursor.c}"]`
+    );
+    if (cell) cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [cursor]);
+
+  // استماع عام للكيبورد في جزء القضايا — الأسهم تتحرك فورًا دون الحاجة
+  // للضغط على الجدول أولًا (يُعاد ربط المستمع كل عرض ليكون محدّثًا دائمًا).
+  useEffect(() => {
+    window.addEventListener("keydown", handleTableKeyDown);
+    return () => window.removeEventListener("keydown", handleTableKeyDown);
+  });
+
+  return (
+    <div>
+      <style>{issuesCss}</style>
+
+      {/* ============ ترويسة الصفحة ============ */}
+      <div
+        className="iss-hero"
+        style={{
+          backgroundImage: `linear-gradient(135deg, rgba(7,27,58,0.97), rgba(11,42,91,0.9), rgba(29,95,209,0.8))`,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: "200px",
+            height: "200px",
+            borderRadius: "50%",
+            border: "2px solid rgba(255,255,255,0.12)",
+            left: "-70px",
+            top: "-110px",
+            background:
+              "radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: "150px",
+            height: "150px",
+            borderRadius: "50%",
+            border: "1px solid rgba(255,255,255,0.1)",
+            right: "-50px",
+            bottom: "-80px",
+            background:
+              "radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%)",
+          }}
+        />
+        <div className="iss-hero-inner">
+          <div className="iss-hero-head">
+            <div className="iss-hero-title-row">
+              <div className="iss-hero-icon">⚖️</div>
+              <h1 className="iss-hero-title">
+                إدارة القضايا
+              </h1>
+            </div>
+            <p className="iss-hero-college">
+              كلية الهندسة – جامعة عين شمس
+            </p>
+            <div className="iss-hero-divider">
+              <span className="iss-hero-line" />
+              <span className="iss-hero-diamond" />
+              <span className="iss-hero-line" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ============ بطاقة إدارة القضايا ============ */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 16,
+          padding: "20px 24px",
+          marginBottom: 18,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 14,
+          flexWrap: "wrap",
+          boxShadow: "0 6px 18px rgba(15,41,66,.06)",
+          border: "1px solid #E7EBF0",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flex: "1 1 260px",
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: "#FEF3C7",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 22,
+              flexShrink: 0,
+            }}
+          >
+            ⚖️
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 21,
+                fontWeight: 900,
+                color: "#0F172A",
+              }}
+            >
+              إدارة القضايا
+            </h2>
+            <p style={{ margin: "5px 0 0", fontSize: 13.5, color: "#64748b" }}>
+              رفع وإدارة القضايا مع ملفات Excel و PDF — متابعة الحالات لحظيًا
+            </p>
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              border: 0,
+              background: showAddPanel ? "#1E3A8A" : "#123B5D",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "12px 18px",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(18,59,93,.28)",
+              whiteSpace: "nowrap",
+            }}
+            onClick={() => setShowAddPanel((open) => !open)}
+          >
+            <span style={{ fontSize: 15 }}>{showAddPanel ? "✕" : "➕"}</span>
+            <span>{showAddPanel ? "إغلاق الإضافة" : "إضافة قضية جديدة"}</span>
+          </button>
+          <button
+            type="button"
+            title="تحديث القائمة من قاعدة البيانات"
+            onClick={loadIssues}
+            style={{
+              border: "1px solid #CBD5E1",
+              background: "#F8FAFC",
+              color: "#334155",
+              borderRadius: 10,
+              width: 44,
+              height: 44,
+              fontSize: 18,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {loading ? "⏳" : "🔄"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            ...styles.errorBox,
+            whiteSpace: "pre-line",
+            lineHeight: 1.6,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {success && <div style={styles.successBox}>{success}</div>}
+
+      {/* ============ الإحصائيات ============ */}
+      <div
+        className="issues-stats-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          gap: 14,
+          marginBottom: 18,
+        }}
+      >
+        {[
+          { icon: "💵", label: "تم الصرف", value: stats.paid, color: "#047857", bg: "#D1FAE5" },
+          { icon: "🛡️", label: "جاري التنفيذ", value: stats.inProgress, color: "#1E3A8A", bg: "#DBEAFE" },
+          { icon: "⏳", label: "قيد المعالجة", value: stats.pending, color: "#B45309", bg: "#FEF3C7" },
+          { icon: "📁", label: "إجمالي القضايا", value: stats.total, color: "#1E3A8A", bg: "#DBEAFE" },
+        ].map((c) => (
+          <div
+            key={c.label}
+            style={{
+              background: "#fff",
+              border: "1px solid #E7EBF0",
+              borderRadius: 15,
+              padding: "16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 13,
+              boxShadow: "0 4px 14px rgba(15,41,66,.06)",
+              transition: "all 0.2s",
+              minWidth: 0,
+            }}
+          >
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 13,
+                background: c.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 22,
+                flexShrink: 0,
+              }}
+            >
+              {c.icon}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  color: "#64748B",
+                  marginBottom: 3,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {c.label}
+              </div>
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 900,
+                  color: c.color,
+                  lineHeight: 1,
+                }}
+              >
+                {c.value}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ============ ملخص ديناميكي ============ */}
+      {summaryText && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "linear-gradient(135deg,#EFF6FF,#ffffff)",
+            border: "1px solid #BFDBFE",
+            borderRadius: 12,
+            padding: "12px 16px",
+            marginBottom: 18,
+            color: "#1E3A8A",
+            fontSize: 13.5,
+            fontWeight: 700,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>📊</span>
+          <span>{summaryText}</span>
+        </div>
+      )}
+
+      {/* ============ قسم الإضافة (Excel + PDF) ============ */}
+      {showAddPanel && (
+        <div
+          className="issues-upload-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))",
+            gap: 18,
+            marginBottom: 20,
+          }}
+        >
+          <div
+            className="issues-upload-card"
+            style={{
+              background: "#fff",
+              border: "1px solid #E2E8F0",
+              borderRadius: 14,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(15,41,66,.03)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: "#EFF6FF",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 19,
+                }}
+              >
+                📊
+              </div>
+              <div>
+                <h3>رفع قائمة قضايا من Excel</h3>
+                <div style={{ fontSize: 11.5, color: "#94A3B8" }}>
+                  استيراد بالجملة — تُنشأ قضية مستقلة لكل صف
+                </div>
+              </div>
+            </div>
+            <form onSubmit={handleExcelSubmit}>
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>ملف Excel:</label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleExcelUpload}
+                  style={{ display: "none" }}
+                  id="excel-upload"
+                />
+                <label
+                  htmlFor="excel-upload"
+                  style={{ ...styles.fileUploadArea, marginBottom: 0 }}
+                >
+                  {excelFile ? excelFile.name : "اختر ملف Excel"}
+                </label>
+              </div>
+              <button
+                type="submit"
+                style={{ ...styles.primaryButton, width: "100%", borderRadius: 10 }}
+                disabled={excelUploading || !excelFile}
+              >
+                {excelUploading ? "جاري الرفع..." : "📥 رفع ملف Excel"}
+              </button>
+            </form>
+          </div>
+
+          <div
+            className="issues-upload-card"
+            style={{
+              background: "#fff",
+              border: "1px solid #E2E8F0",
+              borderRadius: 14,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(15,41,66,.03)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: "#FEF3C7",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 19,
+                }}
+              >
+                📄
+              </div>
+              <div>
+                <h3>إضافة قضية فردية (PDF)</h3>
+                <div style={{ fontSize: 11.5, color: "#94A3B8" }}>
+                  كل بيانات الجدول مطلوبة + رفع ملف PDF للقضية
+                </div>
+              </div>
+            </div>
+            <form onSubmit={handlePdfSubmit}>
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>رقم القضية *</label>
+                <input
+                  type="text"
+                  value={caseNumber}
+                  onChange={(e) => setCaseNumber(e.target.value)}
+                  style={styles.input}
+                  placeholder="أدخل رقم القضية"
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>اسم صاحب القضية / العميل *</label>
+                <input
+                  type="text"
+                  value={caseTitle}
+                  onChange={(e) => setCaseTitle(e.target.value)}
+                  style={styles.input}
+                  placeholder="أدخل اسم صاحب القضية"
+                  required
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0 14px",
+                }}
+              >
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>شهر تغيير الأساسي *</label>
+                  <select
+                    value={caseMonth}
+                    onChange={(e) => setCaseMonth(e.target.value)}
+                    style={styles.input}
+                    required
+                  >
+                    <option value="">اختار الشهر</option>
+                    {MONTHS_LIST.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>الأساسي بعد التغيير *</label>
+                  <input
+                    type="number"
+                    value={caseBaseSalary}
+                    onChange={(e) => setCaseBaseSalary(e.target.value)}
+                    style={styles.input}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>الإجمالي *</label>
+                  <input
+                    type="number"
+                    value={caseTotal}
+                    onChange={(e) => setCaseTotal(e.target.value)}
+                    style={styles.input}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>الصافي *</label>
+                  <input
+                    type="number"
+                    value={caseNet}
+                    onChange={(e) => setCaseNet(e.target.value)}
+                    style={styles.input}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0 14px",
+                }}
+              >
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>حالة الصرف *</label>
+                  <select
+                    value={casePayStatus}
+                    onChange={(e) => setCasePayStatus(e.target.value)}
+                    style={styles.input}
+                    required
+                  >
+                    <option value="">اختار حالة الصرف</option>
+                    {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.formLabel}>تاريخ الصرف *</label>
+                  <input
+                    type="date"
+                    value={casePayDate}
+                    onChange={(e) => setCasePayDate(e.target.value)}
+                    style={styles.input}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>وصف القضية</label>
+                <textarea
+                  value={caseDescription}
+                  onChange={(e) => setCaseDescription(e.target.value)}
+                  style={styles.textarea}
+                  placeholder="أدخل وصف القضية (اختياري)"
+                  rows="2"
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>ملف PDF *</label>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => setPdfFile(e.target.files[0])}
+                  style={{ display: "none" }}
+                  id="pdf-upload"
+                />
+                <label
+                  htmlFor="pdf-upload"
+                  style={{ ...styles.fileUploadArea, marginBottom: 0 }}
+                >
+                  {pdfFile ? pdfFile.name : "اختر ملف PDF"}
+                </label>
+              </div>
+              <button
+                type="submit"
+                style={{ ...styles.primaryButton, width: "100%", borderRadius: 10 }}
+                disabled={pdfUploading || !pdfFile}
+              >
+                {pdfUploading ? "جاري الرفع..." : "📥 رفع القضية والملف PDF"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+        {issues.length > 0 && (
+          <div
+            style={{
+              background: "#fff",
+              border: "1px solid #E7EBF0",
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+              boxShadow: "0 2px 10px rgba(15,41,66,.04)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontWeight: 800,
+                  fontSize: 14,
+                  color: "#1E293B",
+                }}
+              >
+                <span style={{ fontSize: 16 }}>🔎</span>
+                البحث والتصفية
+              </div>
+              <span
+                style={{
+                  fontSize: 12.5,
+                  color: "#64748B",
+                  fontWeight: 700,
+                }}
+              >
+                عرض {filteredIssues.length} من أصل {issues.length} قضية
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="بحث برقم القضية أو اسم صاحب القضية..."
+                style={{
+                  flex: "1 1 260px",
+                  border: "1px solid #CBD5E1",
+                  background: "#fff",
+                  borderRadius: 10,
+                  padding: "11px 14px",
+                  fontSize: 14,
+                  outline: "none",
+                }}
+              />
+              <select
+                value={paymentStatusFilter}
+                onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                style={ui.filterSelect}
+              >
+                <option value="all">كل حالات الصرف</option>
+                {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={resetFilters}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  border: "1px solid #E2E8F0",
+                  background: "#F8FAFC",
+                  color: "#475569",
+                  borderRadius: 10,
+                  padding: "11px 16px",
+                  fontWeight: 700,
+                  fontSize: 13.5,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+                title="إعادة ضبط البحث والفلاتر"
+              >
+                ♻️ إعادة الضبط
+              </button>
+            </div>
+          </div>
+        )}
+
+        {filteredIssues.length > 0 ? (
+          <div
+            style={{
+              background: "#fff",
+              border: "1px solid #E7EBF0",
+              borderRadius: 14,
+              boxShadow: "0 2px 10px rgba(15,41,66,.04)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                padding: "8px 14px",
+                background: "#F8FAFD",
+                borderBottom: "1px solid #E7EBF0",
+                fontSize: 11.5,
+                color: "#64748B",
+                fontWeight: 600,
+                gap: 6,
+              }}
+            >
+              ⌨️ تتحرك بالأسهم
+            </div>
+            <div
+              ref={tableRef}
+              tabIndex={0}
+              style={{ overflowX: "auto", outline: "none" }}
+              onFocus={() =>
+                setCursor((cur) => (cur.r < 0 ? { r: 0, c: 0 } : cur))
+              }
+              onClick={(e) => {
+                if (
+                  e.target &&
+                  e.target.closest &&
+                  e.target.closest(
+                    "button, a, input, textarea, select"
+                  )
+                ) {
+                  return;
+                }
+                if (tableRef.current) {
+                  tableRef.current.focus({ preventScroll: true });
+                }
+              }}
+            >
+              <table className="issues-table" style={{ minWidth: "1280px" }}>
+                <thead>
+                  <tr>
+                    <th style={ui.thNum}>رقم القضية</th>
+                    <th style={ui.th}>اسم القضية / العميل</th>
+                    <th style={ui.th}>شهر تغيير الأساسي</th>
+                    <th style={ui.thNum}>الأساسي بعد التغيير</th>
+                    <th style={ui.thNum}>الإجمالي</th>
+                    <th style={ui.thNum}>الصافي</th>
+                    <th style={ui.th}>حالة الصرف</th>
+                    <th style={ui.th}>تاريخ الصرف</th>
+                    <th style={ui.th}>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIssues.slice(0, MAX_DISPLAY_ROWS).map((issue, index) => {
+                    const menuOpen = rowMenuOpenId === issue.id;
+                    const d = issue.excel_data || {};
+                    const clientName = getIssueClientName(issue);
+                    return (
+                      <tr key={issue.id}>
+                        <td
+                          data-cr={index}
+                          data-cc={0}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 0) }}
+                        >
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              background: "#EEF2F6",
+                              color: "#334155",
+                              borderRadius: 8,
+                              padding: "4px 10px",
+                              fontSize: 12.5,
+                              fontWeight: 800,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            # {issue.case_number || "-"}
+                          </span>
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={1}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 1) }}
+                        >
+                          <div style={{ fontWeight: 800, color: "#0F172A" }}>
+                            {issue.case_title || "-"}
+                          </div>
+                          {clientName !== "-" &&
+                            clientName !== issue.case_title && (
+                              <div
+                                style={{
+                                  fontSize: 11.5,
+                                  color: "#64748B",
+                                  marginTop: 2,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                العميل: {clientName}
+                              </div>
+                            )}
+                          {issue.file_url && (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#94A3B8",
+                                marginTop: 2,
+                                fontWeight: 600,
+                              }}
+                            >
+                              📎 ملف مرفوع
+                            </div>
+                          )}
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={2}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 2) }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#334155",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {normalizeMonthValue(d["شهر تغير الاساسي"]) || "-"}
+                          </div>
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={3}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 3) }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#334155",
+                              whiteSpace: "nowrap",
+                              unicodeBidi: "isolate",
+                            }}
+                          >
+                            {formatMoneyValue(d["الاساسي بعد التغيير"])}
+                          </div>
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={4}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 4) }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#334155",
+                              whiteSpace: "nowrap",
+                              unicodeBidi: "isolate",
+                            }}
+                          >
+                            {formatMoneyValue(d["الاجمالي"])}
+                          </div>
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={5}
+                          style={{ ...ui.tdNum, ...cursorCellStyle(index, 5) }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              color: "#047857",
+                              whiteSpace: "nowrap",
+                              unicodeBidi: "isolate",
+                            }}
+                          >
+                            {formatMoneyValue(d["الصافي"])}
+                          </div>
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={6}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 6) }}
+                        >
+                          {getPaymentBadge(issue.payment_status || d["حاله الصرف"])}
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={7}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 7) }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 600,
+                              color: "#475569",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {formatIssueDate(
+                              issue.payment_date || d["تاريخ الصرف"]
+                            )}
+                          </div>
+                        </td>
+                        <td
+                          data-cr={index}
+                          data-cc={8}
+                          style={{ ...ui.td, ...cursorCellStyle(index, 8) }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              position: "relative",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              title="عرض تفاصيل وملفات القضية"
+                              onClick={() => openDetailModal(issue)}
+                              style={{
+                                border: "1px solid #DBEAFE",
+                                background: "#EFF6FF",
+                                color: "#1D4ED8",
+                                borderRadius: 9,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              👁️
+                            </button>
+                            <button
+                              type="button"
+                              title="تعديل بيانات القضية"
+                              onClick={() => {
+                                setRowMenuOpenId(null);
+                                openEditModal(issue);
+                              }}
+                              style={{
+                                border: "1px solid #E2E8F0",
+                                background: "#F8FAFC",
+                                color: "#334155",
+                                borderRadius: 9,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              title="حذف القضية"
+                              onClick={() => {
+                                setRowMenuOpenId(null);
+                                handleDeleteIssue(issue.id);
+                              }}
+                              style={{
+                                border: "1px solid #FECACA",
+                                background: "#FEF2F2",
+                                color: "#DC2626",
+                                borderRadius: 9,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              🗑️
+                            </button>
+                            <button
+                              type="button"
+                              title="المزيد من الإجراءات"
+                              onClick={() =>
+                                setRowMenuOpenId(menuOpen ? null : issue.id)
+                              }
+                              style={{
+                                border: "1px solid #E2E8F0",
+                                background: "#F8FAFC",
+                                color: "#475569",
+                                borderRadius: 8,
+                                width: 34,
+                                height: 34,
+                                cursor: "pointer",
+                                fontSize: 15,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              ⋮
+                            </button>
+                            {menuOpen && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "calc(100% + 6px)",
+                                  right: 0,
+                                  background: "#fff",
+                                  border: "1px solid #E2E8F0",
+                                  borderRadius: 10,
+                                  boxShadow: "0 10px 26px rgba(15,41,66,.14)",
+                                  padding: 6,
+                                  zIndex: 20,
+                                  minWidth: 170,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    padding: "6px 12px 4px",
+                                    fontSize: 11.5,
+                                    fontWeight: 900,
+                                    color: "#64748B",
+                                  }}
+                                >
+                                  تغيير حالة القضية
+                                </div>
+                                <select
+                                  value={issue.status}
+                                  onChange={(e) => {
+                                    setRowMenuOpenId(null);
+                                    handleUpdateStatus(issue.id, e.target.value);
+                                  }}
+                                  style={{
+                                    ...styles.statusSelect,
+                                    width: "calc(100% - 12px)",
+                                    margin: "0 6px 8px",
+                                    padding: "6px 8px",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <option value="pending">قيد المعالجة</option>
+                                  <option value="in_progress">
+                                    جاري التنفيذ
+                                  </option>
+                                  <option value="approved">مكتملة</option>
+                                  <option value="rejected">مرفوضة</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  className="issues-menu-item"
+                                  onClick={() => {
+                                    setRowMenuOpenId(null);
+                                    openEditModal(issue);
+                                  }}
+                                  style={{
+                                    display: "block",
+                                    width: "100%",
+                                    textAlign: "right",
+                                    padding: "9px 12px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 700,
+                                    color: "#0F172A",
+                                  }}
+                                >
+                                  ✏️ تعديل البيانات
+                                </button>
+                                {issue.file_url && (
+                                  <a
+                                    href={issue.file_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: "block",
+                                      padding: "9px 12px",
+                                      borderRadius: 8,
+                                      textDecoration: "none",
+                                      fontSize: 13.5,
+                                      fontWeight: 700,
+                                      color: "#1D4ED8",
+                                    }}
+                                  >
+                                    👁️ عرض الملف الأصلي
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  className="issues-menu-item"
+                                  onClick={() => {
+                                    setRowMenuOpenId(null);
+                                    handleDeleteIssue(issue.id);
+                                  }}
+                                  style={{
+                                    display: "block",
+                                    width: "100%",
+                                    textAlign: "right",
+                                    padding: "9px 12px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    fontSize: 13.5,
+                                    fontWeight: 700,
+                                    color: "#DC2626",
+                                  }}
+                                >
+                                  🗑️ حذف القضية
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {filteredIssues.length > 300 && (
+              <div style={styles.infoBox}>
+                يتم عرض أول 300 سجل في الشاشة فقط.
+              </div>
+            )}
+          </div>
+        ) : !loading && issues.length === 0 ? (
+          <div style={styles.emptyState}>
+            <div style={styles.emptyIcon}>⚖️</div>
+            <h3>لا توجد قضايا حتى الآن</h3>
+            <p>ابدأ برفع ملف Excel أو PDF لإضافة قضايا</p>
+          </div>
+        ) : null}
+
+        {loading && <div style={styles.infoBox}>جاري تحميل البيانات...</div>}
+
+        {/* Modal تعديل البيانات */}
+      {editingIssue && (
+        <div style={styles.overlay} onClick={() => setEditingIssue(null)}>
+          <div
+            style={{
+              ...styles.loginBox,
+              width: "min(680px, 95%)",
+              padding: 0,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                background: "linear-gradient(135deg,#0F2F4F 0%,#1D4ED8 100%)",
+                padding: "18px 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 24 }}>✏️</span>
+                <div>
+                  <div style={{ color: "#fff", fontWeight: 900, fontSize: 17 }}>
+                    تعديل بيانات القضية
+                  </div>
+                  <div style={{ color: "rgba(255,255,255,.8)", fontSize: 12 }}>
+                    {editForm.case_number
+                      ? `القضية رقم ${editForm.case_number}`
+                      : "تحديث بيانات القضية"}
+                  </div>
+                </div>
+              </div>
+              <button
+                style={{
+                  background: "rgba(255,255,255,.15)",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: 8,
+                  width: 32,
+                  height: 32,
+                  fontSize: 18,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+                onClick={() => setEditingIssue(null)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                flex: "1 1 auto",
+                overflowY: "auto",
+                minHeight: 0,
+                padding: "20px 24px",
+              }}
+            >
+              <form onSubmit={handleSaveEdit}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 14,
+                  }}
+                  className="issues-modal-grid"
+                >
+                  <div>
+                    <label style={styles.formLabel}>رقم القضية</label>
+                    <input
+                      type="text"
+                      value={editForm.case_number ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          case_number: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>اسم صاحب القضية</label>
+                    <input
+                      type="text"
+                      value={editForm.case_title ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          case_title: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>شهر تغيير الأساسي</label>
+                    <select
+                      value={normalizeMonthValue(
+                        editForm["شهر تغير الاساسي"] ?? ""
+                      )}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          "شهر تغير الاساسي": e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    >
+                      <option value="">— اختر الشهر —</option>
+                      {(() => {
+                        const storedMonth = normalizeMonthValue(
+                          editForm["شهر تغير الاساسي"] ?? ""
+                        );
+                        if (storedMonth && !MONTHS_LIST.includes(storedMonth)) {
+                          return (
+                            <option key={storedMonth} value={storedMonth}>
+                              {storedMonth}
+                            </option>
+                          );
+                        }
+                        return null;
+                      })()}
+                      {MONTHS_LIST.map((month) => (
+                        <option key={month} value={month}>
+                          {month}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>
+                      الأساسي بعد التغيير (ج.م)
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm["الاساسي بعد التغيير"] ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          "الاساسي بعد التغيير": e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>الإجمالي (ج.م)</label>
+                    <input
+                      type="text"
+                      value={editForm["الاجمالي"] ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          الاجمالي: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>الصافي (ج.م)</label>
+                    <input
+                      type="text"
+                      value={editForm["الصافي"] ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          الصافي: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>حالة الصرف</label>
+                    <select
+                      value={editForm.payment_status ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          payment_status: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    >
+                      <option value="">— اختر —</option>
+                      {PAYMENT_STATUS_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>تاريخ الصرف</label>
+                    <input
+                      type="date"
+                      value={editForm.payment_date ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          payment_date: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.formLabel}>الحالة</label>
+                    <select
+                      value={editForm.status ?? "pending"}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          status: e.target.value,
+                        }))
+                      }
+                      style={styles.input}
+                    >
+                      <option value="pending">قيد المعالجة</option>
+                      <option value="in_progress">جاري التنفيذ</option>
+                      <option value="approved">مكتملة</option>
+                      <option value="rejected">مرفوضة</option>
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={styles.formLabel}>وصف القضية</label>
+                    <textarea
+                      value={editForm.case_description ?? ""}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          case_description: e.target.value,
+                        }))
+                      }
+                      style={styles.textarea}
+                      rows="2"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 20,
+                    display: "flex",
+                    gap: 10,
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <button
+                    type="button"
+                    style={{ ...styles.secondaryButton, borderRadius: 10 }}
+                    onClick={() => setEditingIssue(null)}
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    style={{
+                      ...styles.primaryButton,
+                      position: "relative",
+                      zIndex: 10001,
+                      pointerEvents: "auto",
+                      borderRadius: 10,
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      handleSaveEdit(event);
+                    }}
+                  >
+                    💾 حفظ التعديلات
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal تفاصيل القضية + الملفات */}
+      {detailModalIssue && (
+        <div style={styles.overlay} onClick={() => setDetailModalIssue(null)}>
+          <div
+            style={{
+              ...styles.loginBox,
+              width: "min(760px, 95%)",
+              padding: 0,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                background: "linear-gradient(135deg,#0F2F4F 0%,#1D4ED8 100%)",
+                padding: "18px 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 24 }}>📎</span>
+                <div>
+                  <div style={{ color: "#fff", fontWeight: 900, fontSize: 17 }}>
+                    تفاصيل القضية والملفات
+                  </div>
+                  <div style={{ color: "rgba(255,255,255,.8)", fontSize: 12 }}>
+                    {detailModalIssue.case_number
+                      ? `القضية رقم ${detailModalIssue.case_number}`
+                      : ""}
+                  </div>
+                </div>
+              </div>
+              <button
+                style={{
+                  background: "rgba(255,255,255,.15)",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: 8,
+                  width: 32,
+                  height: 32,
+                  fontSize: 18,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+                onClick={() => setDetailModalIssue(null)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                flex: "1 1 auto",
+                overflowY: "auto",
+                minHeight: 0,
+                padding: "20px 24px",
+              }}
+            >
+              {/* شريط الحالة */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  marginBottom: 16,
+                  padding: "12px 14px",
+                  background: "#F8FAFC",
+                  borderRadius: 12,
+                  border: "1px solid #E7EBF0",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    color: "#475569",
+                  }}
+                >
+                  حالة القضية:
+                </span>
+                {getStatusBadge(detailModalIssue.status)}
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    color: "#475569",
+                    marginRight: 14,
+                  }}
+                >
+                  حالة الصرف:
+                </span>
+                {getPaymentBadge(detailModalIssue.payment_status)}
+                {detailModalIssue.payment_date && (
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      color: "#475569",
+                      marginRight: 14,
+                    }}
+                  >
+                    تاريخ الصرف:{" "}
+                    <b>{detailModalIssue.payment_date}</b>
+                  </span>
+                )}
+              </div>
+
+              {/* المعلومات الأساسية */}
+              <UISection icon="👤" title="المعلومات الأساسية">
+                <div
+                  className="issues-detail-grid"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <UISubLabel>رقم القضية</UISubLabel>
+                    <UISubValue>
+                      {detailModalIssue.case_number || "-"}
+                    </UISubValue>
+                  </div>
+                  <div>
+                    <UISubLabel>اسم صاحب القضية</UISubLabel>
+                    <UISubValue>
+                      {detailModalIssue.case_title || "-"}
+                    </UISubValue>
+                  </div>
+                  <div>
+                    <UISubLabel>تاريخ الإنشاء</UISubLabel>
+                    <UISubValue>
+                      {detailModalIssue.created_at
+                        ? new Date(
+                            detailModalIssue.created_at
+                          ).toLocaleDateString("ar-EG")
+                        : "-"}
+                    </UISubValue>
+                  </div>
+                  <div>
+                    <UISubLabel>حالة القضية</UISubLabel>
+                    <UISubValue>
+                      {getStatusBadge(detailModalIssue.status)}
+                    </UISubValue>
+                  </div>
+                  {detailModalIssue.case_description && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <UISubLabel>الوصف</UISubLabel>
+                      <UISubValue>
+                        {detailModalIssue.case_description}
+                      </UISubValue>
+                    </div>
+                  )}
+                </div>
+              </UISection>
+
+              {/* البيانات المالية */}
+              {detailModalIssue.excel_data && (
+                <UISection icon="💵" title="البيانات المالية">
+                  <div
+                    className="issues-detail-grid"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 12,
+                    }}
+                  >
+                    {CASE_FIELD_ORDER.map((field) => {
+                      const val = detailModalIssue.excel_data[field];
+                      if (!val) return null;
+                      let display = String(val);
+                      if (field === "شهر تغير الاساسي")
+                        display = normalizeMonthValue(val);
+                      if (
+                        field === "الاساسي بعد التغيير" ||
+                        field === "الاجمالي" ||
+                        field === "الصافي"
+                      )
+                        display = formatMoneyValue(val);
+                      return (
+                        <div key={field}>
+                          <UISubLabel>{field}</UISubLabel>
+                          <UISubValue>{display}</UISubValue>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </UISection>
+              )}
+
+              {/* المستندات */}
+              <UISection icon="📄" title="مستندات القضية">
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    marginBottom: 12,
+                    flexWrap: "wrap",
+                  }}
+                  className="issues-pdf-file"
+                >
+                  <label
+                    style={{
+                      ...styles.primaryButton,
+                      padding: "7px 12px",
+                      fontSize: 12,
+                      cursor: "pointer",
+                      marginBottom: 0,
+                    }}
+                    title="تحميل الملف الأصلي أو مستند إضافي للقضية"
+                  >
+                    {mainPdfUploading ? "جاري الرفع..." : "➕ إضافة PDF"}
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file)
+                          handleMainPdfUpload(
+                            detailModalIssue.id,
+                            file
+                          );
+                        e.target.value = "";
+                      }}
+                      disabled={mainPdfUploading}
+                    />
+                  </label>
+                  <label
+                    style={{
+                      ...styles.excelButton,
+                      padding: "7px 14px",
+                      fontSize: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    📥 رفع مستند إضافي
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) setAddDocFile(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {addDocFile && (
+                    <>
+                      <span style={{ fontSize: 12, color: "#475569" }}>
+                        {addDocFile.name}
+                      </span>
+                      <button
+                        style={{
+                          ...styles.primaryButton,
+                          padding: "5px 12px",
+                          fontSize: 11,
+                        }}
+                        onClick={handleAdditionalPdfUpload}
+                        disabled={addDocUploading}
+                      >
+                        {addDocUploading ? "جاري..." : "📥 رفع"}
+                      </button>
+                      <button
+                        style={{
+                          ...styles.deleteButton,
+                          padding: "5px 10px",
+                          fontSize: 11,
+                        }}
+                        onClick={() => setAddDocFile(null)}
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {detailModalIssue.file_url || additionalDocs.length > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
+                  >
+                    {detailModalIssue.file_url && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          background: "#F0FDF4",
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          fontSize: 13,
+                        }}
+                      >
+                        <span>📄</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700 }}>
+                            {detailModalIssue.file_name || "PDF الأساسي"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                            الملف الأساسي
+                          </div>
+                        </div>
+                        <a
+                          href={detailModalIssue.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                          }}
+                        >
+                          👁️ معاينة
+                        </a>
+                        <a
+                          href={detailModalIssue.file_url}
+                          download
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                            background: "#FEF3C7",
+                            color: "#92400E",
+                            borderColor: "#FDE68A",
+                          }}
+                        >
+                          ⬇️ تحميل
+                        </a>
+                      </div>
+                    )}
+                    {additionalDocs.map((doc) => (
+                      <div
+                        key={doc.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          background: "#F8FAFC",
+                          padding: "9px 12px",
+                          borderRadius: 10,
+                          fontSize: 13,
+                        }}
+                      >
+                        <span>📄</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700 }}>
+                            {doc.file_name}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                            {new Date(doc.created_at).toLocaleDateString(
+                              "ar-EG"
+                            )}
+                          </div>
+                        </div>
+                        <a
+                          href={doc.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                          }}
+                        >
+                          👁️
+                        </a>
+                        <a
+                          href={doc.file_url}
+                          download
+                          style={{
+                            ...styles.viewButton,
+                            textDecoration: "none",
+                            background: "#FEF3C7",
+                            color: "#92400E",
+                          }}
+                        >
+                          ⬇️
+                        </a>
+                        <button
+                          style={{
+                            ...styles.deleteButton,
+                            padding: "4px 8px",
+                          }}
+                          onClick={() =>
+                            handleDeleteAdditionalDoc(doc.id)
+                          }
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      padding: 10,
+                      color: "#94A3B8",
+                      fontSize: 13,
+                    }}
+                  >
+                    لا توجد مستندات مرفقة لهذه القضية
+                  </div>
+                )}
+              </UISection>
+
+              {/* أزرار الإجراء */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                  marginTop: 4,
+                }}
+              >
+                <button
+                  type="button"
+                  style={{
+                    ...styles.primaryButton,
+                    borderRadius: 10,
+                  }}
+                  onClick={() => openEditFromDetail(detailModalIssue)}
+                >
+                  ✏️ تعديل البيانات
+                </button>
+                <button
+                  type="button"
+                  style={{ ...styles.secondaryButton, borderRadius: 10 }}
+                  onClick={() => setDetailModalIssue(null)}
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getStatusBadge(status) {
+  if (!status) {
+    return (
+      <span style={{ color: "#94A3B8", fontSize: 12, fontWeight: 600 }}>
+        —
+      </span>
+    );
+  }
+  const map = {
+    pending: {
+      bg: "#FEF3C7",
+      color: "#B45309",
+      icon: "⏳",
+      text: "قيد المعالجة",
+    },
+    in_progress: {
+      bg: "#DBEAFE",
+      color: "#1D4ED8",
+      icon: "🔄",
+      text: "جاري التنفيذ",
+    },
+    approved: {
+      bg: "#D1FAE5",
+      color: "#047857",
+      icon: "✅",
+      text: "مكتملة",
+    },
+    rejected: {
+      bg: "#FEE2E2",
+      color: "#DC2626",
+      icon: "🚫",
+      text: "مرفوضة",
+    },
+  };
+  const s = map[status] || { bg: "#F1F5F9", color: "#475569", icon: "⚪", text: status };
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: s.bg,
+        color: s.color,
+        padding: "5px 11px",
+        borderRadius: 20,
+        fontSize: 11.5,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        border: "1px solid transparent",
+      }}
+      title={s.text}
+    >
+      <span style={{ fontSize: 12, lineHeight: 1 }}>{s.icon}</span>
+      <span>{s.text}</span>
+    </span>
+  );
+}
+
+function UISection({ icon, title, children }) {
+  return (
+    <div
+      style={{
+        border: "1px solid #E2E8F0",
+        borderRadius: 12,
+        padding: "16px",
+        marginBottom: 14,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 12,
+          paddingBottom: 10,
+          borderBottom: "1px solid #EEF2F6",
+        }}
+      >
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontWeight: 900, fontSize: 14, color: "#1E293B" }}>
+          {title}
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function UISubLabel({ children }) {
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        color: "#94A3B8",
+        marginBottom: 3,
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function UISubValue({ children }) {
+  return (
+    <div style={{ fontSize: 14, fontWeight: 700, color: "#0F172A" }}>
+      {children}
+    </div>
+  );
+}

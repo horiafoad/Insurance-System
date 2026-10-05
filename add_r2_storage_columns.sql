@@ -1,0 +1,211 @@
+-- =============================================================================
+-- add_r2_storage_columns.sql
+-- إضافة أعمدة تعريف مزوّد التخزين + جدول سجل الترحيل إلى R2
+--
+-- التشغيل: Supabase Dashboard -> SQL Editor -> New query -> Run
+--
+-- ⚠️ آمن تمامًا:
+--   • كل العمليات ADD COLUMN IF NOT EXISTS — لا تُحذف أي بيانات
+--   • لا يُعدَّل أي عمود موجود ولا أي قيمة حالية
+--   • السجلات القديمة تأخذ storage_provider = 'supabase' فتُقرأ من Supabase
+--     تمامًا كما هي الآن (backward compatibility)
+--   • إعادة تشغيل السكريبت آمنة (idempotent)
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1) عمود storage_provider على الجداول التي تحفظ روابط ملفات
+--    القيم: 'supabase' (افتراضي/قديم) أو 'r2' (بعد الترحيل)
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  t text;
+  target_tables text[] := ARRAY[
+    'issues',                        -- file_url
+    'issue_details',                 -- pdf_url
+    'case_documents',                -- file_url
+    'letters',                       -- image_url
+    'faculty_salary_archive',        -- file_url / preview_url / preview_urls
+    'employee_salary_archive',       -- file_url / preview_url / preview_urls
+    'faculty_salary_imports',        -- file_url / storage_path
+    'employee_salary_imports',       -- file_url / storage_path
+    'executive_order_persons',       -- file_url / file_path
+    'scanner_inbox',                 -- file_url / file_path
+    'faculty_salary_pages',          -- page_image_url / source_file_url
+    'salary_import_files'            -- file_url
+  ];
+BEGIN
+  FOREACH t IN ARRAY target_tables LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = t
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS storage_provider text',
+        t
+      );
+      -- كل القيم الحالية supabase: لا نعتمد على NULL لأنها قد تعني "غير معروف"
+      EXECUTE format(
+        'UPDATE public.%I SET storage_provider = ''supabase'' WHERE storage_provider IS NULL',
+        t
+      );
+      -- لا قيمة افتراضية: كل كتابة جديدة تمر عبر طبقة fileStorage.js
+    ELSE
+      RAISE NOTICE 'تخطّي الجدول غير الموجود: %', t;
+    END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 2) عمود storage_key: مسار R2 الدائم (اختياري لكنه يبسّط التتبع)
+--    يُملأ فقط عند الترحيل إلى R2. القيم القديمة تبقى NULL.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  t text;
+  target_tables text[] := ARRAY[
+    'issues',
+    'issue_details',
+    'case_documents',
+    'letters',
+    'faculty_salary_archive',
+    'employee_salary_archive',
+    'faculty_salary_imports',
+    'employee_salary_imports',
+    'executive_order_persons',
+    'scanner_inbox',
+    'faculty_salary_pages',
+    'salary_import_files'
+  ];
+BEGIN
+  FOREACH t IN ARRAY target_tables LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = t
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS storage_key text',
+        t
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 3) قيود السلامة: يُقبل فقط 'supabase' أو 'r2'
+--    (لا يُضاف إن كان العمود ناقصًا — التفاف حتى لا يفشل السكريبت)
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  t text;
+  target_tables text[] := ARRAY[
+    'issues', 'issue_details', 'case_documents', 'letters',
+    'faculty_salary_archive', 'employee_salary_archive',
+    'faculty_salary_imports', 'employee_salary_imports',
+    'executive_order_persons', 'scanner_inbox',
+    'faculty_salary_pages', 'salary_import_files'
+  ];
+BEGIN
+  FOREACH t IN ARRAY target_tables LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t
+        AND column_name = 'storage_provider'
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE public.%I DROP CONSTRAINT IF EXISTS chk_%I_storage_provider',
+        t, t
+      );
+      EXECUTE format(
+        'ALTER TABLE public.%I ADD CONSTRAINT chk_%I_storage_provider
+           CHECK (storage_provider IS NULL OR storage_provider IN (''supabase'',''r2''))',
+        t, t
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 4) جدول سجل الترحيل (audit log)
+--    يوثّق كل ملف نُقل أو فشل، ليكون الترحيل قابلًا للاستئناف والتدقيق.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.storage_migration_log (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  supabase_bucket TEXT NOT NULL,
+  object_path TEXT NOT NULL,
+  r2_key TEXT,
+  size_bytes BIGINT DEFAULT 0,
+  mime_type TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'copied', 'verified', 'db_updated', 'failed', 'skipped')),
+  rows_updated INTEGER DEFAULT 0,
+  error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  -- أي صف في قاعدة البيانات تم تحديثه (نفس الملف قد يُشار إليه من أكثر من جدول)
+  -- row_id نص وليس bigint: مفتاح salary_import_files من نوع UUID.
+  -- النص يقبل الاثنين (رقم أو UUID) فيخزّن كما هو بلا تحويل.
+  table_name TEXT NOT NULL,
+  row_id TEXT NOT NULL,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- التفرّد على مستوى الصف لا الكائن: نفس الملف قد يُشار إليه من أكثر من
+  -- جدول أو أكثر من صف، وكل صف منها يجب أن يُسجَّل في سجل التدقيق.
+  -- تتبّع الكائن نفسه (مرة واحدة لكل مفتاح R2) يتم في storage_r2_objects.
+  UNIQUE (supabase_bucket, object_path, table_name, row_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sml_status
+  ON public.storage_migration_log (status);
+
+-- سجل روابط الملفات في R2 (يسمح بأداء جرد R2 دون المرور على Supabase)
+CREATE TABLE IF NOT EXISTS public.storage_r2_objects (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  r2_key TEXT NOT NULL UNIQUE,
+  logical_bucket TEXT NOT NULL,
+  object_path TEXT NOT NULL,
+  size_bytes BIGINT DEFAULT 0,
+  mime_type TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sr2o_bucket
+  ON public.storage_r2_objects (logical_bucket);
+
+-- ---------------------------------------------------------------------------
+-- 5) صلاحيات الجداول الجديدة (نفس نمط بقية جداول المشروع)
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.storage_migration_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.storage_r2_objects ENABLE ROW LEVEL SECURITY;
+
+-- الكتابة من الخادم فقط (service_role) — لا سياسات عامة
+DROP POLICY IF EXISTS "sml_read_for_app" ON public.storage_migration_log;
+CREATE POLICY "sml_read_for_app"
+  ON public.storage_migration_log FOR SELECT
+  TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "sr2o_read_for_app" ON public.storage_r2_objects;
+CREATE POLICY "sr2o_read_for_app"
+  ON public.storage_r2_objects FOR SELECT
+  TO anon, authenticated USING (true);
+
+-- الكتابة من الخادم فقط (service_role) — لا توجد سياسة INSERT/UPDATE/DELETE،
+-- لذلك لا يستطيع anon ولا authenticated الكتابة حتى مع وجود GRANT.
+-- يُمنح anon/authenticated قراءة فقط لأن الواجهة قد تحتاج الجرد.
+GRANT SELECT ON public.storage_migration_log TO anon, authenticated;
+GRANT SELECT ON public.storage_r2_objects TO anon, authenticated;
+GRANT ALL ON public.storage_migration_log TO postgres, service_role;
+GRANT ALL ON public.storage_r2_objects TO postgres, service_role;
+GRANT ALL ON SEQUENCE public.storage_migration_log_id_seq TO postgres, service_role;
+GRANT ALL ON SEQUENCE public.storage_r2_objects_id_seq TO postgres, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 6) تحقّق: يعرض ما تمّت إضافته
+-- ---------------------------------------------------------------------------
+SELECT table_name,
+       column_name,
+       data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND column_name IN ('storage_provider', 'storage_key')
+ORDER BY table_name, column_name;
+
+NOTIFY pgrst, 'reload schema';

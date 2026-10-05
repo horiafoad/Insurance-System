@@ -1,0 +1,46 @@
+﻿<!doctype html><html><head><meta charset="utf-8"></head><body>
+<iframe id="f" src="/" style="width:360px;height:680px"></iframe><pre id="out"></pre>
+<script>
+  const out = document.getElementById('out'); const log = []; const f = document.getElementById('f');
+  const started = Date.now();
+  setTimeout(() => { try { const b = f.contentDocument.querySelector('.answer-btn'); if (b) b.click(); } catch (e) {} }, 1500);
+  let coupleMountT = null;
+  let activeLog = {};
+  const sample = () => {
+    try {
+      const d = f.contentDocument;
+      const s = d.querySelector('.scene > div');
+      if (!s) return;
+      if (s.className.includes('couple-scene')) {
+        const t = Date.now() - started;
+        if (coupleMountT === null) coupleMountT = t;
+        const wraps = Array.from(d.querySelectorAll('.couple-photo'));
+        wraps.forEach((w, i) => {
+          const isActive = w.classList.contains('is-active');
+          if (isActive && !activeLog[i]) {
+            const img = w.querySelector('img');
+            activeLog[i] = {
+              afterMount: Math.round(t - coupleMountT),
+              loaded: img ? (img.complete && img.naturalWidth > 0) : false,
+              placeholder: !!w.querySelector('.placeholder'),
+            };
+          }
+        });
+      }
+    } catch (e) { log.push('ERR ' + e.message) }
+  }
+  const iv = setInterval(sample, 150);
+  setTimeout(() => {
+    clearInterval(iv);
+    log.push('ACTIVATION=' + JSON.stringify(activeLog));
+    log.push('PRESENCE=' + binaryPresence());
+    out.textContent = log.join('\n');
+    document.body.setAttribute('data-done','1');
+  }, 60000);
+  function binaryPresence() {
+    try {
+      const d = f.contentDocument;
+      return d.querySelectorAll('.couple-photo img').length;
+    } catch (e) { return -1 }
+  }
+</script></body></html>

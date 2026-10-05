@@ -3,6 +3,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
 import { supabase } from "../supabaseClient";
+import { uploadFile, useFileUrl } from "../services/fileStorage";
 import { useRealtimeSync } from "../utils/realtimeSync";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -26,17 +27,72 @@ const MONTH_NAMES = [
 ];
 
 function SalaryPagePreview({ record }) {
+  const pageImageUrl = useFileUrl(record?.page_image_url);
   return (
     <div style={{ background: "#fff", minHeight: 780, display: "grid", placeItems: "center" }}>
-      {record.page_image_url ? (
+      {pageImageUrl ? (
         <img
-          src={record.page_image_url}
+          src={pageImageUrl}
           alt={`مفرد مرتب صفحة ${record.page_number}`}
           style={{ display: "block", width: "100%", height: "auto" }}
         />
       ) : (
         <div style={{ padding: 24, color: "#B45309", textAlign: "center" }}>
           صورة الصفحة غير محفوظة لهذا السجل. ارفعي الملف مرة أخرى.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SalaryPageCard({ record, onOpen }) {
+  const pageImageUrl = useFileUrl(record?.page_image_url);
+  return (
+    <div
+      style={{
+        ...styles.card,
+        cursor: "pointer",
+      }}
+      onClick={onOpen}
+    >
+      <div style={{
+        fontSize: "14px",
+        fontWeight: "600",
+        marginBottom: "8px",
+        color: "#1F2937",
+      }}>
+        {MONTH_NAMES[record.period_month - 1]} {record.period_year}
+      </div>
+      <div style={{
+        fontSize: "12px",
+        color: "#6B7280",
+        marginBottom: "12px",
+      }}>
+        صفحة {record.page_number}
+      </div>
+      {pageImageUrl ? (
+        <img
+          src={pageImageUrl}
+          alt={`صفحة ${record.page_number}`}
+          style={{
+            width: "100%",
+            height: "150px",
+            objectFit: "cover",
+            borderRadius: "4px",
+          }}
+        />
+      ) : (
+        <div style={{
+          height: "150px",
+          background: "#F3F4F6",
+          borderRadius: "4px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#9CA3AF",
+          fontSize: "14px",
+        }}>
+          لا توجد صورة
         </div>
       )}
     </div>
@@ -90,6 +146,12 @@ export default function FacultySalariesPage() {
 
   const handleSelectFiles = (event) => {
     const files = [...(event.target.files || [])];
+    const oversized = files.find((file) => file.size > 50 * 1024 * 1024);
+    if (oversized) {
+      setError(`ملف «${oversized.name}» حجمه يتجاوز 50 ميجابايت`);
+      event.target.value = "";
+      return;
+    }
     setPendingFiles(files.map((file) => {
       // محاولة استخراج السنة والشهر من اسم الملف إذا كان بالتنسيق المتوقع
       const nameWithoutExt = file.name.replace('.pdf', '').toLowerCase();
@@ -146,14 +208,16 @@ export default function FacultySalariesPage() {
         setFileName(item.file.name);
         const safeFileName = item.file.name.replace(/[^\w.-]+/g, "_");
         const filePath = `faculty-salaries/${item.year}-${item.month}-${Date.now()}-${safeFileName}`;
-        const { error: uploadError } = await supabase.storage.from("faculty-salaries").upload(filePath, item.file);
-        if (uploadError) throw uploadError;
-        const { data: publicUrl } = supabase.storage.from("faculty-salaries").getPublicUrl(filePath);
-        
+        const stored = await uploadFile("faculty-salaries", filePath, item.file, {
+          upsert: false,
+        });
+
         uploaded.push({
           ...item,
           filePath,
-          fileUrl: publicUrl.publicUrl,
+          fileUrl: stored.url,
+          storageProvider: stored.provider,
+          storageKey: stored.key,
           status: "uploaded",
           progress: 0
         });
@@ -271,26 +335,32 @@ export default function FacultySalariesPage() {
         const imageFileName = `${periodYear}-${periodMonth}-${pageNumber}-${Date.now()}.jpg`;
         const imagePath = `faculty-salaries-pages/${imageFileName}`;
         const imageBlob = await (await fetch(imageData)).blob();
-        const { error: imageUploadError } = await supabase.storage
-          .from("faculty-salaries")
-          .upload(imagePath, imageBlob);
-        
-        if (imageUploadError) {
+
+        let pageImageUrl = "";
+        let pageStorageProvider = null;
+        let pageStorageKey = null;
+        try {
+          const imageUpload = await uploadFile("faculty-salaries", imagePath, imageBlob, {
+            upsert: false,
+            contentType: "image/jpeg",
+          });
+          pageImageUrl = imageUpload.url;
+          pageStorageProvider = imageUpload.provider;
+          pageStorageKey = imageUpload.key;
+        } catch (imageUploadError) {
           console.error("خطأ في رفع صورة الصفحة:", imageUploadError);
         }
-        
-        const { data: imageUrl } = supabase.storage
-          .from("faculty-salaries")
-          .getPublicUrl(imagePath);
-        
+
         indexed.push({
           period_year: periodYear,
           period_month: periodMonth,
           page_number: pageNumber,
           text_content: textItems,
-          page_image_url: imageUrl.publicUrl,
+          page_image_url: pageImageUrl,
           source_file_name: sourceName,
           source_file_url: fileUrl,
+          storage_provider: pageStorageProvider,
+          storage_key: pageStorageKey,
         });
       }
       
@@ -616,55 +686,11 @@ export default function FacultySalariesPage() {
         <>
           <div style={styles.grid}>
             {paginatedResults.map((record) => (
-              <div
+              <SalaryPageCard
                 key={record.id}
-                style={{
-                  ...styles.card,
-                  cursor: "pointer",
-                }}
-                onClick={() => setSelectedRecord(record)}
-              >
-                <div style={{
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  marginBottom: "8px",
-                  color: "#1F2937",
-                }}>
-                  {MONTH_NAMES[record.period_month - 1]} {record.period_year}
-                </div>
-                <div style={{
-                  fontSize: "12px",
-                  color: "#6B7280",
-                  marginBottom: "12px",
-                }}>
-                  صفحة {record.page_number}
-                </div>
-                {record.page_image_url ? (
-                  <img
-                    src={record.page_image_url}
-                    alt={`صفحة ${record.page_number}`}
-                    style={{
-                      width: "100%",
-                      height: "150px",
-                      objectFit: "cover",
-                      borderRadius: "4px",
-                    }}
-                  />
-                ) : (
-                  <div style={{
-                    height: "150px",
-                    background: "#F3F4F6",
-                    borderRadius: "4px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#9CA3AF",
-                    fontSize: "14px",
-                  }}>
-                    لا توجد صورة
-                  </div>
-                )}
-              </div>
+                record={record}
+                onOpen={() => setSelectedRecord(record)}
+              />
             ))}
           </div>
 

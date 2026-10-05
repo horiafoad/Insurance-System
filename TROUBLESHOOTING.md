@@ -127,6 +127,62 @@ DROP TABLE IF EXISTS issues CASCADE;
 
 - دائماً نفذ ملفات SQL بالترتيب الصحيح
 - تحقق من أن مشروع Supabase ليس في وضع paused
-- استخدم ملفات Excel بصيغة .xlsx للحصول على أفضل نتائج
+- استخدم ملفات Excel بصيغة .xlsx للحصول على أفضل النتائج
 - قلل حجم الملفات الكبيرة قبل الرفع
 - احتفظ بنسخة احتياطية من بياناتك
+
+---
+
+# مشكلة: امتلاء حصة التخزين (exceed_storage_size_quota)
+
+**العلامة:** `Service for this project is restricted due to the following violations:
+exceed_storage_size_quota` — يفشل تسجيل الدخول وكل طلبات API.
+
+**السبب:** الخطة المجانية تسمح بـ 1GB إجمالي لكل البكتات. عند التجاوز يوقف
+Supabase خدمة المشروع بالكامل (قاعدة البيانات وStorage معًا).
+
+## 1. اعرف ما يستهلك المساحة
+
+نفّذ في SQL Editor:
+
+```sql
+SELECT bucket_id, count(*) AS files,
+       pg_size_pretty(sum((metadata->>'size')::bigint)) AS size
+FROM storage.objects GROUP BY 1 ORDER BY 2 DESC;
+```
+
+## 2. الصفحة تخدم فقط داخل لوحة Supabase
+
+لأن الـAPI موقوف، الحذف يتم من **Storage → File Buckets** في اللوحة
+(المسار يمر عبر management API وهو يعمل). لا يمكن تنزيل أو رفع أي ملف برمجيًا.
+
+## 3. خطة العمل بالترتيب
+
+| # | الخطوة | التوفير المتوقع |
+|---|--------|------------------|
+| 1 | احذف مجلدات `previews/` من `faculty-salary-archive` و`employee-salary-archive` | ~1.2GB |
+| 2 | احذف `executive-orders` الأقدم (أولًا في قائمة Created at) | حتى 2GB |
+| 3 | عند نزول الاستهلاك تحت 1GB تعود الخدمة تلقائيًا خلال دقائق | — |
+| 4 | شغّل تنظيف النسخ المكرّرة: `npm run cleanup:previews -- --apply --clear-db` | — |
+| 5 | اضغط الباقي: `npm run compress:storage -- --apply --dpi 120 --quality 45` | 5-8x |
+
+`previews/` ليست مستندات: الصفحات موجودة داخل الـPDF ويعرضها النظام بالرسم
+عند الطلب، لذلك حذفها لا يفقد أي محتوى.
+
+## 4. تجربة الضغط قبل التنفيذ
+
+```bash
+node scripts/compress-storage.mjs --local "C:\نسخ\من_ملفات" --out "C:\مضغوط"
+```
+يعمل بدون Supabase ويطبع النسبة لكل ملف.
+
+## 5. المتطلبات
+
+- `SUPABASE_SERVICE_ROLE_KEY` في متغير بيئة أو ملف `.env`
+- Ghostscript مثبت (يُبحث تلقائيًا في `C:\Program Files\gs`، أو حدّده بـ `GS_PATH`)
+
+## 6. ملاحظات مهمة
+
+- الأعمدة `preview_urls` و`page_count` معرّفة `not null` — لا تُدخل `null` فيها
+- ضغط الملفات عبر Storage يتم برفع نسخة مؤقتة ثم حذف الأصل ثم النقل، فلا فقدان
+- السكربت قابل للاستئناف: يعيد تخطي ما عولج سابقًا عبر `.storage-compress-done.json`

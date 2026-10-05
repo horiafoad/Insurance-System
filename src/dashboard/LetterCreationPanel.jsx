@@ -133,90 +133,94 @@ export default function LetterCreationPanel() {
   const loadData = async () => {
     setLoading(true);
 
-    const [sendersResult, qrResult, departmentsResult, templatesResult, sectorsResult] =
-      await Promise.all([
-        supabase
-          .from("letter_senders")
-          .select("id,name,is_active")
-          .eq("is_active", true)
-          .order("name"),
+    try {
+      const [sendersResult, qrResult, departmentsResult, templatesResult, sectorsResult] =
+        await Promise.all([
+          supabase
+            .from("letter_senders")
+            .select("id,name,is_active")
+            .eq("is_active", true)
+            .order("name"),
 
-        supabase
-          .from("archive_qr_codes")
-          .select("id,code,status,letter_id")
-          .eq("status", "available")
-          .is("letter_id", null)
-          .order("id"),
+          supabase
+            .from("archive_qr_codes")
+            .select("id,code,status,letter_id")
+            .eq("status", "available")
+            .is("letter_id", null)
+            .order("id"),
 
 supabase
+            .from("letter_departments")
+            .select("id,name,is_active,sector_id")
+            .eq("is_active", true)
+            .order("name"),
+
+          supabase
+            .from("letter_templates")
+            .select("id,name,title,letter_type,department_name,fixed_text,variable_fields,default_route")
+            .eq("is_active", true)
+            .order("name"),
+
+          supabase
+            .from("letter_sectors")
+            .select("id,name,is_active")
+            .eq("is_active", true)
+            .order("name"),
+        ]);
+
+      if (!sendersResult.error) {
+        setSenders(sendersResult.data || []);
+      }
+
+      if (!qrResult.error) {
+        const available = qrResult.data || [];
+        setQrCodes(available);
+
+        if (available.length > 0) {
+          setQrCodeId(String(available[0].id));
+        }
+      }
+
+      if (!departmentsResult.error) {
+        setDepartments(departmentsResult.data || []);
+      } else {
+        // عمود sector_id غير مفعّل بعد (لم يُشغّل سكربت القطاعات)؟
+        // حمّل الإدارات بدون القطاعات حتى لا يتعطل إنشاء الخطابات.
+        const fallback = await supabase
           .from("letter_departments")
-          .select("id,name,is_active,sector_id")
-          .eq("is_active", true)
-          .order("name"),
-
-        supabase
-          .from("letter_templates")
-          .select("id,name,title,letter_type,department_name,fixed_text,variable_fields,default_route")
-          .eq("is_active", true)
-          .order("name"),
-
-        supabase
-          .from("letter_sectors")
           .select("id,name,is_active")
           .eq("is_active", true)
-          .order("name"),
-      ]);
+          .order("name");
 
-    if (!sendersResult.error) {
-      setSenders(sendersResult.data || []);
-    }
-
-    if (!qrResult.error) {
-      const available = qrResult.data || [];
-      setQrCodes(available);
-
-      if (available.length > 0) {
-        setQrCodeId(String(available[0].id));
+        if (!fallback.error) {
+          setDepartments(fallback.data || []);
+          console.warn(
+            "عمود sector_id غير موجود — تُحمَّل الإدارات بدون قطاعات:",
+            departmentsResult.error
+          );
+        } else {
+          console.error("تعذر تحميل الإدارات:", fallback.error);
+        }
       }
-    }
 
-    if (!departmentsResult.error) {
-      setDepartments(departmentsResult.data || []);
-    } else {
-      // عمود sector_id غير مفعّل بعد (لم يُشغّل سكربت القطاعات)؟
-      // حمّل الإدارات بدون القطاعات حتى لا يتعطل إنشاء الخطابات.
-      const fallback = await supabase
-        .from("letter_departments")
-        .select("id,name,is_active")
-        .eq("is_active", true)
-        .order("name");
-
-      if (!fallback.error) {
-        setDepartments(fallback.data || []);
-        console.warn(
-          "عمود sector_id غير موجود — تُحمَّل الإدارات بدون قطاعات:",
-          departmentsResult.error
-        );
-      } else {
-        console.error("تعذر تحميل الإدارات:", fallback.error);
+      if (!sectorsResult.error) {
+        setSectors(sectorsResult.data || []);
+      } else if (sectorsResult.error?.code !== "42P01") {
+        console.warn("تعذر تحميل القطاعات:", sectorsResult.error);
       }
-    }
 
-    if (!sectorsResult.error) {
-      setSectors(sectorsResult.data || []);
-    } else if (sectorsResult.error?.code !== "42P01") {
-      console.warn("تعذر تحميل القطاعات:", sectorsResult.error);
+      // القوالب لم تُهاجر بعد؟ نكمل عمل النظام القديم بالكامل
+      if (!templatesResult.error) {
+        setTemplates(templatesResult.data || []);
+        templatesLoadedRef.current = true;
+      } else if (!templatesLoadedRef.current) {
+        console.warn("تعذر تحميل القوالب (قد لا يزال الجدول غير مفعّل):", templatesResult.error);
+      }
+    } catch (err) {
+      console.error("تعذر تحميل بيانات إنشاء الخطاب:", err);
+    } finally {
+      setLoading(false);
     }
-
-    // القوالب لم تُهاجر بعد؟ نكمل عمل النظام القديم بالكامل
-    if (!templatesResult.error) {
-      setTemplates(templatesResult.data || []);
-      templatesLoadedRef.current = true;
-    } else if (!templatesLoadedRef.current) {
-      console.warn("تعذر تحميل القوالب (قد لا يزال الجدول غير مفعّل):", templatesResult.error);
-    }
-
-    setLoading(false);
   };
 
   useEffect(() => {

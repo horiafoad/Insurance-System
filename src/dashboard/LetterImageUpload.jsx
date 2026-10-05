@@ -1,5 +1,6 @@
 ﻿import React, { useState } from "react";
-import { supabase } from "../supabaseClient"; // âš ï¸ ØµØ­Ù‘Ø­ Ø§Ù„Ù…Ø³Ø§Ø± Ø­Ø³Ø¨ Ù…ÙƒØ§Ù† Ø§Ù„Ù…Ù„Ù Ø¹Ù†Ø¯Ùƒ
+import { supabase } from "../supabaseClient";
+import { uploadFile, useFileUrl } from "../services/fileStorage";
 
 // Ø±ÙØ¹ ØµÙˆØ±Ø© Ø§Ø®ØªÙŠØ§Ø±ÙŠØ© Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ø®Ø·Ø§Ø¨ Ù…ÙˆØ¬ÙˆØ¯ Ø¨Ø§Ù„ÙØ¹Ù„ (Ø¨Ù†Ø¯ 6):
 //   - Ø§Ø®ØªÙŠØ§Ø±ÙŠØ© 100%: Ù…ÙÙŠØ´ Ø£ÙŠ validation Ø¨ÙŠÙ…Ù†Ø¹ Ø­ÙØ¸/ØªØ­Ø±ÙŠÙƒ Ø§Ù„Ø®Ø·Ø§Ø¨ Ù„Ùˆ
@@ -22,6 +23,7 @@ export default function LetterImageUpload({
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
+  const resolvedImageUrl = useFileUrl(currentImageUrl);
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -34,27 +36,24 @@ export default function LetterImageUpload({
       const ext = file.name.split(".").pop();
       const path = `letters/${letterId}-${Date.now()}.${ext}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("letter-images")
-        .upload(path, file, { upsert: true });
+      const uploaded = await uploadFile("letter-images", path, file, {
+        upsert: true,
+      });
 
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("letter-images")
-        .getPublicUrl(path);
-
-      const publicUrl = publicUrlData?.publicUrl;
-
-      // ØªØ­Ø¯ÙŠØ« Ù†ÙØ³ ØµÙ Ø§Ù„Ø®Ø·Ø§Ø¨ ÙÙ‚Ø· â€” Ù…ÙÙŠØ´ ØµÙ Ø¬Ø¯ÙŠØ¯
+      // تحديث صورة الخطاب فقط — يتم حذف QR عند رفع صورة جديدة
       const { error: updateError } = await supabase
         .from("letters")
-        .update({ image_url: publicUrl })
+        .update({
+          image_url: uploaded.url,
+          storage_provider: uploaded.provider,
+          storage_key: uploaded.key,
+        })
         .eq("id", letterId);
 
       if (updateError) throw updateError;
 
-      onUploaded?.(publicUrl);
+      onUploaded?.(uploaded.url);
+
     } catch (err) {
       console.error("Image upload error:", err);
       setError("Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø±ÙØ¹ Ø§Ù„ØµÙˆØ±Ø©ØŒ Ø­Ø§ÙˆÙ„ ØªØ§Ù†ÙŠ");
@@ -65,9 +64,9 @@ export default function LetterImageUpload({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {currentImageUrl && (
+      {resolvedImageUrl && (
         <img
-          src={currentImageUrl}
+          src={resolvedImageUrl}
           alt="ØµÙˆØ±Ø© Ø§Ù„Ø®Ø·Ø§Ø¨"
           style={{
             width: "100%",
