@@ -1,0 +1,113 @@
+{
+  "name": "asu-engineering-system",
+  "private": true,
+  "version": "1.0.34",
+  "type": "module",
+  "main": "main.js",
+  "author": "ASU Engineering",
+  "description": "ASU Engineering System - نظام كلية الهندسة",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "node scripts/export-old-data/selftest.mjs && node scripts/migration/tests/guard.test.mjs && node scripts/migration/tests/schema-audit.test.mjs",
+    "schema:build": "node scripts/migration/build-new-schema.mjs",
+    "schema:audit": "node scripts/migration/tests/schema-audit.test.mjs",
+    "migrate:schema": "node scripts/migration/auto-migrate.mjs --phase schema",
+    "migrate:import": "node scripts/migration/auto-migrate.mjs --phase import",
+    "migrate:reconcile": "node scripts/migration/auto-migrate.mjs --phase reconcile",
+    "migrate:verify": "node scripts/migration/verify-columns.mjs && node scripts/migration/verify-passwords.mjs && node scripts/migration/find-import-blockers.mjs",
+    "electron": "electron .",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable",
+    "dist:publish": "electron-builder --win --publish always",
+    "release": "node scripts/release.cjs patch",
+    "release:minor": "node scripts/release.cjs minor",
+    "release:major": "node scripts/release.cjs major",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "scan:watch": "node scanner-bridge/bridge.cjs",
+    "generate-icon": "node scripts/generate-icon.cjs",
+    "cleanup:previews": "node scripts/cleanup-salary-previews.mjs",
+    "compress:storage": "node scripts/compress-storage.mjs",
+    "storage:check": "node scripts/migrate-storage-to-r2.mjs --check",
+    "storage:migrate": "node scripts/migrate-storage-to-r2.mjs"
+  },
+  "build": {
+    "appId": "com.insurance.system",
+    "productName": "ASU Engineering System",
+    "copyright": "Copyright © ASU Engineering",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "package.json",
+      "build/ASU-Engineering-System.ico"
+    ],
+    "win": {
+      "icon": "build/ASU-Engineering-System.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "ASU-Engineering-System-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ASU Engineering System",
+      "installerIcon": "build/ASU-Engineering-System.ico",
+      "uninstallerIcon": "build/ASU-Engineering-System.ico",
+      "installerHeaderIcon": "build/ASU-Engineering-System.ico",
+      "menuCategory": "ASU Engineering",
+      "artifactName": "ASU-Engineering-System-Setup-${version}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "horiafoad",
+      "repo": "Insurance-System",
+      "releaseType": "release"
+    }
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@supabase/supabase-js": "^2.112.3",
+    "electron-updater": "^6.6.2",
+    "html5-qrcode": "^2.3.8",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tesseract.js": "^7.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.4",
+    "vite": "^8.2.0",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}

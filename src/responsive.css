@@ -1,0 +1,286 @@
+/* =========================================================================
+   Responsive Design — لوحة الإدارة (Admin Dashboard)
+   -------------------------------------------------------------------------
+   الطبقة المسؤولة عن التوافق مع الهواتف والأجهزة اللوحية.
+   التصميم يحفظ Desktop كما هو تمامًا:
+     - كل القواعد داخل media queries فقط (< 768px).
+     - لا يغيّر أي شيء على الشاشات الكبيرة.
+   تم ربطه في src/main.jsx ليُطبّق على كامل التطبيق.
+   نستخدم !important لأنه يتفوق على inline styles الموجودة في كل الصفحات
+   (نفس النمط المعتمد في بقية المشروع).
+   ========================================================================= */
+
+/* =========================================================================
+   1) قاعدة عامة: منع التمرير الأفقي للصفحة كاملة على كل الأحجام
+      (أي جدول أو عنصر عريض له width ثابت لا يزيح الصفحة كلها)
+   ========================================================================= */
+html,
+body,
+#root {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* جسم التطبيق بالكامل */
+.app,
+.admin-app,
+.admin-app_dashboard {
+  margin: 0 auto;
+}
+
+/* =========================================================================
+   2) الأجهزة اللوحية الصغيرة والهواتف الكبيرة (حتى 1024px)
+   ========================================================================= */
+@media (max-width: 1024px) {
+  /* اللوحة الجانبية تتحول لدرج جانبي (Drawer) منزلق — شرح التشغيل في
+     AdminDashboard.jsx (hamburger + transform translateX في Sidebar.jsx) */
+  .dashboard-sidebar {
+    max-width: 84vw;
+  }
+}
+
+/* =========================================================================
+   3) الجوال (حتى 768px) — نقطة البداية الأساسية
+   ========================================================================= */
+@media (max-width: 768px) {
+  /* المحتوى الرئيسي يعرض بكامل العرض — لا يوجد overflow أفقي */
+  .admin-main,
+  .admin-app,
+  .admin-app_dashboard {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* صف الهيدر: نضمن عدم تجاوز المحتوى للشاشة */
+  .admin-header {
+    flex-wrap: wrap;
+    gap: 10px !important;
+  }
+
+  /* عناصر اللمس: ارتفاع أدنى مريح للإصبع على كل الأزرار والحقول */
+  .admin-app button,
+  .admin-app input,
+  .admin-app select,
+  .admin-app textarea,
+  .admin-app_dashboard button,
+  .admin-app_dashboard input,
+  .admin-app_dashboard select,
+  .admin-app_dashboard textarea {
+    min-height: 44px;
+  }
+
+  /* منع أي عنصر بداخله من الخروج يمينًا أو يسارًا خارج الشاشة */
+  .admin-app *,
+  .admin-app_dashboard * {
+    max-width: 100%;
+  }
+
+  /* inputs وحقول النماذج: عرض كامل لا يخرج عن الشاشة */
+  .admin-app input,
+  .admin-app select,
+  .admin-app textarea,
+  .admin-app_dashboard input,
+  .admin-app_dashboard select,
+  .admin-app_dashboard textarea {
+    box-sizing: border-box;
+  }
+
+  /* شريط الفلاتر في معيار الاستحقاقات (ServiceRequestsView):
+     على الموبايل تتكدس الحقول عموديًا بدل صف أفقي ضيق. */
+  .service-filter-bar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  /* كل حقل (select/input) يعرض بكامل العرض الملائم للإصبع */
+  .service-filter-bar input,
+  .service-filter-bar select,
+  .service-filter-bar button {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 44px !important;
+  }
+
+  /* الجدول الكبير يبقى داخل إطار يتمرر أفقيًا داخليًا فقط —
+     الصفحة كلها لا تتحرك أفقيًا، والبيانات تبقى مقروءة. */
+  .admin-main .mobile-hscroll,
+  .service-table-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100% !important;
+  }
+
+  /* منع أي عمود بعدّاد ثابت من دفع الصفحة خارج الشاشة */
+  .admin-main .mobile-hscroll table,
+  .service-table-scroll table {
+    min-width: 660px;
+  }
+
+  /* ClaimsPage: هيدر الصفحة يتكدس عموديًا على الموبايل
+     (العنوان فوق زرا إضافة/استيراد بدل صف واحد ضيق) */
+  .claims-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  /* IssuesManagementPage: بطاقات الإحصائيات (4) تصبح صفين بعرض متساوٍ */
+  .issues-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* IssuesManagementPage: أقسام رفع Excel/PDF تتكدس عموديًا
+     (min-width 400px الأصلي يكسر شاشات 320-390) */
+  .issues-upload-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* IssuesManagementPage: حقول تعديل القضية والتفاصيل عمود واحد على
+     الهواتف الضيقة (عمودان ضيّقان غير مريحين باللمس) */
+  .issues-modal-grid,
+  .issues-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* IssuesManagementPage: صف رأس PDF الأساسي يلتف بدل ضغط الأزرار */
+  .issues-pdf-header {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* IssuesManagementPage: شريط الملف الأساسي يلتف ولا يضغط الأزرار */
+  .issues-pdf-file {
+    flex-wrap: wrap !important;
+  }
+
+  /* StudyLeavesPage + صفحات النماذج: حقول مودال الإضافة/التعديل تصبح
+     عمودًا واحدًا على الهواتف الضيقة (عمودان ضيّقان صعبان باللمس) */
+  .form-grid-mobile {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* StudyLeavesPage: أزرار شريط التنبيهات تملأ العرض على الموبايل */
+  .admin-app .alert-actions {
+    width: 100% !important;
+    flex-wrap: wrap !important;
+  }
+  .admin-app .alert-actions button {
+    flex: 1 1 auto !important;
+  }
+
+  /* طلبات الرعاية / مفرد مرتب / الإفادات — هيدر الصفحة يتكدس عموديًا
+     على الشاشات الضيقة لتجنب ضغط العنوان والزرر */
+  .requests-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  /* ============================================================
+     أمان عام للكروت والقوائم على الموبايل
+     (لا يغيير شكل Landscape — يحافظ على العرض حتى الكرت نفسه)
+     box-sizing يمنع الحشوات من دفع المحتوى خارج حدود الكرت،
+     وmin-width: 0 يسمح لعناصر الشبكة بالانكماش داخل العمود
+     بدل الانزلاق والتداخل فوق بعضها.
+     لا نستخدم overflow:hidden هنا كي لا نخفي أي معلومات. */
+  .admin-app *,
+  .admin-app_dashboard * {
+    box-sizing: border-box;
+  }
+
+  .admin-app,
+  .admin-app_dashboard {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  /* عناصر شبكات الرئيسية تبقى داخل أعمدة الشبكة */
+  .admin-app .card > *,
+  .admin-app_dashboard .card > * {
+    min-width: 0;
+  }
+
+  /* هيدر الصفحة: صف الأزرار يلتف بدل ضغط العنوان (الجرس/تحديث/إضافة)
+     — flex-wrap فقط حفاظًا على Landscape كما هو عند وجود مساحة */
+  .admin-header-actions {
+    flex-wrap: wrap !important;
+  }
+
+  /* بطاقات الإحصائيات: الأيقونة + النص + الرقم يبقون داخل الكارت */
+  .home-stats-grid > *,
+  .home-work-grid > *,
+  .home-dashboard-grid > * {
+    min-width: 0;
+  }
+}
+
+/* =========================================================================
+   4) Portrait الهواتف حتى 430px — إصلاحات الأعمدة
+      (لا تُطبق على Landscape: عرضه الفعلي أكبر من 430px)
+   ========================================================================= */
+@media (max-width: 430px) {
+  /* شبكة الإحصائيات: 4 أعمدة → عمودان على الهاتف */
+  .home-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .home-stats-grid > *,
+  .home-work-grid > *,
+  .home-dashboard-grid > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* الأقسام السفلية (أداء القسم / مهام اليوم): عمود واحد في Portrait */
+  .home-dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* بطاقات الأعمال: 3 أعمدة → عمودان حتى 430px */
+  .home-work-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* هيدر الصفحة: صف الأزرار يصبح شبكة 2×2 — إضافة مهمة بكامل العرض
+     بعروض ملائمة للمس بدل تداخل الأزرار */
+  .admin-header-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    align-items: stretch !important;
+  }
+  .admin-header-actions > button {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+  .admin-header-actions > .header-add-task {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+/* =========================================================================
+   5) Portrait شديد الضيق حتى 360px — عمود واحد عند الحاجة لمنع التداخل
+   ========================================================================= */
+@media (max-width: 360px) {
+  .home-stats-grid,
+  .home-work-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* =========================================================================
+   6) وضع العرض الأعرض — يُطبَّق فقط على حساب «عبد الله» داخل لوحة الإدارة
+      (الصنف admin-app-wide يُضاف في AdminDashboard.jsx عند دخوله).
+      يقص المسافات البيضاء الجانبية ويجعل الشاشة أعرض وأكبر، والدشبورد
+      يملأ مساحة أكبر على الشاشات الكبيرة فقط (للموبايل لا يتأثر).
+   ========================================================================= */
+@media (min-width: 769px) {
+  .admin-app.admin-app-wide .dashboard-sidebar {
+    width: 210px !important;
+  }
+
+  .admin-app.admin-app-wide .admin-main {
+    padding: 0 !important;
+  }
+}

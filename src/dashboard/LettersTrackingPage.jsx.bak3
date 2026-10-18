@@ -1,0 +1,4330 @@
+﻿
+import { Html5Qrcode } from "html5-qrcode";
+import React, { useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
+import { supabase } from "../supabaseClient";
+import LetterCreationPanel from "./LetterCreationPanel";
+
+const PUBLIC_APP_URL = "https://insurance-system-9et.pages.dev/";
+
+export default function LettersTrackingPage({ qrCode = "" }) {
+  const [qrCodes, setQrCodes] = useState([]);
+  const [letters, setLetters] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingLetters, setLoadingLetters] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [printLoading, setPrintLoading] = useState(false);
+
+  const [quantity, setQuantity] = useState(40);
+  const [search, setSearch] = useState("");
+
+  const [printCodes, setPrintCodes] = useState([]);
+  const [selectedLetter, setSelectedLetter] = useState(null);
+  const [refreshingLetters, setRefreshingLetters] = useState(false);
+
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerLoading, setScannerLoading] = useState(false);
+  const [scannedLetter, setScannedLetter] = useState(null);
+  const [receivedNotes, setReceivedNotes] = useState("");
+  const [receiving, setReceiving] = useState(false);
+const [delivering, setDelivering] = useState(false);
+const [scanError, setScanError] = useState("");
+
+const scannerRef = useRef(null);
+const scanHandledRef = useRef(false);
+
+
+  const stopQrScanner = async () => {
+  const scanner = scannerRef.current;
+  scannerRef.current = null;
+
+  if (!scanner) return;
+
+  try {
+    await scanner.stop();
+  } catch (error) {
+    console.warn("Scanner stop warning:", error);
+  }
+
+  try {
+    await scanner.clear();
+  } catch (error) {
+    console.warn("Scanner clear warning:", error);
+  }
+};
+
+const loadScannedLetter = async (code) => {
+  const { data: qrData, error: qrError } = await supabase
+    .from("archive_qr_codes")
+    .select("id, code, status, letter_id")
+    .eq("code", code)
+    .maybeSingle();
+
+  if (qrError) {
+    console.error("QR lookup error:", qrError);
+    throw new Error("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„Ø¨Ø­Ø« Ø¹Ù† ÙƒÙˆØ¯ QR.");
+  }
+
+  if (!qrData) {
+    throw new Error("ÙƒÙˆØ¯ QR ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù†Ø¸Ø§Ù….");
+  }
+
+  const { data: letterData, error: letterError } = await supabase
+    .from("letters")
+    .select(
+      "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+    )
+    .eq("qr_code_id", qrData.id)
+    .maybeSingle();
+
+  if (letterError) {
+    console.error("Letter lookup error:", letterError);
+    throw new Error("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨.");
+  }
+
+  if (!letterData) {
+    throw new Error("Ù‡Ø°Ø§ QR ØºÙŠØ± Ù…Ø±ØªØ¨Ø· Ø¨Ø®Ø·Ø§Ø¨ Ø­ØªÙ‰ Ø§Ù„Ø¢Ù†.");
+  }
+
+  const { data: movementsData, error: movementsError } =
+    await supabase
+      .from("letter_movements")
+      .select(
+        "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status"
+      )
+      .eq("letter_id", letterData.id)
+      .order("step_order", { ascending: true });
+
+  if (movementsError) {
+    console.error("Movements lookup error:", movementsError);
+    throw new Error("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨.");
+  }
+
+  const departmentIds = [
+    ...new Set(
+      (movementsData || [])
+        .map((item) => item.department_id)
+        .filter(
+          (id) => id !== null && id !== undefined
+        )
+    ),
+  ];
+
+  let departments = [];
+
+  if (departmentIds.length > 0) {
+    const {
+      data: departmentData,
+      error: departmentError,
+    } = await supabase
+      .from("letter_departments")
+      .select("id, name")
+      .in("id", departmentIds);
+
+    if (departmentError) {
+      console.error(
+        "Departments lookup error:",
+        departmentError
+      );
+    } else {
+      departments = departmentData || [];
+    }
+  }
+
+  let senderData = null;
+
+  if (letterData.sender_id) {
+    const { data } = await supabase
+      .from("letter_senders")
+      .select("id, name")
+      .eq("id", letterData.sender_id)
+      .maybeSingle();
+
+    senderData = data || null;
+  }
+
+  const enrichedMovements = (movementsData || []).map(
+    (movement) => ({
+      ...movement,
+      department:
+        departments.find(
+          (department) =>
+            department.id === movement.department_id
+        ) || null,
+    })
+  );
+
+  return {
+    ...letterData,
+    qr: qrData,
+    sender: senderData,
+    movements: enrichedMovements,
+  };
+};
+
+const startQrScanner = async () => {
+  setScanError("");
+  setScannedLetter(null);
+  setReceivedNotes("");
+  setScannerOpen(true);
+  setScannerLoading(true);
+  scanHandledRef.current = false;
+
+  await new Promise((resolve) =>
+    setTimeout(resolve, 150)
+  );
+
+  try {
+    await stopQrScanner();
+
+    const scanner = new Html5Qrcode(
+      "letter-qr-reader"
+    );
+
+    scannerRef.current = scanner;
+
+    await scanner.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: {
+          width: 220,
+          height: 220,
+        },
+      },
+      async (decodedText) => {
+        if (scanHandledRef.current) return;
+
+        scanHandledRef.current = true;
+
+        let code = decodedText.trim();
+
+        try {
+          const parsedUrl = new URL(code);
+          const qrParam =
+            parsedUrl.searchParams.get("qr");
+
+          if (qrParam) {
+            code = qrParam.trim();
+          }
+        } catch {
+          // QR Ù…Ø¨Ø§Ø´Ø± Ù…Ø«Ù„ QR-000001
+        }
+
+        await stopQrScanner();
+
+        try {
+          const enrichedLetter =
+            await loadScannedLetter(code);
+
+          setScannedLetter(enrichedLetter);
+
+          const activeMovement =
+            enrichedLetter.movements?.find(
+              (movement) =>
+                movement.status === "in_progress"
+            );
+
+          const waitingMovement =
+            enrichedLetter.movements?.find(
+              (movement) =>
+                movement.status === "waiting"
+            );
+
+          setReceivedNotes(
+            activeMovement?.notes ||
+              waitingMovement?.notes ||
+              ""
+          );
+
+          setScannerLoading(false);
+        } catch (error) {
+          console.error(
+            "Scanned letter error:",
+            error
+          );
+
+          setScanError(
+            error.message ||
+              "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨."
+          );
+
+          setScannerLoading(false);
+        }
+      },
+      () => {}
+    );
+
+    setScannerLoading(false);
+  } catch (error) {
+    console.error(
+      "QR scanner error:",
+      error
+    );
+
+    setScanError(
+      "ØªØ¹Ø°Ø± ØªØ´ØºÙŠÙ„ Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§. ØªØ£ÙƒØ¯ÙŠ Ù…Ù† Ø§Ù„Ø³Ù…Ø§Ø­ Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§."
+    );
+
+    setScannerLoading(false);
+  }
+};
+
+
+  const moveLetterToNextStation = async (letter) => {
+  if (!letter || !letter.movements?.length) return;
+
+  const currentMovement = letter.movements.find(
+    (movement) =>
+      movement.status === "in_progress"
+  );
+
+  if (!currentMovement) {
+    alert("Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© Ù‚ÙŠØ¯ Ø§Ù„ØªÙ†ÙÙŠØ° Ø­Ø§Ù„ÙŠÙ‹Ø§.");
+    return;
+  }
+
+  if (!currentMovement.received_at) {
+    alert(
+      "ÙŠØ¬Ø¨ ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø£ÙˆÙ„Ù‹Ø§ Ù‚Ø¨Ù„ ØªØ³Ù„ÙŠÙ…Ù‡."
+    );
+    return;
+  }
+
+  const nextMovement = letter.movements.find(
+    (movement) =>
+      movement.step_order >
+        currentMovement.step_order &&
+      movement.status === "waiting"
+  );
+
+  const now = new Date().toISOString();
+
+  try {
+    const { error: currentError } =
+      await supabase
+        .from("letter_movements")
+        .update({
+          status: "completed",
+          sent_at: now,
+          action: "ØªÙ… Ø§Ù„ØªØ³Ù„ÙŠÙ…",
+        })
+        .eq("id", currentMovement.id);
+
+    if (currentError) throw currentError;
+
+    const { error: letterError } =
+      await supabase
+        .from("letters")
+        .update({
+          status: nextMovement
+            ? "in_progress"
+            : "completed",
+          updated_at: now,
+        })
+        .eq("id", letter.id);
+
+    if (letterError) throw letterError;
+
+    await loadLetters();
+
+    setSelectedLetter(null);
+
+    alert(
+      nextMovement
+        ? "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨. Ø§Ù„Ù…Ø­Ø·Ø© Ø§Ù„ØªØ§Ù„ÙŠØ© ÙÙŠ Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…."
+        : "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨ ÙˆØ¥ØºÙ„Ø§Ù‚ Ø­Ø±ÙƒØªÙ‡ Ø¨Ù†Ø¬Ø§Ø­."
+    );
+  } catch (error) {
+    console.error(
+      "Error delivering letter:",
+      error
+    );
+
+    alert(
+      "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨."
+    );
+  }
+};
+ useEffect(() => {
+  loadQRCodes();
+  loadLetters();
+
+  return () => {
+    stopQrScanner();
+  };
+}, []);
+  const loadQRCodes = async () => {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("archive_qr_codes")
+      .select("id, code, status, created_at, letter_id, used_at")
+      .order("id", { ascending: false });
+
+    if (error) {
+      console.error("Error loading QR codes:", error);
+      alert("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø£ÙƒÙˆØ§Ø¯ QR.");
+    } else {
+      setQrCodes(data || []);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (!qrCode || !letters.length) return;
+
+    const normalizedQr = qrCode.trim().toLowerCase();
+
+    const matchingLetter = letters.find(
+      (letter) =>
+        letter.qr?.code?.trim().toLowerCase() === normalizedQr
+    );
+
+    if (matchingLetter) {
+      setSelectedLetter(matchingLetter);
+    }
+  }, [qrCode, letters]);
+  const loadLetters = async () => {
+    setLoadingLetters(true);
+
+    try {
+      const { data: lettersData, error: lettersError } =
+        await supabase
+          .from("letters")
+          .select(
+            "id, qr_code_id, letter_number, letter_date, sender_id, subject, status, notes, created_at, updated_at"
+          )
+          .order("id", { ascending: false });
+
+      if (lettersError) {
+        console.error("Error loading letters:", lettersError);
+        setLetters([]);
+        return;
+      }
+
+      const safeLetters = lettersData || [];
+
+      if (safeLetters.length === 0) {
+        setLetters([]);
+        return;
+      }
+
+      const senderIds = [
+        ...new Set(
+          safeLetters
+            .map((letter) => letter.sender_id)
+            .filter(
+              (id) => id !== null && id !== undefined
+            )
+        ),
+      ];
+
+      const qrIds = [
+        ...new Set(
+          safeLetters
+            .map((letter) => letter.qr_code_id)
+            .filter(
+              (id) => id !== null && id !== undefined
+            )
+        ),
+      ];
+
+      const letterIds = safeLetters.map(
+        (letter) => letter.id
+      );
+
+      let senders = [];
+      let qrData = [];
+      let movements = [];
+      let departments = [];
+
+      if (senderIds.length > 0) {
+        const { data, error } = await supabase
+          .from("letter_senders")
+          .select("id, name")
+          .in("id", senderIds);
+
+        if (!error) {
+          senders = data || [];
+        }
+      }
+
+      if (qrIds.length > 0) {
+        const { data, error } = await supabase
+          .from("archive_qr_codes")
+          .select("id, code, status")
+          .in("id", qrIds);
+
+        if (!error) {
+          qrData = data || [];
+        }
+      }
+
+      const {
+        data: movementsData,
+        error: movementsError,
+      } = await supabase
+        .from("letter_movements")
+        .select(
+          "id, letter_id, department_id, step_order, received_at, sent_at, action, notes, status"
+        )
+        .in("letter_id", letterIds)
+        .order("step_order", { ascending: true });
+
+      if (movementsError) {
+        console.error(
+          "Error loading letter movements:",
+          movementsError
+        );
+      } else {
+        movements = movementsData || [];
+      }
+
+      const departmentIds = [
+        ...new Set(
+          movements
+            .map(
+              (movement) => movement.department_id
+            )
+            .filter(
+              (id) =>
+                id !== null && id !== undefined
+            )
+        ),
+      ];
+
+      if (departmentIds.length > 0) {
+        const { data, error } = await supabase
+          .from("letter_departments")
+          .select("id, name")
+          .in("id", departmentIds);
+
+        if (!error) {
+          departments = data || [];
+        }
+      }
+
+      const enrichedLetters = safeLetters.map(
+        (letter) => {
+          const sender = senders.find(
+            (item) => item.id === letter.sender_id
+          );
+
+          const qr = qrData.find(
+            (item) => item.id === letter.qr_code_id
+          );
+
+          const letterMovements = movements
+            .filter(
+              (item) =>
+                item.letter_id === letter.id
+            )
+            .sort(
+              (a, b) =>
+                a.step_order - b.step_order
+            )
+            .map((movement) => ({
+              ...movement,
+              department:
+                departments.find(
+                  (department) =>
+                    department.id ===
+                    movement.department_id
+                ) || null,
+            }));
+
+          return {
+            ...letter,
+            sender: sender || null,
+            qr: qr || null,
+            movements: letterMovements,
+          };
+        }
+      );
+
+      setLetters(enrichedLetters);
+
+      if (selectedLetter) {
+        const updatedSelectedLetter =
+          enrichedLetters.find(
+            (letter) =>
+              letter.id === selectedLetter.id
+          );
+
+        setSelectedLetter(
+          updatedSelectedLetter || null
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Unexpected letters loading error:",
+        error
+      );
+      setLetters([]);
+    } finally {
+      setLoadingLetters(false);
+    }
+  };
+
+  const refreshLetters = async () => {
+    setRefreshingLetters(true);
+
+    await Promise.all([
+      loadQRCodes(),
+      loadLetters(),
+    ]);
+
+    setRefreshingLetters(false);
+  };
+
+  const getNextNumber = async () => {
+    const { data, error } = await supabase
+      .from("archive_qr_codes")
+      .select("code")
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        "Error getting last QR code:",
+        error
+      );
+      throw error;
+    }
+
+    if (!data?.code) {
+      return 1;
+    }
+
+    const match = String(data.code).match(
+      /QR-(\d+)/
+    );
+
+    if (!match) {
+      return 1;
+    }
+
+    return Number(match[1]) + 1;
+  };
+
+  const generateQRCodes = async () => {
+    const count = Number(quantity);
+
+    if (
+      !Number.isInteger(count) ||
+      count < 1 ||
+      count > 200
+    ) {
+      alert(
+        "Ù…Ù† ÙØ¶Ù„Ùƒ Ø§Ø®ØªØ§Ø±ÙŠ Ø¹Ø¯Ø¯Ù‹Ø§ Ù…Ù† 1 Ø¥Ù„Ù‰ 200 ÙƒÙˆØ¯."
+      );
+      return;
+    }
+
+    setGenerating(true);
+
+    try {
+      const nextNumber =
+        await getNextNumber();
+
+      const newCodes = [];
+
+      for (let i = 0; i < count; i++) {
+        const number = String(
+          nextNumber + i
+        ).padStart(6, "0");
+
+        newCodes.push({
+          code: "QR-" + number,
+          status: "available",
+        });
+      }
+
+      const { data, error } = await supabase
+        .from("archive_qr_codes")
+        .insert(newCodes)
+        .select(
+          "id, code, status, created_at, letter_id, used_at"
+        );
+
+      if (error) {
+        console.error(
+          "Error creating QR codes:",
+          error
+        );
+
+        if (error.code === "23505") {
+          alert(
+            "Ø­Ø¯Ø« ØªØ¹Ø§Ø±Ø¶ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯. Ø§Ø¶ØºØ·ÙŠ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ ÙˆØ³ÙŠØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø¯ÙØ¹Ø© Ø¬Ø¯ÙŠØ¯Ø©."
+          );
+        } else {
+          alert(
+            "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø£ÙƒÙˆØ§Ø¯ QR."
+          );
+        }
+
+        return;
+      }
+
+      const createdCodes = data || [];
+
+      const sortedCreatedCodes = [
+        ...createdCodes,
+      ].sort((a, b) => a.id - b.id);
+
+      setQrCodes((previous) => [
+        ...sortedCreatedCodes,
+        ...previous,
+      ]);
+
+      await preparePrintCodes(
+        sortedCreatedCodes
+      );
+
+      alert(
+        "ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ " +
+          createdCodes.length +
+          " ÙƒÙˆØ¯ QR Ø¨Ù†Ø¬Ø§Ø­."
+      );
+    } catch (error) {
+      console.error(
+        "Unexpected QR generation error:",
+        error
+      );
+
+      alert(
+        "Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…ØªÙˆÙ‚Ø¹ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯."
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const preparePrintCodes = async (codes) => {
+    if (!codes || codes.length === 0) {
+      return [];
+    }
+
+    setPrintLoading(true);
+
+    try {
+      const result = [];
+
+      for (const item of codes) {
+        const trackingUrl =
+          PUBLIC_APP_URL +
+          "?qr=" +
+          encodeURIComponent(item.code);
+
+        const dataUrl =
+          await QRCode.toDataURL(
+            trackingUrl,
+            {
+              width: 600,
+              margin: 2,
+              errorCorrectionLevel: "H",
+              color: {
+                dark: "#000000",
+                light: "#ffffff",
+              },
+            }
+          );
+
+        result.push({
+          ...item,
+          dataUrl,
+          trackingUrl,
+        });
+      }
+
+      setPrintCodes(result);
+
+      return result;
+    } catch (error) {
+      console.error(
+        "QR generation error:",
+        error
+      );
+
+      alert(
+        "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ¬Ù‡ÙŠØ² Ø£ÙƒÙˆØ§Ø¯ QR Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
+      );
+
+      return [];
+    } finally {
+      setPrintLoading(false);
+    }
+  };
+
+  const handlePrintExisting = async () => {
+    const availableCodes = qrCodes
+      .filter(
+        (item) =>
+          item.status === "available"
+      )
+      .sort((a, b) => a.id - b.id);
+
+    if (availableCodes.length === 0) {
+      alert(
+        "Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£ÙƒÙˆØ§Ø¯ Ù…ØªØ§Ø­Ø© Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
+      );
+      return;
+    }
+
+    setPrintLoading(true);
+
+    try {
+      const result = [];
+
+      for (const item of availableCodes) {
+        const trackingUrl =
+          PUBLIC_APP_URL +
+          "?qr=" +
+          encodeURIComponent(item.code);
+
+        const dataUrl =
+          await QRCode.toDataURL(
+            trackingUrl,
+            {
+              width: 600,
+              margin: 2,
+              errorCorrectionLevel: "H",
+              color: {
+                dark: "#000000",
+                light: "#ffffff",
+              },
+            }
+          );
+
+        result.push({
+          ...item,
+          dataUrl,
+          trackingUrl,
+        });
+      }
+
+      setPrintCodes(result);
+
+      setTimeout(() => {
+        window.print();
+      }, 700);
+    } catch (error) {
+      console.error(
+        "Print preparation error:",
+        error
+      );
+
+      alert(
+        "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ø£ÙƒÙˆØ§Ø¯ Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
+      );
+    } finally {
+      setPrintLoading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    if (printCodes.length === 0) {
+      alert(
+        "Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£ÙƒÙˆØ§Ø¯ Ø¬Ø§Ù‡Ø²Ø© Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©."
+      );
+      return;
+    }
+
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
+  const filteredCodes = qrCodes.filter(
+    (item) => {
+      const value =
+        search.trim().toLowerCase();
+
+      if (!value) {
+        return true;
+      }
+
+      return (
+        String(item.code || "")
+          .toLowerCase()
+          .includes(value) ||
+        String(item.status || "")
+          .toLowerCase()
+          .includes(value)
+      );
+    }
+  );
+
+  const availableCount =
+    qrCodes.filter(
+      (item) =>
+        item.status === "available"
+    ).length;
+
+  const usedCount =
+    qrCodes.filter(
+      (item) =>
+        item.status === "used"
+    ).length;
+
+  const archivedCount =
+    qrCodes.filter(
+      (item) =>
+        item.status === "archived"
+    ).length;
+
+  const filteredLetters =
+    letters.filter((letter) => {
+      const value =
+        search.trim().toLowerCase();
+
+      if (!value) {
+        return true;
+      }
+
+      return (
+        String(
+          letter.letter_number || ""
+        )
+          .toLowerCase()
+          .includes(value) ||
+        String(letter.subject || "")
+          .toLowerCase()
+          .includes(value) ||
+        String(
+          letter.sender?.name || ""
+        )
+          .toLowerCase()
+          .includes(value) ||
+        String(letter.qr?.code || "")
+          .toLowerCase()
+          .includes(value)
+      );
+    });
+
+  const confirmLetterReceived = async () => {
+  if (!scannedLetter?.movements?.length) return;
+
+  let targetMovement =
+    scannedLetter.movements.find(
+      (movement) =>
+        movement.status === "in_progress" &&
+        !movement.received_at
+    );
+
+  if (!targetMovement) {
+    targetMovement =
+      scannedLetter.movements.find(
+        (movement) =>
+          movement.status === "waiting"
+      );
+  }
+
+  if (!targetMovement) {
+    alert(
+      "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© ØªÙ†ØªØ¸Ø± Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨."
+    );
+    return;
+  }
+
+  setReceiving(true);
+
+  const now = new Date().toISOString();
+
+  try {
+    const { error } = await supabase
+      .from("letter_movements")
+      .update({
+        received_at: now,
+        status: "in_progress",
+        action: "ØªÙ… Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…",
+        notes:
+          receivedNotes.trim() || null,
+      })
+      .eq("id", targetMovement.id);
+
+    if (error) throw error;
+
+    const updatedMovements =
+      scannedLetter.movements.map(
+        (movement) =>
+          movement.id === targetMovement.id
+            ? {
+                ...movement,
+                received_at: now,
+                status: "in_progress",
+                action: "ØªÙ… Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…",
+                notes:
+                  receivedNotes.trim() ||
+                  null,
+              }
+            : movement
+      );
+
+    const updatedLetter = {
+      ...scannedLetter,
+      movements: updatedMovements,
+      status: "in_progress",
+      updated_at: now,
+    };
+
+    setScannedLetter(updatedLetter);
+
+    await loadLetters();
+
+    alert(
+      "ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø¨Ù†Ø¬Ø§Ø­."
+    );
+  } catch (error) {
+    console.error(
+      "Error receiving letter:",
+      error
+    );
+
+    alert(
+      "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨."
+    );
+  } finally {
+    setReceiving(false);
+  }
+};
+const confirmLetterDelivered = async () => {
+  if (!scannedLetter?.movements?.length) return;
+
+  const currentMovement =
+    scannedLetter.movements.find(
+      (movement) =>
+        movement.status === "in_progress"
+    );
+
+  if (!currentMovement) {
+    alert(
+      "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© Ø­Ø§Ù„ÙŠØ© Ù„ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨."
+    );
+    return;
+  }
+
+  if (!currentMovement.received_at) {
+    alert(
+      "ÙŠØ¬Ø¨ ØªØ³Ø¬ÙŠÙ„ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø£ÙˆÙ„Ù‹Ø§."
+    );
+    return;
+  }
+
+  setDelivering(true);
+
+  const now = new Date().toISOString();
+
+  try {
+    const { error } = await supabase
+      .from("letter_movements")
+      .update({
+        status: "completed",
+        sent_at: now,
+        action: "ØªÙ… Ø§Ù„ØªØ³Ù„ÙŠÙ…",
+      })
+      .eq("id", currentMovement.id);
+
+    if (error) throw error;
+
+    const nextMovement =
+      scannedLetter.movements.find(
+        (movement) =>
+          movement.step_order >
+            currentMovement.step_order &&
+          movement.status === "waiting"
+      );
+
+    const { error: letterError } =
+      await supabase
+        .from("letters")
+        .update({
+          status: nextMovement
+            ? "in_progress"
+            : "completed",
+          updated_at: now,
+        })
+        .eq("id", scannedLetter.id);
+
+    if (letterError) {
+      throw letterError;
+    }
+
+    const updatedMovements =
+      scannedLetter.movements.map(
+        (movement) =>
+          movement.id === currentMovement.id
+            ? {
+                ...movement,
+                status: "completed",
+                sent_at: now,
+                action: "ØªÙ… Ø§Ù„ØªØ³Ù„ÙŠÙ…",
+              }
+            : movement
+      );
+
+    setScannedLetter({
+      ...scannedLetter,
+      status: nextMovement
+        ? "in_progress"
+        : "completed",
+      updated_at: now,
+      movements: updatedMovements,
+    });
+
+    await loadLetters();
+
+    alert(
+      nextMovement
+        ? "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨. Ø§Ù„Ù…Ø­Ø·Ø© Ø§Ù„ØªØ§Ù„ÙŠØ© ÙÙŠ Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…."
+        : "ØªÙ… ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨ ÙˆØ¥ØºÙ„Ø§Ù‚ Ø­Ø±ÙƒØªÙ‡ Ø¨Ù†Ø¬Ø§Ø­."
+    );
+  } catch (error) {
+    console.error(
+      "Error delivering letter:",
+      error
+    );
+
+    alert(
+      "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ ØªØ³Ù„ÙŠÙ… Ø§Ù„Ø®Ø·Ø§Ø¨."
+    );
+  } finally {
+    setDelivering(false);
+  }
+};
+
+
+  const closeQrScanner = async () => {
+  await stopQrScanner();
+
+  setScannerOpen(false);
+  setScannerLoading(false);
+  setScanError("");
+  setScannedLetter(null);
+  setReceivedNotes("");
+};
+  return (
+    <>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          marginBottom: "18px",
+        }}
+      >
+        {(() => {
+  const currentMovement =
+    scannedLetter.movements?.find(
+      (movement) =>
+        movement.status === "in_progress"
+    );
+
+  const waitingMovement =
+    scannedLetter.movements?.find(
+      (movement) =>
+        movement.status === "waiting"
+    );
+
+  const canReceive =
+    Boolean(waitingMovement) &&
+    !currentMovement?.received_at;
+
+  const canDeliver =
+    Boolean(
+      currentMovement?.received_at
+    );
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: "10px",
+        marginTop: "14px",
+      }}
+    >
+      {canReceive && (
+        <button
+          type="button"
+          onClick={confirmLetterReceived}
+          disabled={receiving}
+          style={{
+            width: "100%",
+            border: "none",
+            borderRadius: "14px",
+            padding: "14px",
+            background: receiving
+              ? "#94A3B8"
+              : "linear-gradient(135deg,#0F766E,#14B8A6)",
+            color: "#fff",
+            fontWeight: "900",
+            fontSize: "15px",
+            cursor: receiving
+              ? "not-allowed"
+              : "pointer",
+          }}
+        >
+          {receiving
+            ? "â³ Ø¬Ø§Ø±ÙŠ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…..."
+            : "ðŸ“¥ Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø®Ø·Ø§Ø¨"}
+        </button>
+      )}
+
+      {canDeliver && (
+        <button
+          type="button"
+          onClick={confirmLetterDelivered}
+          disabled={delivering}
+          style={{
+            width: "100%",
+            border: "none",
+            borderRadius: "14px",
+            padding: "14px",
+            background: delivering
+              ? "#94A3B8"
+              : "linear-gradient(135deg,#2563EB,#1976A8)",
+            color: "#fff",
+            fontWeight: "900",
+            fontSize: "15px",
+            cursor: delivering
+              ? "not-allowed"
+              : "pointer",
+          }}
+        >
+          {delivering
+            ? "â³ Ø¬Ø§Ø±ÙŠ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„ØªØ³Ù„ÙŠÙ…..."
+            : "ðŸ“¤ ØªØ³Ù„ÙŠÙ… ÙˆØªØ­ÙˆÙŠÙ„ Ù„Ù„Ù…Ø­Ø·Ø© Ø§Ù„ØªØ§Ù„ÙŠØ©"}
+        </button>
+      )}
+
+      {!canReceive &&
+        !canDeliver &&
+        scannedLetter.status === "completed" && (
+          <div
+            style={{
+              padding: "13px",
+              borderRadius: "14px",
+              background: "#ECFDF5",
+              color: "#047857",
+              textAlign: "center",
+              fontWeight: "800",
+            }}
+          >
+            âœ… ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„
+          </div>
+        )}
+    </div>
+  );
+})()}
+
+      {scannerOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 99999,
+            background: "rgba(0,0,0,0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "430px",
+              maxHeight: "92vh",
+              overflowY: "auto",
+              background: "#fff",
+              borderRadius: "24px",
+              padding: "18px",
+              boxSizing: "border-box",
+              direction: "rtl",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "14px",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "20px", fontWeight: "900" }}>
+                  {"ðŸ“· Ù…Ø³Ø­ Ø®Ø·Ø§Ø¨"}
+                </div>
+                <div
+                  style={{
+                    marginTop: "4px",
+                    fontSize: "12px",
+                    color: "#64748B",
+                  }}
+                >
+                  {"ÙˆØ¬Ù‡ÙŠ Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§ Ø¥Ù„Ù‰ QR Ø§Ù„Ù…ÙˆØ¬ÙˆØ¯ Ø¹Ù„Ù‰ Ø§Ù„Ø®Ø·Ø§Ø¨"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeQrScanner}
+                style={{
+                  border: "none",
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "50%",
+                  background: "#F1F5F9",
+                  color: "#334155",
+                  fontSize: "20px",
+                  cursor: "pointer",
+                }}
+              >
+                {"Ã—"}
+              </button>
+            </div>
+
+            {!scannedLetter && (
+              <div
+                id="letter-qr-reader"
+                style={{
+                  width: "100%",
+                  overflow: "hidden",
+                  borderRadius: "18px",
+                  background: "#0F172A",
+                }}
+              />
+            )}
+
+            {scannerLoading && !scanError && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "12px",
+                  color: "#475569",
+                  fontWeight: "700",
+                }}
+              >
+                {"Ø¬Ø§Ø±ÙŠ ØªØ´ØºÙŠÙ„ Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§..."}
+              </div>
+            )}
+
+            {scanError && (
+              <div
+                style={{
+                  marginTop: "12px",
+                  padding: "12px",
+                  borderRadius: "12px",
+                  background: "#FEF2F2",
+                  color: "#B91C1C",
+                  fontWeight: "700",
+                  textAlign: "center",
+                }}
+              >
+                {scanError}
+              </div>
+            )}
+
+            {scannedLetter && (
+              <div
+                style={{
+                  marginTop: "14px",
+                  borderRadius: "18px",
+                  background: "#F8FAFC",
+                  padding: "16px",
+                }}
+              >
+                <div
+                  style={{
+                    background: "linear-gradient(135deg,#0F3D66,#1976A8)",
+                    color: "#fff",
+                    borderRadius: "16px",
+                    padding: "16px",
+                    marginBottom: "14px",
+                  }}
+                >
+                  <div style={{ fontSize: "12px", opacity: 0.85 }}>
+                    {"QR"}
+                  </div>
+                  <div style={{ fontSize: "21px", fontWeight: "900" }}>
+                    {scannedLetter.qr?.code || "â€”"}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gap: "10px" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨"}
+                    </div>
+                    <div style={{ fontWeight: "800" }}>
+                      {scannedLetter.letter_number || "Ø¨Ø¯ÙˆÙ† Ø±Ù‚Ù…"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"Ø§Ù„Ø¬Ù‡Ø© Ø§Ù„Ù…Ø±Ø³Ù„Ø©"}
+                    </div>
+                    <div style={{ fontWeight: "800" }}>
+                      {scannedLetter.sender?.name || "â€”"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹"}
+                    </div>
+                    <div style={{ fontWeight: "800" }}>
+                      {scannedLetter.subject || "â€”"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                      {"Ø§Ù„Ù…Ø­Ø·Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©"}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: "900",
+                        color: "#0F766E",
+                        fontSize: "16px",
+                      }}
+                    >
+                      {scannedLetter.movements?.find(
+                        (movement) => movement.status === "in_progress"
+                      )?.department?.name || "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø© Ø­Ø§Ù„ÙŠØ©"}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "16px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: "7px",
+                      fontWeight: "800",
+                      color: "#334155",
+                    }}
+                  >
+                    {"ðŸ“ Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…"}
+                  </label>
+                  <textarea
+                    value={receivedNotes}
+                    onChange={(event) => setReceivedNotes(event.target.value)}
+                    placeholder="Ø§ÙƒØªØ¨ÙŠ Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù… Ø¥Ù† ÙˆØ¬Ø¯Øª..."
+                    rows={3}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      border: "1px solid #CBD5E1",
+                      borderRadius: "12px",
+                      padding: "11px",
+                      fontFamily: "inherit",
+                      fontSize: "14px",
+                      resize: "vertical",
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={confirmLetterReceived}
+                  disabled={receiving}
+                  style={{
+                    width: "100%",
+                    marginTop: "14px",
+                    border: "none",
+                    borderRadius: "14px",
+                    padding: "14px",
+                    background: receiving
+                      ? "#94A3B8"
+                      : "linear-gradient(135deg,#0F766E,#14B8A6)",
+                    color: "#fff",
+                    fontWeight: "900",
+                    fontSize: "15px",
+                    cursor: receiving ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {receiving ? "Ø¬Ø§Ø±ÙŠ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…..." : "âœ… ØªÙ… Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div
+        className="letters-tracking-page"
+        dir="rtl"
+        style={{
+          width: "100%",
+          minHeight: "100%",
+          boxSizing: "border-box",
+        }}
+      >
+        {/* =========================
+            Header
+           ========================= */}
+        <div
+          style={{
+            position: "relative",
+            overflow: "hidden",
+            background:
+              "linear-gradient(135deg,#071A3A 0%,#123D78 55%,#2563EB 100%)",
+            borderRadius: "22px",
+            padding: "27px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 15px 35px rgba(15,23,42,0.16)",
+            color: "#fff",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              width: "190px",
+              height: "190px",
+              borderRadius: "50%",
+              border:
+                "1px solid rgba(255,255,255,0.08)",
+              left: "-60px",
+              top: "-100px",
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "18px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "15px",
+              }}
+            >
+              <div
+                style={{
+                  width: "58px",
+                  height: "58px",
+                  minWidth: "58px",
+                  borderRadius: "17px",
+                  background:
+                    "rgba(255,255,255,0.12)",
+                  border:
+                    "1px solid rgba(255,255,255,0.20)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "29px",
+                }}
+              >
+                âœ‰ï¸
+              </div>
+
+              <div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "25px",
+                    fontWeight: "800",
+                  }}
+                >
+                  Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
+                </h2>
+
+                <p
+                  style={{
+                    margin:
+                      "7px 0 0",
+                    fontSize: "13px",
+                    color:
+                      "rgba(255,255,255,0.72)",
+                  }}
+                >
+                  ðŸ§­ Ù…ØªØ§Ø¨Ø¹Ø© Ø±Ø­Ù„Ø© Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
+                  ÙˆØ­Ø±ÙƒØ© Ø§Ù„Ù…Ø±Ø§Ø³Ù„Ø§Øª Ø¨ÙŠÙ† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "9px",
+                flexWrap: "wrap",
+              }}
+            >
+              {printCodes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  style={headerButtonStyle(
+                    "#10B981"
+                  )}
+                >
+                  ðŸ–¨ï¸ Ø·Ø¨Ø§Ø¹Ø© Ø§Ù„Ø¯ÙØ¹Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ© (
+                  {printCodes.length})
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={refreshLetters}
+                disabled={refreshingLetters}
+                style={headerButtonStyle(
+                  refreshingLetters
+                    ? "#64748B"
+                    : "rgba(255,255,255,0.12)"
+                )}
+              >
+                {refreshingLetters
+                  ? "â³ Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ø¯ÙŠØ«..."
+                  : "ðŸ”„ ØªØ­Ø¯ÙŠØ«"}
+              </button>
+
+              <button
+                type="button"
+                onClick={
+                  handlePrintExisting
+                }
+                disabled={
+                  printLoading ||
+                  availableCount === 0
+                }
+                style={headerButtonStyle(
+                  printLoading ||
+                    availableCount === 0
+                    ? "#64748B"
+                    : "#2563EB"
+                )}
+              >
+                {printLoading
+                  ? "â³ ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ø·Ø¨Ø§Ø¹Ø©..."
+                  : "ðŸ–¨ï¸ Ø·Ø¨Ø§Ø¹Ø© Ø§Ù„Ø£ÙƒÙˆØ§Ø¯ Ø§Ù„Ù…ØªØ§Ø­Ø©"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* =========================
+            Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø®Ø·Ø§Ø¨
+           ========================= */}
+        <div
+          style={{
+            marginBottom: "20px",
+          }}
+        >
+          <LetterCreationPanel />
+        </div>
+
+        {/* =========================
+            Ø³Ø¬Ù„ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 8px 25px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #E2E8F0",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "20px",
+              borderBottom:
+                "1px solid #E5E7EB",
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "18px",
+                  fontWeight: "800",
+                  color: "#0F172A",
+                }}
+              >
+                ðŸ“‹ Ø³Ø¬Ù„ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
+              </h3>
+
+              <p
+                style={{
+                  margin:
+                    "6px 0 0",
+                  fontSize: "13px",
+                  color: "#64748B",
+                }}
+              >
+                âœ¨ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ø³Ø¬Ù„Ø© ÙˆÙ…Ø³Ø§Ø± Ø­Ø±ÙƒØªÙ‡Ø§ Ø¨ÙŠÙ† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
+              </p>
+            </div>
+
+            <span
+              style={{
+                padding: "7px 12px",
+                borderRadius: "999px",
+                background: "#EFF6FF",
+                color: "#1D4ED8",
+                fontSize: "12px",
+                fontWeight: "800",
+              }}
+            >
+              âœ‰ï¸ {letters.length} Ø®Ø·Ø§Ø¨
+            </span>
+          </div>
+
+          {loadingLetters ? (
+            <div
+              style={{
+                padding: "55px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "40px",
+                  marginBottom: "10px",
+                }}
+              >
+                â³
+              </div>
+
+              Ø¬Ø§Ø±ÙŠ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª...
+            </div>
+          ) : filteredLetters.length ===
+            0 ? (
+            <div
+              style={{
+                padding: "55px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "48px",
+                  marginBottom: "12px",
+                }}
+              >
+                ðŸ“­
+              </div>
+
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: "800",
+                  color: "#334155",
+                  marginBottom: "6px",
+                }}
+              >
+                Ù„Ø§ ØªÙˆØ¬Ø¯ Ø®Ø·Ø§Ø¨Ø§Øª Ù…Ø³Ø¬Ù„Ø©
+              </div>
+
+              <div
+                style={{
+                  fontSize: "13px",
+                }}
+              >
+                Ø¹Ù†Ø¯ Ø­ÙØ¸ Ø®Ø·Ø§Ø¨ Ø¬Ø¯ÙŠØ¯ Ø³ÙŠØ¸Ù‡Ø± Ù‡Ù†Ø§ Ù…Ø¹ Ø±Ø­Ù„Ø© Ø­Ø±ÙƒØªÙ‡ ðŸ§­
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse:
+                    "collapse",
+                  minWidth: "900px",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background:
+                        "#F8FAFC",
+                    }}
+                  >
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ“„ Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ“… Ø§Ù„ØªØ§Ø±ÙŠØ®
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ¢ Ø§Ù„Ø¬Ù‡Ø© Ø§Ù„Ù…Ø±Ø³Ù„Ø©
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ“ Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ·ï¸ QR
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ§­ Ø§Ù„Ù…Ø³Ø§Ø±
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ‘ï¸ Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredLetters.map(
+                    (letter) => (
+                      <tr
+                        key={letter.id}
+                        style={{
+                          transition:
+                            "background 0.2s",
+                        }}
+                      >
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <strong
+                            style={{
+                              color:
+                                "#0F172A",
+                            }}
+                          >
+                            ðŸ“„{" "}
+                            {letter.letter_number ||
+                              "â€”"}
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {formatDate(
+                            letter.letter_date
+                          )}
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          ðŸ¢{" "}
+                          {letter.sender
+                            ?.name ||
+                            "â€”"}
+                        </td>
+
+                        <td
+                          style={{
+                            ...tdStyle,
+                            whiteSpace:
+                              "normal",
+                            minWidth:
+                              "180px",
+                            maxWidth:
+                              "260px",
+                          }}
+                        >
+                          ðŸ“{" "}
+                          {letter.subject ||
+                            "â€”"}
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <strong
+                            style={{
+                              color:
+                                "#2563EB",
+                              direction:
+                                "ltr",
+                              display:
+                                "inline-block",
+                            }}
+                          >
+                            ðŸ·ï¸{" "}
+                            {letter.qr
+                              ?.code ||
+                              "â€”"}
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <span
+                            style={{
+                              display:
+                                "inline-flex",
+                              alignItems:
+                                "center",
+                              justifyContent:
+                                "center",
+                              gap: "5px",
+                              padding:
+                                "6px 11px",
+                              borderRadius:
+                                "999px",
+                              background:
+                                "#EFF6FF",
+                              color:
+                                "#1D4ED8",
+                              fontSize:
+                                "12px",
+                              fontWeight:
+                                "800",
+                            }}
+                          >
+                            ðŸ§­{" "}
+                            {letter
+                              .movements
+                              ?.length ||
+                              0}{" "}
+                            Ù…Ø­Ø·Ø©
+                          </span>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedLetter(
+                                letter
+                              )
+                            }
+                            style={{
+                              border:
+                                "1px solid #BFDBFE",
+                              borderRadius:
+                                "10px",
+                              padding:
+                                "8px 13px",
+                              background:
+                                "#EFF6FF",
+                              color:
+                                "#1D4ED8",
+                              fontSize:
+                                "13px",
+                              fontWeight:
+                                "800",
+                              cursor:
+                                "pointer",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            ðŸ§­ Ø¹Ø±Ø¶ Ø§Ù„Ø±Ø­Ù„Ø©
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* =========================
+            ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø®Ø·Ø§Ø¨
+           ========================= */}
+        {selectedLetter && (
+          <LetterDetails
+            letter={selectedLetter}
+            onClose={() =>
+              setSelectedLetter(null)
+            }
+            onMoveNext={moveLetterToNextStation}
+          />
+        )}
+
+        {/* =========================
+            Ø¥Ù†Ø´Ø§Ø¡ Ø¯ÙØ¹Ø© QR
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "21px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 8px 25px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #E2E8F0",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent:
+                "space-between",
+              gap: "20px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "13px",
+              }}
+            >
+              <div
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  borderRadius: "14px",
+                  background:
+                    "linear-gradient(135deg,#DBEAFE,#EFF6FF)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "24px",
+                }}
+              >
+                ðŸ·ï¸
+              </div>
+
+              <div>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: "17px",
+                    fontWeight: "800",
+                    color: "#0F172A",
+                  }}
+                >
+                  Ø¥Ù†Ø´Ø§Ø¡ Ø¯ÙØ¹Ø© QR Ø¬Ø¯ÙŠØ¯Ø©
+                </h3>
+
+                <p
+                  style={{
+                    margin:
+                      "6px 0 0",
+                    fontSize: "13px",
+                    color: "#64748B",
+                  }}
+                >
+                  Ø£ÙƒÙˆØ§Ø¯ Ù…Ø®ØªÙ„ÙØ© ÙˆØ¬Ø§Ù‡Ø²Ø© Ù„Ù„Ø·Ø¨Ø§Ø¹Ø© ÙˆØ§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù… ÙÙŠ Ø§Ù„Ø£Ø±Ø´ÙŠÙ
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                flexWrap: "wrap",
+              }}
+            >
+              <label
+                style={{
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  color: "#334155",
+                }}
+              >
+                Ø¹Ø¯Ø¯ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯
+              </label>
+
+              <select
+                value={quantity}
+                onChange={(e) =>
+                  setQuantity(
+                    Number(e.target.value)
+                  )
+                }
+                style={{
+                  border:
+                    "1px solid #CBD5E1",
+                  borderRadius: "10px",
+                  padding:
+                    "10px 12px",
+                  fontSize: "14px",
+                  background: "#fff",
+                  minWidth: "90px",
+                  cursor:
+                    "pointer",
+                }}
+              >
+                <option value={10}>
+                  10
+                </option>
+
+                <option value={20}>
+                  20
+                </option>
+
+                <option value={40}>
+                  40
+                </option>
+
+                <option value={60}>
+                  60
+                </option>
+
+                <option value={80}>
+                  80
+                </option>
+
+                <option value={100}>
+                  100
+                </option>
+
+                <option value={200}>
+                  200
+                </option>
+              </select>
+
+              <button
+                type="button"
+                onClick={
+                  generateQRCodes
+                }
+                disabled={generating}
+                style={{
+                  border: "none",
+                  borderRadius: "10px",
+                  padding:
+                    "10px 18px",
+                  background:
+                    generating
+                      ? "#94A3B8"
+                      : "#0F172A",
+                  color: "#fff",
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  cursor:
+                    generating
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                {generating
+                  ? "â³ Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø¥Ù†Ø´Ø§Ø¡..."
+                  : "âœ¨ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* =========================
+            Ø§Ù„Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª
+           ========================= */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit,minmax(180px,1fr))",
+            gap: "14px",
+            marginBottom: "20px",
+          }}
+        >
+          <StatCard
+            title="Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯"
+            value={qrCodes.length}
+            icon="ðŸ“¦"
+          />
+
+          <StatCard
+            title="Ù…ØªØ§Ø­ Ù„Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…"
+            value={availableCount}
+            icon="ðŸŸ¢"
+          />
+
+          <StatCard
+            title="Ù…Ø³ØªØ®Ø¯Ù…"
+            value={usedCount}
+            icon="ðŸ”µ"
+          />
+
+          <StatCard
+            title="Ù…Ø¤Ø±Ø´Ù"
+            value={archivedCount}
+            icon="ðŸŸ¡"
+          />
+        </div>
+
+        {/* =========================
+            Ø§Ù„Ø¨Ø­Ø«
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "18px",
+            padding: "18px",
+            marginBottom: "20px",
+            boxShadow:
+              "0 7px 22px rgba(15,23,42,0.05)",
+            border:
+              "1px solid #E2E8F0",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                right: "14px",
+                top: "50%",
+                transform:
+                  "translateY(-50%)",
+                fontSize: "18px",
+              }}
+            >
+              ðŸ”Ž
+            </span>
+
+            <input
+              type="text"
+              value={search}
+              onChange={(e) =>
+                setSearch(
+                  e.target.value
+                )
+              }
+              placeholder="Ø¨Ø­Ø« Ø¨Ø±Ù‚Ù… QR Ø£Ùˆ Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨ Ø£Ùˆ Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹..."
+              style={{
+                width: "100%",
+                boxSizing:
+                  "border-box",
+                padding:
+                  "13px 45px 13px 14px",
+                border:
+                  "1px solid #CBD5E1",
+                borderRadius: "12px",
+                fontSize: "14px",
+                outline: "none",
+                direction: "rtl",
+                background: "#F8FAFC",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* =========================
+            Ø³Ø¬Ù„ Ø£ÙƒÙˆØ§Ø¯ QR
+           ========================= */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            overflow: "hidden",
+            boxShadow:
+              "0 8px 25px rgba(15,23,42,0.06)",
+            border:
+              "1px solid #E2E8F0",
+          }}
+        >
+          <div
+            style={{
+              padding: "19px 20px",
+              borderBottom:
+                "1px solid #E5E7EB",
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "22px",
+                }}
+              >
+                ðŸ·ï¸
+              </span>
+
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "17px",
+                  fontWeight: "800",
+                  color: "#0F172A",
+                }}
+              >
+                Ø³Ø¬Ù„ Ø£ÙƒÙˆØ§Ø¯ Ø§Ù„Ø£Ø±Ø´ÙŠÙ
+              </h3>
+            </div>
+
+            <span
+              style={{
+                padding: "6px 11px",
+                borderRadius: "999px",
+                background: "#F1F5F9",
+                color: "#475569",
+                fontSize: "12px",
+                fontWeight: "700",
+              }}
+            >
+              {filteredCodes.length} ÙƒÙˆØ¯
+            </span>
+          </div>
+
+          {loading ? (
+            <div
+              style={{
+                padding: "60px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "40px",
+                  marginBottom: "10px",
+                }}
+              >
+                â³
+              </div>
+
+              Ø¬Ø§Ø±ÙŠ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯...
+            </div>
+          ) : filteredCodes.length ===
+            0 ? (
+            <div
+              style={{
+                padding: "60px 20px",
+                textAlign: "center",
+                color: "#64748B",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "48px",
+                  marginBottom: "12px",
+                }}
+              >
+                ðŸ·ï¸
+              </div>
+
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  color: "#334155",
+                  marginBottom: "6px",
+                }}
+              >
+                Ù„Ø§ ØªÙˆØ¬Ø¯ Ø£ÙƒÙˆØ§Ø¯ QR Ø­ØªÙ‰ Ø§Ù„Ø¢Ù†
+              </div>
+
+              <div
+                style={{
+                  fontSize: "13px",
+                }}
+              >
+                Ø§Ø®ØªØ§Ø±ÙŠ Ø¹Ø¯Ø¯ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯ ÙˆØ§Ø¶ØºØ·ÙŠ "Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯"
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse:
+                    "collapse",
+                  minWidth: "650px",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background:
+                        "#F8FAFC",
+                    }}
+                  >
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ·ï¸ Ø±Ù‚Ù… QR
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ“Œ Ø§Ù„Ø­Ø§Ù„Ø©
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ“„ Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨
+                    </th>
+
+                    <th
+                      style={thStyle}
+                    >
+                      ðŸ“… ØªØ§Ø±ÙŠØ® Ø§Ù„Ø¥Ù†Ø´Ø§Ø¡
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredCodes.map(
+                    (item) => (
+                      <tr key={item.id}>
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <strong
+                            style={{
+                              color:
+                                "#0F172A",
+                              direction:
+                                "ltr",
+                              display:
+                                "inline-block",
+                            }}
+                          >
+                            {item.code}
+                          </strong>
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          <StatusBadge
+                            status={
+                              item.status
+                            }
+                          />
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {item.letter_id ||
+                            "â€”"}
+                        </td>
+
+                        <td
+                          style={
+                            tdStyle
+                          }
+                        >
+                          {formatDate(
+                            item.created_at
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* =========================
+          Ù…Ù†Ø·Ù‚Ø© Ø§Ù„Ø·Ø¨Ø§Ø¹Ø©
+         ========================= */}
+      {printCodes.length > 0 && (
+        <div
+          className="qr-print-area"
+          dir="rtl"
+        >
+          <div className="qr-print-header">
+            <div>
+              <div className="qr-print-title">
+                Ø£ÙƒÙˆØ§Ø¯ QR Ù„Ù„Ø£Ø±Ø´ÙŠÙ
+              </div>
+
+              <div className="qr-print-subtitle">
+                Ù‚Ø³Ù… Ø§Ù„Ø§Ø³ØªØ­Ù‚Ø§Ù‚Ø§Øª - ÙƒÙ„ÙŠØ© Ø§Ù„Ù‡Ù†Ø¯Ø³Ø©
+              </div>
+
+              <div className="qr-print-count">
+                Ø¹Ø¯Ø¯ Ø§Ù„Ø£ÙƒÙˆØ§Ø¯:{" "}
+                {printCodes.length}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="qr-print-button no-print"
+              onClick={handlePrint}
+            >
+              ðŸ–¨ï¸ Ø·Ø¨Ø§Ø¹Ø©
+            </button>
+          </div>
+
+          <div className="qr-grid">
+            {printCodes.map((item) => (
+              <div
+                className="qr-print-card"
+                key={item.id}
+              >
+                <img
+                  src={item.dataUrl}
+                  alt={item.code}
+                  className="qr-image"
+                />
+
+                <div className="qr-code-number">
+                  {item.code}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <style>
+        {`
+          .qr-print-area {
+            display: none;
+          }
+
+          @media print {
+            @page {
+              size: A4 portrait;
+              margin: 5mm;
+            }
+
+            html,
+            body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              background: #fff !important;
+            }
+
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            body * {
+              visibility: hidden !important;
+            }
+
+            .qr-print-area,
+            .qr-print-area * {
+              visibility: visible !important;
+            }
+
+            .qr-print-area {
+              display: block !important;
+              position: absolute !important;
+              top: 0 !important;
+              left: 0 !important;
+              width: 200mm !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #fff !important;
+            }
+
+            .qr-print-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              height: 12mm;
+              box-sizing: border-box;
+              margin: 0 0 2mm 0;
+              padding: 0 1mm 1mm 1mm;
+              border-bottom: 0.3mm solid #ddd;
+            }
+
+            .qr-print-title {
+              font-size: 14px;
+              font-weight: 700;
+              color: #111;
+            }
+
+            .qr-print-subtitle {
+              margin-top: 0.7mm;
+              font-size: 8px;
+              color: #555;
+            }
+
+            .qr-print-count {
+              margin-top: 0.7mm;
+              font-size: 7px;
+              color: #777;
+            }
+
+            .qr-print-button {
+              display: none !important;
+            }
+
+            .qr-grid {
+              width: 200mm !important;
+              box-sizing: border-box;
+              display: grid !important;
+              grid-template-columns: repeat(5, 1fr) !important;
+              grid-template-rows: repeat(8, 31mm) !important;
+              column-gap: 1mm !important;
+              row-gap: 1mm !important;
+              align-content: start !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #fff !important;
+            }
+
+            .qr-print-card {
+              width: 100% !important;
+              height: 31mm !important;
+              box-sizing: border-box;
+              border: 0.25mm dashed #999;
+              display: flex !important;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              overflow: hidden;
+            }
+
+            .qr-image {
+              width: 25mm !important;
+              height: 25mm !important;
+              max-width: 25mm !important;
+              max-height: 25mm !important;
+              display: block !important;
+              object-fit: contain;
+            }
+
+            .qr-code-number {
+              margin-top: 0.6mm;
+              font-size: 7px;
+              line-height: 2.2mm;
+              font-weight: 700;
+              color: #111;
+              direction: ltr;
+              text-align: center;
+            }
+          }
+
+          @media screen {
+            .qr-print-area {
+              display: none !important;
+            }
+          }
+        `}
+      </style>
+    </>
+  );
+}
+
+/* =========================================================
+   ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø®Ø·Ø§Ø¨ - Ø§Ù„ØªØµÙ…ÙŠÙ… Ø§Ù„Ù…Ù…ÙŠØ²
+   ========================================================= */
+
+function LetterDetails({ letter, onClose, onMoveNext }) {
+  const movements = letter.movements || [];
+
+  const completedCount = movements.filter(
+    (movement) =>
+      movement.status === "completed"
+  ).length;
+
+  const currentIndex = movements.findIndex(
+    (movement) =>
+      movement.status === "in_progress"
+  );
+
+  const progress =
+    movements.length === 0
+      ? 0
+      : Math.min(
+          100,
+          Math.round(
+            ((completedCount +
+              (currentIndex >= 0
+                ? 0.5
+                : 0)) /
+              movements.length) *
+              100
+          )
+        );
+
+  const currentMovement =
+    currentIndex >= 0
+      ? movements[currentIndex]
+      : movements[completedCount - 1] ||
+        movements[0];
+
+  return (
+    <div
+      style={{
+        background: "#F8FAFC",
+        borderRadius: "24px",
+        marginBottom: "24px",
+        border: "1px solid #DCE5F2",
+        boxShadow:
+          "0 18px 45px rgba(15,23,42,0.12)",
+        overflow: "hidden",
+      }}
+    >
+      {/* Ø§Ù„Ø±Ø£Ø³ */}
+      <div
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          padding: "28px",
+          background:
+            "linear-gradient(135deg,#071A3A 0%,#123D78 48%,#2563EB 100%)",
+          color: "#fff",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            width: "220px",
+            height: "220px",
+            borderRadius: "50%",
+            border:
+              "1px solid rgba(255,255,255,0.08)",
+            top: "-120px",
+            left: "-50px",
+          }}
+        />
+
+        <div
+          style={{
+            position: "absolute",
+            width: "150px",
+            height: "150px",
+            borderRadius: "50%",
+            background:
+              "rgba(255,255,255,0.04)",
+            bottom: "-80px",
+            right: "15%",
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            gap: "20px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+            }}
+          >
+            <div
+              style={{
+                width: "64px",
+                height: "64px",
+                minWidth: "64px",
+                borderRadius: "18px",
+                background:
+                  "rgba(255,255,255,0.12)",
+                border:
+                  "1px solid rgba(255,255,255,0.20)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "32px",
+                boxShadow:
+                  "0 10px 25px rgba(0,0,0,0.12)",
+              }}
+            >
+              âœ‰ï¸
+            </div>
+
+            <div>
+              <div
+                style={{
+                  fontSize: "12px",
+                  color:
+                    "rgba(255,255,255,0.68)",
+                  marginBottom: "5px",
+                  fontWeight: "600",
+                }}
+              >
+                ðŸ§­ Ù†Ø¸Ø§Ù… Ù…ØªØ§Ø¨Ø¹Ø© Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨Ø§Øª
+              </div>
+
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "26px",
+                  fontWeight: "800",
+                }}
+              >
+                Ø®Ø·Ø§Ø¨ Ø±Ù‚Ù…{" "}
+                {letter.letter_number ||
+                  "â€”"}
+              </h3>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  marginTop: "9px",
+                }}
+              >
+                {letter.qr?.code && (
+                  <span
+                    style={{
+                      direction: "ltr",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      padding:
+                        "6px 11px",
+                      borderRadius:
+                        "999px",
+                      background:
+                        "rgba(255,255,255,0.12)",
+                      border:
+                        "1px solid rgba(255,255,255,0.18)",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                    }}
+                  >
+                    ðŸ·ï¸{" "}
+                    {letter.qr.code}
+                  </span>
+                )}
+
+                <span
+                  style={{
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
+                    gap: "5px",
+                    padding:
+                      "6px 11px",
+                    borderRadius:
+                      "999px",
+                    background:
+                      "rgba(255,255,255,0.12)",
+                    border:
+                      "1px solid rgba(255,255,255,0.18)",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                  }}
+                >
+                  ðŸ“{" "}
+                  {letter.subject ||
+                    "Ø¨Ø¯ÙˆÙ† Ù…ÙˆØ¶ÙˆØ¹"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border:
+                "1px solid rgba(255,255,255,0.25)",
+              borderRadius: "12px",
+              padding:
+                "10px 16px",
+              background:
+                "rgba(255,255,255,0.10)",
+              color: "#fff",
+              fontSize: "13px",
+              fontWeight: "700",
+              cursor: "pointer",
+              backdropFilter:
+                "blur(8px)",
+            }}
+          >
+            Ø¥ØºÙ„Ø§Ù‚ âœ•
+          </button>
+        </div>
+      </div>
+
+      <div style={{ padding: "24px" }}>
+        {/* Ø§Ù„Ø­Ø§Ù„Ø© ÙˆØ§Ù„Ø¥Ø­ØµØ§Ø¦ÙŠØ§Øª */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit,minmax(230px,1fr))",
+            gap: "14px",
+            marginBottom: "22px",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              background:
+                "linear-gradient(135deg,#EFF6FF,#DBEAFE)",
+              border:
+                "1px solid #BFDBFE",
+              borderRadius: "17px",
+              padding: "17px",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                fontSize: "65px",
+                opacity: 0.07,
+                left: "-5px",
+                bottom: "-15px",
+              }}
+            >
+              ðŸš€
+            </div>
+
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#64748B",
+                fontWeight: "700",
+                marginBottom: "6px",
+              }}
+            >
+              ðŸš€ Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©
+            </div>
+
+            <div
+              style={{
+                fontSize: "18px",
+                fontWeight: "800",
+                color: "#1D4ED8",
+              }}
+            >
+              {currentMovement
+                ?.department?.name ||
+                getLetterStatusText(
+                  letter.status
+                )}
+            </div>
+
+            <div
+              style={{
+                marginTop: "5px",
+                fontSize: "12px",
+                color: "#64748B",
+              }}
+            >
+              {currentMovement
+                ? getMovementStatusText(
+                    currentMovement.status
+                  )
+                : getLetterStatusText(
+                    letter.status
+                  )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#FFFFFF",
+              border:
+                "1px solid #E2E8F0",
+              borderRadius: "17px",
+              padding: "17px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "11px",
+                color: "#64748B",
+                fontWeight: "700",
+                marginBottom: "6px",
+              }}
+            >
+              ðŸ§­ Ø¹Ø¯Ø¯ Ø§Ù„Ù…Ø­Ø·Ø§Øª
+            </div>
+
+            <div
+              style={{
+                fontSize: "25px",
+                fontWeight: "800",
+                color: "#0F172A",
+              }}
+            >
+              {movements.length}
+            </div>
+
+            <div
+              style={{
+                marginTop: "3px",
+                fontSize: "12px",
+                color: "#64748B",
+              }}
+            >
+              Ù…Ø­Ø·Ø© ÙÙŠ Ø±Ø­Ù„Ø© Ø§Ù„Ø®Ø·Ø§Ø¨
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#FFFFFF",
+              border:
+                "1px solid #E2E8F0",
+              borderRadius: "17px",
+              padding: "17px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent:
+                  "space-between",
+                alignItems: "center",
+                marginBottom: "8px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#64748B",
+                  fontWeight: "700",
+                }}
+              >
+                ðŸ“Š Ù†Ø³Ø¨Ø© Ø§Ù„Ø¥Ù†Ø¬Ø§Ø²
+              </div>
+
+              <strong
+                style={{
+                  fontSize: "18px",
+                  color:
+                    progress >= 100
+                      ? "#047857"
+                      : "#2563EB",
+                }}
+              >
+                {progress}%
+              </strong>
+            </div>
+
+            <div
+              style={{
+                height: "9px",
+                background: "#E2E8F0",
+                borderRadius:
+                  "999px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width:
+                    `${progress}%`,
+                  height: "100%",
+                  background:
+                    progress >= 100
+                      ? "linear-gradient(90deg,#059669,#10B981)"
+                      : "linear-gradient(90deg,#2563EB,#38BDF8)",
+                  borderRadius:
+                    "999px",
+                  transition:
+                    "width 0.5s ease",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: "6px",
+                fontSize: "11px",
+                color: "#94A3B8",
+              }}
+            >
+              {completedCount} Ù…Ù†{" "}
+              {movements.length} Ù…Ø­Ø·Ø© Ù…ÙƒØªÙ…Ù„Ø©
+            </div>
+          </div>
+        </div>
+
+        {/* Ù…Ø¹Ù„ÙˆÙ…Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨ */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit,minmax(175px,1fr))",
+            gap: "12px",
+            marginBottom: "20px",
+          }}
+        >
+          <InfoBox
+            label="Ø±Ù‚Ù… Ø§Ù„Ø®Ø·Ø§Ø¨"
+            value={`ðŸ“„ ${
+              letter.letter_number ||
+              "â€”"
+            }`}
+          />
+
+          <InfoBox
+            label="ØªØ§Ø±ÙŠØ® Ø§Ù„Ø®Ø·Ø§Ø¨"
+            value={`ðŸ“… ${formatDate(
+              letter.letter_date
+            )}`}
+          />
+
+          <InfoBox
+            label="Ø§Ù„Ø¬Ù‡Ø© Ø§Ù„Ù…Ø±Ø³Ù„Ø©"
+            value={`ðŸ¢ ${
+              letter.sender?.name ||
+              "â€”"
+            }`}
+          />
+
+          <InfoBox
+            label="ÙƒÙˆØ¯ QR"
+            value={`ðŸ·ï¸ ${
+              letter.qr?.code ||
+              "â€”"
+            }`}
+            ltr
+          />
+
+          <InfoBox
+            label="Ø§Ù„Ù…ÙˆØ¶ÙˆØ¹"
+            value={`ðŸ“ ${
+              letter.subject ||
+              "â€”"
+            }`}
+          />
+
+          <InfoBox
+            label="Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©"
+            value={`ðŸ”µ ${getLetterStatusText(
+              letter.status
+            )}`}
+            highlight
+          />
+        </div>
+
+        {/* Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø§Øª */}
+        {letter.notes && (
+          <div
+            style={{
+              background:
+                "linear-gradient(135deg,#FFFBEB,#FEF3C7)",
+              border:
+                "1px solid #FDE68A",
+              borderRadius: "16px",
+              padding:
+                "17px 18px",
+              marginBottom: "28px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems:
+                  "flex-start",
+                gap: "12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "25px",
+                }}
+              >
+                ðŸ’¡
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    color: "#92400E",
+                    marginBottom:
+                      "5px",
+                    fontWeight:
+                      "800",
+                  }}
+                >
+                  Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„Ø®Ø·Ø§Ø¨
+                </div>
+
+                <div
+                  style={{
+                    fontSize: "14px",
+                    color: "#78350F",
+                    lineHeight:
+                      "1.9",
+                  }}
+                >
+                  {letter.notes}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ø±Ø­Ù„Ø© */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            gap: "15px",
+            flexWrap: "wrap",
+            marginBottom: "18px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems:
+                "center",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius:
+                  "15px",
+                background:
+                  "linear-gradient(135deg,#DBEAFE,#EFF6FF)",
+                border:
+                  "1px solid #BFDBFE",
+                display: "flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                fontSize: "25px",
+              }}
+            >
+              ðŸ§­
+            </div>
+
+            <div>
+              <h4
+                style={{
+                  margin: 0,
+                  fontSize: "20px",
+                  fontWeight: "800",
+                  color: "#0F172A",
+                }}
+              >
+                Ø±Ø­Ù„Ø© Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨
+              </h4>
+
+              <div
+                style={{
+                  marginTop:
+                    "4px",
+                  fontSize: "12px",
+                  color: "#64748B",
+                }}
+              >
+                ðŸ“¨ ØªØªØ¨Ø¹ Ø§Ù†ØªÙ‚Ø§Ù„ Ø§Ù„Ø®Ø·Ø§Ø¨ Ø¨ÙŠÙ† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding:
+                "8px 13px",
+              borderRadius:
+                "999px",
+              background:
+                "#F1F5F9",
+              border:
+                "1px solid #E2E8F0",
+              color: "#475569",
+              fontSize: "12px",
+              fontWeight: "700",
+            }}
+          >
+            ðŸ—‚ï¸ {movements.length} Ù…Ø­Ø·Ø©
+          </div>
+        </div>
+
+        {/* Ø§Ù„Ø±Ø­Ù„Ø© */}
+        {movements.length === 0 ? (
+          <div
+            style={{
+              padding:
+                "50px 20px",
+              textAlign:
+                "center",
+              background:
+                "#FFFFFF",
+              borderRadius:
+                "18px",
+              color: "#64748B",
+              border:
+                "1px dashed #CBD5E1",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "50px",
+                marginBottom:
+                  "12px",
+              }}
+            >
+              ðŸ§­
+            </div>
+
+            <div
+              style={{
+                fontSize: "16px",
+                fontWeight: "800",
+                color: "#334155",
+                marginBottom:
+                  "6px",
+              }}
+            >
+              Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ø­Ø·Ø§Øª Ù…Ø³Ø¬Ù„Ø©
+            </div>
+
+            <div
+              style={{
+                fontSize: "13px",
+              }}
+            >
+              Ù„Ù… ÙŠØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ù…Ø³Ø§Ø± Ù„Ù‡Ø°Ø§ Ø§Ù„Ø®Ø·Ø§Ø¨ Ø­ØªÙ‰ Ø§Ù„Ø¢Ù†.
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              position:
+                "relative",
+              background:
+                "linear-gradient(180deg,#F8FAFC,#FFFFFF)",
+              border:
+                "1px solid #E2E8F0",
+              borderRadius:
+                "20px",
+              padding:
+                "22px 18px",
+            }}
+          >
+            {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ */}
+            <div
+              style={{
+                position:
+                  "absolute",
+                right: "45px",
+                top: "65px",
+                bottom: "65px",
+                width: "4px",
+                background:
+                  "linear-gradient(180deg,#2563EB,#CBD5E1)",
+                borderRadius:
+                  "999px",
+              }}
+            />
+
+            {movements.map(
+              (movement, index) => {
+                const status =
+                  movement.status ||
+                  "waiting";
+
+                const config =
+                  movementStatusConfig[
+                    status
+                  ] ||
+                  movementStatusConfig.waiting;
+
+                const isCurrent =
+                  status ===
+                  "in_progress";
+
+                const isCompleted =
+                  status ===
+                  "completed";
+
+                const isLast =
+                  index ===
+                  movements.length -
+                    1;
+
+                return (
+                  <div
+                    key={
+                      movement.id
+                    }
+                    style={{
+                      position:
+                        "relative",
+                      display:
+                        "flex",
+                      gap: "18px",
+                      marginBottom:
+                        isLast
+                          ? 0
+                          : "18px",
+                    }}
+                  >
+                    {/* Ø¯Ø§Ø¦Ø±Ø© Ø§Ù„Ù…Ø­Ø·Ø© */}
+                    <div
+                      style={{
+                        width:
+                          "58px",
+                        minWidth:
+                          "58px",
+                        height:
+                          "58px",
+                        borderRadius:
+                          "50%",
+                        background:
+                          isCompleted
+                            ? "linear-gradient(135deg,#059669,#10B981)"
+                            : isCurrent
+                            ? "linear-gradient(135deg,#2563EB,#38BDF8)"
+                            : "#FFFFFF",
+                        border:
+                          "4px solid " +
+                          (isCompleted
+                            ? "#D1FAE5"
+                            : isCurrent
+                            ? "#DBEAFE"
+                            : "#E2E8F0"),
+                        display:
+                          "flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "center",
+                        fontSize:
+                          "22px",
+                        color:
+                          isCompleted ||
+                          isCurrent
+                            ? "#FFFFFF"
+                            : "#64748B",
+                        fontWeight:
+                          "800",
+                        zIndex: 2,
+                        boxShadow:
+                          isCurrent
+                            ? "0 0 0 7px rgba(37,99,235,0.10),0 8px 20px rgba(37,99,235,0.20)"
+                            : "0 5px 12px rgba(15,23,42,0.08)",
+                      }}
+                    >
+                      {isCompleted
+                        ? "âœ“"
+                        : isCurrent
+                        ? "âš¡"
+                        : index + 1}
+                    </div>
+
+                    {/* Ø¨Ø·Ø§Ù‚Ø© Ø§Ù„Ù…Ø­Ø·Ø© */}
+                    <div
+                      style={{
+                        flex: 1,
+                        background:
+                          "#FFFFFF",
+                        border:
+                          "1px solid " +
+                          (isCurrent
+                            ? "#93C5FD"
+                            : isCompleted
+                            ? "#A7F3D0"
+                            : "#E2E8F0"),
+                        borderRadius:
+                          "18px",
+                        padding:
+                          "17px",
+                        boxShadow:
+                          isCurrent
+                            ? "0 10px 28px rgba(37,99,235,0.13)"
+                            : "0 5px 15px rgba(15,23,42,0.04)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          alignItems:
+                            "flex-start",
+                          gap: "12px",
+                          flexWrap:
+                            "wrap",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            alignItems:
+                              "center",
+                            gap: "9px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize:
+                                "22px",
+                            }}
+                          >
+                            {getDepartmentEmoji(
+                              movement
+                                .department
+                                ?.name
+                            )}
+                          </span>
+
+                          <div>
+                            <div
+                              style={{
+                                fontSize:
+                                  "10px",
+                                color:
+                                  "#94A3B8",
+                                fontWeight:
+                                  "800",
+                                marginBottom:
+                                  "3px",
+                              }}
+                            >
+                              Ø§Ù„Ù…Ø­Ø·Ø©{" "}
+                              {index +
+                                1}
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize:
+                                  "16px",
+                                fontWeight:
+                                  "800",
+                                color:
+                                  "#0F172A",
+                              }}
+                            >
+                              {movement
+                                .department
+                                ?.name ||
+                                "Ø¥Ø¯Ø§Ø±Ø© ØºÙŠØ± Ù…Ø­Ø¯Ø¯Ø©"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            gap: "5px",
+                            padding:
+                              "6px 11px",
+                            borderRadius:
+                              "999px",
+                            background:
+                              config.background,
+                            color:
+                              config.color,
+                            border:
+                              "1px solid " +
+                              config.border,
+                            fontSize:
+                              "11px",
+                            fontWeight:
+                              "800",
+                          }}
+                        >
+                          {
+                            config.icon
+                          }{" "}
+                          {
+                            config.text
+                          }
+                        </span>
+                      </div>
+
+                      {movement.action && (
+                        <div
+                          style={{
+                            marginTop:
+                              "12px",
+                            padding:
+                              "10px 12px",
+                            borderRadius:
+                              "11px",
+                            background:
+                              "#F8FAFC",
+                            border:
+                              "1px solid #F1F5F9",
+                            fontSize:
+                              "12px",
+                            color:
+                              "#475569",
+                          }}
+                        >
+                          ðŸ”§{" "}
+                          {
+                            movement.action
+                          }
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          gap: "10px",
+                          flexWrap:
+                            "wrap",
+                          marginTop:
+                            "12px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex:
+                              "1 1 190px",
+                            background:
+                              "#F8FAFC",
+                            borderRadius:
+                              "10px",
+                            padding:
+                              "9px 11px",
+                            fontSize:
+                              "11px",
+                            color:
+                              "#64748B",
+                          }}
+                        >
+                          ðŸ“¥{" "}
+                          <strong>
+                            Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…
+                          </strong>
+
+                          <div
+                            style={{
+                              marginTop:
+                                "3px",
+                              color:
+                                "#334155",
+                              fontWeight:
+                                "600",
+                            }}
+                          >
+                            {formatDateTime(
+                              movement.received_at
+                            )}
+                          </div>
+                        </div>
+
+                        {movement.sent_at && (
+                          <div
+                            style={{
+                              flex:
+                                "1 1 190px",
+                              background:
+                                "#F8FAFC",
+                              borderRadius:
+                                "10px",
+                              padding:
+                                "9px 11px",
+                              fontSize:
+                                "11px",
+                              color:
+                                "#64748B",
+                            }}
+                          >
+                            ðŸ“¤{" "}
+                            <strong>
+                              Ø§Ù„Ø¥Ø±Ø³Ø§Ù„
+                            </strong>
+
+                            <div
+                              style={{
+                                marginTop:
+                                  "3px",
+                                color:
+                                  "#334155",
+                                fontWeight:
+                                  "600",
+                              }}
+                            >
+                              {formatDateTime(
+                                movement.sent_at
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {movement.notes && (
+                        <div
+                          style={{
+                            marginTop:
+                              "10px",
+                            paddingTop:
+                              "10px",
+                            borderTop:
+                              "1px solid #F1F5F9",
+                            fontSize:
+                              "12px",
+                            color:
+                              "#475569",
+                            lineHeight:
+                              "1.8",
+                          }}
+                        >
+                          ðŸ’¬{" "}
+                          {
+                            movement.notes
+                          }
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+            )}
+          </div>
+        )}
+
+        {/* Ù…ÙØªØ§Ø­ Ø§Ù„Ø­Ø§Ù„Ø§Øª */}
+        {currentMovement && currentMovement.status === "in_progress" && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginTop: "20px",
+              marginBottom: "8px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => onMoveNext(letter)}
+              style={{
+                border: "none",
+                borderRadius: "14px",
+                padding: "13px 24px",
+                background: "linear-gradient(135deg,#0F766E,#14B8A6)",
+                color: "#fff",
+                fontWeight: "800",
+                fontSize: "14px",
+                cursor: "pointer",
+                boxShadow: "0 8px 20px rgba(15,118,110,0.22)",
+              }}
+            >
+              {"\u062A\u0645 \u0627\u0644\u062A\u0646\u0641\u064A\u0630 \u0648\u0627\u0644\u0627\u0646\u062A\u0642\u0627\u0644 \u0644\u0644\u0645\u062D\u0637\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629"}
+            </button>
+          </div>
+        )}
+
+        {movements.length > 0 && (
+          <div
+            style={{
+              display:
+                "flex",
+              justifyContent:
+                "center",
+              gap: "10px",
+              flexWrap:
+                "wrap",
+              marginTop:
+                "18px",
+            }}
+          >
+            <LegendItem
+              icon="ðŸŸ¢"
+              text="ØªÙ… Ø§Ù„ØªÙ†ÙÙŠØ°"
+            />
+
+            <LegendItem
+              icon="ðŸ”µ"
+              text="Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªÙ†ÙÙŠØ°"
+            />
+
+            <LegendItem
+              icon="âšª"
+              text="ÙÙŠ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Info Box
+   ========================================================= */
+
+function InfoBox({
+  label,
+  value,
+  ltr = false,
+  highlight = false,
+}) {
+  return (
+    <div
+      style={{
+        background:
+          highlight
+            ? "linear-gradient(135deg,#EFF6FF,#F8FAFC)"
+            : "#FFFFFF",
+        border:
+          "1px solid " +
+          (highlight
+            ? "#BFDBFE"
+            : "#E2E8F0"),
+        borderRadius:
+          "14px",
+        padding:
+          "14px 15px",
+        boxShadow:
+          "0 3px 10px rgba(15,23,42,0.025)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "10px",
+          color: "#94A3B8",
+          marginBottom: "7px",
+          fontWeight: "700",
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          fontSize: "14px",
+          fontWeight: "800",
+          color:
+            highlight
+              ? "#1D4ED8"
+              : "#0F172A",
+          direction:
+            ltr ? "ltr" : "rtl",
+          textAlign:
+            ltr ? "left" : "right",
+          lineHeight: "1.6",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Ø­Ø§Ù„Ø§Øª Ø­Ø±ÙƒØ© Ø§Ù„Ø®Ø·Ø§Ø¨
+   ========================================================= */
+
+const movementStatusConfig = {
+  waiting: {
+    text: "ÙÙŠ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±",
+    icon: "âšª",
+    color: "#64748B",
+    background: "#F8FAFC",
+    border: "#CBD5E1",
+  },
+
+  in_progress: {
+    text: "Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªÙ†ÙÙŠØ°",
+    icon: "ðŸ”µ",
+    color: "#1D4ED8",
+    background: "#EFF6FF",
+    border: "#BFDBFE",
+  },
+
+  completed: {
+    text: "ØªÙ… Ø§Ù„ØªÙ†ÙÙŠØ°",
+    icon: "ðŸŸ¢",
+    color: "#047857",
+    background: "#ECFDF5",
+    border: "#A7F3D0",
+  },
+};
+
+function getMovementStatusText(
+  status
+) {
+  const config =
+    movementStatusConfig[status];
+
+  return config
+    ? config.text
+    : status || "ØºÙŠØ± Ù…Ø­Ø¯Ø¯";
+}
+
+/* =========================================================
+   Emoji Ù„Ù„Ø¥Ø¯Ø§Ø±Ø§Øª
+   ========================================================= */
+
+function getDepartmentEmoji(name) {
+  const value = String(
+    name || ""
+  );
+
+  if (value.includes("Ø£Ù…ÙŠÙ†")) {
+    return "ðŸ‘¨â€ðŸ’¼";
+  }
+
+  if (value.includes("Ø§Ø³ØªØ­Ù‚Ø§Ù‚")) {
+    return "ðŸ’°";
+  }
+
+  if (value.includes("Ø­Ø³Ø§Ø¨")) {
+    return "ðŸ§®";
+  }
+
+  if (
+    value.includes("Ù‚ÙŠØ¯") ||
+    value.includes("Ø­ÙØ¸")
+  ) {
+    return "ðŸ—„ï¸";
+  }
+
+  if (value.includes("Ø«Ù‚Ø§Ù")) {
+    return "ðŸŽ“";
+  }
+
+  if (
+    value.includes("Ù‡ÙŠØ¦Ø© Ø§Ù„ØªØ¯Ø±ÙŠØ³")
+  ) {
+    return "ðŸ‘¨â€ðŸ«";
+  }
+
+  if (value.includes("Ù…ÙƒØªØ¨")) {
+    return "ðŸ¢";
+  }
+
+  return "ðŸ›ï¸";
+}
+
+/* =========================================================
+   Legend
+   ========================================================= */
+
+function LegendItem({
+  icon,
+  text,
+}) {
+  return (
+    <div
+      style={{
+        display:
+          "inline-flex",
+        alignItems:
+          "center",
+        gap: "6px",
+        padding:
+          "7px 11px",
+        background:
+          "#FFFFFF",
+        border:
+          "1px solid #E2E8F0",
+        borderRadius:
+          "999px",
+        fontSize:
+          "11px",
+        color:
+          "#475569",
+        fontWeight:
+          "700",
+      }}
+    >
+      {icon} {text}
+    </div>
+  );
+}
+
+/* =========================================================
+   Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø¹Ø§Ù…Ø© Ù„Ù„Ø®Ø·Ø§Ø¨
+   ========================================================= */
+
+function getLetterStatusText(
+  status
+) {
+  const config = {
+    incoming: "ÙˆØ§Ø±Ø¯",
+    in_progress:
+      "Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªÙ†ÙÙŠØ°",
+    completed:
+      "ØªÙ… Ø§Ù„ØªÙ†ÙÙŠØ°",
+    archived:
+      "Ù…Ø¤Ø±Ø´Ù",
+  };
+
+  return (
+    config[status] ||
+    status ||
+    "ØºÙŠØ± Ù…Ø­Ø¯Ø¯"
+  );
+}
+
+/* =========================================================
+   Stat Card
+   ========================================================= */
+
+function StatCard({
+  title,
+  value,
+  icon,
+}) {
+  return (
+    <div
+      style={{
+        position:
+          "relative",
+        overflow:
+          "hidden",
+        background:
+          "#FFFFFF",
+        borderRadius:
+          "17px",
+        padding:
+          "18px",
+        border:
+          "1px solid #E2E8F0",
+        boxShadow:
+          "0 7px 20px rgba(15,23,42,0.05)",
+      }}
+    >
+      <div
+        style={{
+          display:
+            "flex",
+          justifyContent:
+            "space-between",
+          alignItems:
+            "center",
+          gap: "10px",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize:
+                "12px",
+              color:
+                "#64748B",
+              marginBottom:
+                "7px",
+              fontWeight:
+                "700",
+            }}
+          >
+            {title}
+          </div>
+
+          <div
+            style={{
+              fontSize:
+                "26px",
+              fontWeight:
+                "800",
+              color:
+                "#0F172A",
+            }}
+          >
+            {value}
+          </div>
+        </div>
+
+        <div
+          style={{
+            width:
+              "47px",
+            height:
+              "47px",
+            borderRadius:
+              "14px",
+            background:
+              "#F8FAFC",
+            border:
+              "1px solid #E2E8F0",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            fontSize:
+              "24px",
+          }}
+        >
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Status Badge
+   ========================================================= */
+
+function StatusBadge({
+  status,
+}) {
+  const config = {
+    available: {
+      text: "Ù…ØªØ§Ø­",
+      icon: "ðŸŸ¢",
+      background: "#ECFDF5",
+      color: "#047857",
+    },
+
+    used: {
+      text: "Ù…Ø³ØªØ®Ø¯Ù…",
+      icon: "ðŸ”µ",
+      background: "#EFF6FF",
+      color: "#1D4ED8",
+    },
+
+    archived: {
+      text: "Ù…Ø¤Ø±Ø´Ù",
+      icon: "ðŸŸ¡",
+      background: "#FFFBEB",
+      color: "#B45309",
+    },
+  };
+
+  const current =
+    config[status] || {
+      text:
+        status ||
+        "ØºÙŠØ± Ù…Ø­Ø¯Ø¯",
+      icon: "âšª",
+      background:
+        "#F3F4F6",
+      color:
+        "#374151",
+    };
+
+  return (
+    <span
+      style={{
+        display:
+          "inline-flex",
+        alignItems:
+          "center",
+        justifyContent:
+          "center",
+        gap: "5px",
+        padding:
+          "6px 10px",
+        borderRadius:
+          "999px",
+        background:
+          current.background,
+        color:
+          current.color,
+        fontSize:
+          "12px",
+        fontWeight:
+          "800",
+      }}
+    >
+      {current.icon}{" "}
+      {current.text}
+    </span>
+  );
+}
+
+/* =========================================================
+   Header Button
+   ========================================================= */
+
+function headerButtonStyle(
+  background
+) {
+  return {
+    border:
+      "1px solid rgba(255,255,255,0.18)",
+    borderRadius:
+      "11px",
+    padding:
+      "10px 15px",
+    background,
+    color: "#fff",
+    fontSize:
+      "13px",
+    fontWeight:
+      "700",
+    cursor:
+      background ===
+      "#64748B"
+        ? "not-allowed"
+        : "pointer",
+    backdropFilter:
+      "blur(8px)",
+  };
+}
+
+/* =========================================================
+   Date
+   ========================================================= */
+
+function formatDate(value) {
+  if (!value) {
+    return "â€”";
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "ar-EG",
+      {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).format(new Date(value));
+  } catch {
+    return "â€”";
+  }
+}
+
+/* =========================================================
+   Date + Time
+   ========================================================= */
+
+function formatDateTime(
+  value
+) {
+  if (!value) {
+    return "â€”";
+  }
+
+  try {
+    return new Intl.DateTimeFormat(
+      "ar-EG",
+      {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    ).format(new Date(value));
+  } catch {
+    return "â€”";
+  }
+}
+
+/* =========================================================
+   Table Styles
+   ========================================================= */
+
+const thStyle = {
+  padding:
+    "14px 16px",
+  textAlign:
+    "right",
+  fontSize:
+    "12px",
+  fontWeight:
+    "800",
+  color:
+    "#334155",
+  borderBottom:
+    "1px solid #E2E8F0",
+  whiteSpace:
+    "nowrap",
+};
+
+const tdStyle = {
+  padding:
+    "14px 16px",
+  fontSize:
+    "13px",
+  color:
+    "#475569",
+  borderBottom:
+    "1px solid #F1F5F9",
+  whiteSpace:
+    "nowrap",
+};
+
