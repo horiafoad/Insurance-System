@@ -1720,6 +1720,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                 setServiceRequestFilter
               }
               focusRequestId={focusRequestId}
+              currentUser={currentUser}
             />
           )}
 
