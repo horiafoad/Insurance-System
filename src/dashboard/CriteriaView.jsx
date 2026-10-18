@@ -703,7 +703,15 @@ export function ServiceRequestsView({
   onServiceFilterChange,
   focusRequestId,
   currentUser = null,
+  view = "incoming",
 }) {
+  // وضع العرض: incoming = الطلبات الواردة (جديدة + قيد التنفيذ + مرفوضة)
+  // archive = الطلبات المنفذة/المستلمة التي انتقلت لبند الخدمة الخاص بها.
+  const isArchiveView = view === "archive";
+  const isDoneStatus = (status) => {
+    const normalized = STATUS_ALIASES[status] || status;
+    return normalized === COMPLETED_STATUS || normalized === RECEIVED_STATUS;
+  };
   // صلاحية «الطلبات» تُفحص داخل مسار الحفظ نفسه، وليس بإخفاء الأزرار فقط.
   const canManageRequests = hasPermission(currentUser, "requests");
 
@@ -780,14 +788,25 @@ export function ServiceRequestsView({
   }, [requests]);
 
   const statusOptions = useMemo(() => {
-    const existing = requests.map((item) => item.status).filter(Boolean);
-    return [...new Set([...REQUEST_STATUSES.map((item) => item.value), ...existing])];
-  }, [requests]);
+    // في الوارد نخفي خيارات المنفّذ/المستلَم، وفي الأرشيف نعرضهما فقط.
+    const allowed = REQUEST_STATUSES.filter((item) =>
+      isArchiveView
+        ? item.value === COMPLETED_STATUS || item.value === RECEIVED_STATUS
+        : item.value !== COMPLETED_STATUS && item.value !== RECEIVED_STATUS
+    ).map((item) => item.value);
+    const existing = requests
+      .map((item) => item.status)
+      .filter((status) => status && allowed.includes(status));
+    return [...new Set([...allowed, ...existing])];
+  }, [requests, isArchiveView]);
 
   const filteredRequests = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return requests.filter((request) => {
+      // فلتر الوضع: الوارد يستبعد المنفّذ والمستلَم، والأرشيف يعرضهما فقط.
+      if (isArchiveView !== isDoneStatus(request.status)) return false;
+
       const statusMatch =
         statusFilter === "all" || request.status === statusFilter;
       const aliases = SERVICE_FILTER_ALIASES[activeServiceFilter] || [activeServiceFilter];
@@ -1254,29 +1273,44 @@ export function ServiceRequestsView({
   };
 
   const counts = useMemo(() => {
+    // الإحصائيات تعكس الوضع الحالي: الوارد أو الأرشيف.
+    const base = requests.filter(
+      (item) => isArchiveView === isDoneStatus(item.status)
+    );
     return {
-      total: requests.length,
-      newCount: requests.filter(
+      total: base.length,
+      newCount: base.filter(
         (item) => ["جديدة", "جديد"].includes(item.status)
       ).length,
-      inProgress: requests.filter((item) =>
+      inProgress: base.filter((item) =>
         ["قيد التنفيذ", "قيد المراجعة", "جاري التنفيذ", "قيد المعالجة", "معلق"].includes(
           item.status
         )
       ).length,
-      completed: requests.filter((item) =>
-        ["تم التنفيذ", "مقبولة", "مكتمل", "منتهي", "تم الصرف"].includes(item.status)
-      ).length,
-      rejected: requests.filter((item) => item.status === "مرفوضة").length,
+      completed: base.filter((item) => {
+        const normalized = STATUS_ALIASES[item.status] || item.status;
+        return normalized === COMPLETED_STATUS;
+      }).length,
+      received: base.filter((item) => {
+        const normalized = STATUS_ALIASES[item.status] || item.status;
+        return normalized === RECEIVED_STATUS;
+      }).length,
+      rejected: base.filter((item) => item.status === "مرفوضة").length,
     };
-  }, [requests]);
+  }, [requests, isArchiveView]);
 
   return (
     <div style={styles.card}>
       <div style={styles.cardHeader}>
         <div>
-          <h2 style={styles.cardTitle}>📥 الطلبات الواردة</h2>
-          <p style={styles.cardSub}>طلبات الخدمات الإلكترونية الواردة مع إمكانية التعديل والحذف والمتابعة</p>
+          <h2 style={styles.cardTitle}>
+            {isArchiveView ? "📤 الطلبات المنفذة والمستلمة" : "📥 الطلبات الواردة"}
+          </h2>
+          <p style={styles.cardSub}>
+            {isArchiveView
+              ? "الطلبات التي تم تنفيذها وانتقلت إلى بند الخدمة الخاص بها — يمكن تسجيل الاستلام من مقدم الطلب"
+              : "طلبات الخدمات الإلكترونية الجديدة وقيد التنفيذ — عند التنفيذ تنتقل تلقائيًا إلى بند الخدمة الخاص بها"}
+          </p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
           <button style={styles.secondaryButton} onClick={loadRequests}>
@@ -1302,11 +1336,20 @@ export function ServiceRequestsView({
       )}
 
       <div style={styles.claimStats}>
-        <ClaimStat title="إجمالي الطلبات" value={counts.total} icon="📥" />
-        <ClaimStat title="جديدة" value={counts.newCount} icon="🟡" />
-        <ClaimStat title="قيد التنفيذ" value={counts.inProgress} icon="🔵" />
-        <ClaimStat title="تم التنفيذ" value={counts.completed} icon="🟢" />
-        <ClaimStat title="مرفوضة" value={counts.rejected} icon="🔴" />
+        {isArchiveView ? (
+          <>
+            <ClaimStat title="إجمالي المنفّذ والمستلَم" value={counts.total} icon="📤" />
+            <ClaimStat title="تم التنفيذ" value={counts.completed} icon="🟢" />
+            <ClaimStat title="تم الاستلام" value={counts.received} icon="🟣" />
+          </>
+        ) : (
+          <>
+            <ClaimStat title="إجمالي الطلبات" value={counts.total} icon="📥" />
+            <ClaimStat title="جديدة" value={counts.newCount} icon="🟡" />
+            <ClaimStat title="قيد التنفيذ" value={counts.inProgress} icon="🔵" />
+            <ClaimStat title="مرفوضة" value={counts.rejected} icon="🔴" />
+          </>
+        )}
       </div>
 
       <div className="service-filter-bar" style={styles.filterRow}>
@@ -1383,11 +1426,14 @@ export function ServiceRequestsView({
             <tbody>
               {filteredRequests.map((request) => {
                 const currentStatus = request.status || "جديدة";
+                // في الوارد يمكن تعيين «تم التنفيذ» (ينقل للأرشيف)، بـ«تم الاستلام» للأرشيف فقط.
+                const allowedRowStatuses = isArchiveView
+                  ? [COMPLETED_STATUS, RECEIVED_STATUS]
+                  : REQUEST_STATUSES.filter(
+                      (item) => item.value !== RECEIVED_STATUS
+                    ).map((item) => item.value);
                 const selectOptions = [
-                  ...new Set([
-                    currentStatus,
-                    ...REQUEST_STATUSES.map((item) => item.value),
-                  ]),
+                  ...new Set([currentStatus, ...allowedRowStatuses]),
                 ];
 
                 return (
@@ -1653,11 +1699,23 @@ export function ServiceRequestsView({
       )}
 
       {!loading && requests.length === 0 && !error && (
-        <EmptyState text="لا توجد طلبات واردة حتى الآن." />
+        <EmptyState
+          text={
+            isArchiveView
+              ? "لا توجد طلبات منفّذة أو مستلَمة في هذا البند بعد."
+              : "لا توجد طلبات واردة حتى الآن."
+          }
+        />
       )}
 
       {!loading && requests.length > 0 && filteredRequests.length === 0 && (
-        <EmptyState text="لا توجد طلبات مطابقة للبحث أو التصفية." />
+        <EmptyState
+          text={
+            isArchiveView
+              ? "لا توجد طلبات منفّذة مطابقة للبحث أو التصفية."
+              : "لا توجد طلبات واردة مطابقة للبحث أو التصفية."
+          }
+        />
       )}
 
       {/* Modal تعديل الطلب */}

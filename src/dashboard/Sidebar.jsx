@@ -32,6 +32,8 @@ export default function Sidebar({
   setActiveMenu,
   setFilterType,
   setServiceRequestFilter,
+  setServiceRequestsView,
+  serviceRequestsView = "incoming",
   currentUser,
   isMobile = false,
   sidebarOpen = false,
@@ -40,6 +42,12 @@ export default function Sidebar({
   const navigate = (nextMenu) => {
     setActiveMenu(nextMenu);
     if (onCloseSidebar) onCloseSidebar();
+  };
+
+  // فتح طلبات الخدمة: الوارد من زر القائمة، والأرشيف من أقسام الخدمات.
+  const openServiceRequests = (viewMode) => {
+    if (setServiceRequestsView) setServiceRequestsView(viewMode);
+    setActiveMenu("service_requests");
   };
   const controlItems = MENU_ITEMS.filter((item) =>
     item.id === "push_settings"
@@ -100,10 +108,17 @@ export default function Sidebar({
           {controlItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveMenu(item.id)}
+              onClick={() => {
+                if (item.id === "service_requests") {
+                  openServiceRequests("incoming");
+                  return;
+                }
+                setActiveMenu(item.id);
+              }}
               style={{
                 ...styles.menuButton,
-                ...(activeMenu === item.id
+                ...(activeMenu === item.id &&
+                !(item.id === "service_requests" && serviceRequestsView === "archive")
                   ? styles.menuButtonActive
                   : {}),
               }}
@@ -144,11 +159,14 @@ export default function Sidebar({
                     return;
                   }
 
-                  // طلبات الخدمات
+                  // طلبات الخدمات — تفتح بند الخدمة (المنفّذ والمستلَم)
                   if (SERVICE_REQUEST_TYPES[type.id]) {
                     setServiceRequestFilter(
                       SERVICE_REQUEST_TYPES[type.id]
                     );
+                    if (setServiceRequestsView) {
+                      setServiceRequestsView("archive");
+                    }
                     setActiveMenu("service_requests");
                     return;
                   }
@@ -182,7 +200,8 @@ export default function Sidebar({
                     : {}),
 
                   ...(SERVICE_REQUEST_TYPES[type.id] &&
-                  activeMenu === "service_requests"
+                  activeMenu === "service_requests" &&
+                  serviceRequestsView === "archive"
                     ? styles.smallMenuButtonActive
                     : {}),
 

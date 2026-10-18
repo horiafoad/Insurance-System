@@ -105,6 +105,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     if (nextId) {
       setFocusRequestId(nextId);
       if (canAccessMenu(currentUser, "service_requests")) {
+        setServiceRequestsView("incoming");
         setActiveMenu("service_requests");
       }
     }
@@ -160,6 +161,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   const [studyLeaveError, setStudyLeaveError] = useState("");
 
   const [serviceRequestFilter, setServiceRequestFilter] = useState("all");
+  // وضع عرض طلبات الخدمة: "incoming" = الطلبات الواردة، "archive" = بند الخدمة (المنفّذ/المستلَم).
+  const [serviceRequestsView, setServiceRequestsView] = useState("incoming");
 
   const [appLoading, setAppLoading] = useState(true);
   const [appError, setAppError] = useState("");
@@ -666,6 +669,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     ) {
       setFocusRequestId(notification.reference_id);
       if (canAccessMenu(currentUser, "service_requests")) {
+        setServiceRequestsView("incoming");
         setActiveMenu("service_requests");
       }
     } else if (
@@ -1331,6 +1335,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         setActiveMenu={goTo}
         setFilterType={setFilterType}
         setServiceRequestFilter={setServiceRequestFilter}
+        setServiceRequestsView={setServiceRequestsView}
+        serviceRequestsView={serviceRequestsView}
         isMobile={isMobile || isWideLayout}
         sidebarOpen={sidebarOpen}
         onCloseSidebar={() => setSidebarOpen(false)}
@@ -1683,6 +1689,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               onServiceCardClick={(serviceType) => {
                 if (canAccessMenu(currentUser, "service_requests")) {
                   setServiceRequestFilter(serviceType);
+                  setServiceRequestsView("archive");
                   setActiveMenu("service_requests");
                 }
               }}
@@ -1721,6 +1728,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               }
               focusRequestId={focusRequestId}
               currentUser={currentUser}
+              view={serviceRequestsView}
             />
           )}
 
