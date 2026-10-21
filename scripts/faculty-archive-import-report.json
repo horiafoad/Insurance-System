@@ -1,0 +1,25 @@
+{
+  "startedAt": "2026-10-21T18:26:50.028Z",
+  "file": "src\\data\\هيئه تدريس.xlsx",
+  "excelRows": 1049,
+  "inserted": 0,
+  "updated": 1049,
+  "unchanged": 0,
+  "skipped": [],
+  "duplicateCodes": [],
+  "ambiguousNames": [],
+  "links": {
+    "created": 35,
+    "byType": {
+      "claim": 367,
+      "service_request": 41,
+      "issue": 27,
+      "task": 6,
+      "executive_order": 0,
+      "letter": 16,
+      "salary_document": 0
+    }
+  },
+  "linkCandidates": [],
+  "unreadableSources": []
+}

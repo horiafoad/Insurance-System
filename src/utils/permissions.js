@@ -31,6 +31,7 @@ export const MENU_PERMISSION = {
   issues_management: "entitlements",
   faculty_salaries: "entitlements",
   faculty_salary_archive: "entitlements",
+  faculty_smart_archive: "entitlements",
   employee_salary_archive: "entitlements",
   executive_orders_add: "entitlements",
   executive_orders_archive: "entitlements",

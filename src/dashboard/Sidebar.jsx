@@ -256,6 +256,20 @@ export default function Sidebar({
           </div>
 
           <button
+            onClick={() => setActiveMenu("faculty_smart_archive")}
+            style={{
+              ...styles.smallMenuButton,
+
+              ...(activeMenu === "faculty_smart_archive"
+                ? styles.smallMenuButtonActive
+                : {}),
+            }}
+          >
+            <span>🧠</span>
+            <span>الأرشيف الذكي (أعضاء هيئة التدريس)</span>
+          </button>
+
+          <button
             onClick={() => setActiveMenu("faculty_salary_archive")}
             style={{
               ...styles.smallMenuButton,

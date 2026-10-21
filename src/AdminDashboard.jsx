@@ -27,6 +27,7 @@ import IssuesManagementPage from "./dashboard/IssuesManagementPage";
 import ConnectionTest from "./dashboard/ConnectionTest";
 import LettersTrackingPage from "./dashboard/LettersTrackingPage";
 import FacultySalaryArchivePage from "./dashboard/FacultySalaryArchivePage";
+import SmartFacultyArchivePage from "./dashboard/SmartFacultyArchivePage";
 import EmployeeSalaryArchivePage from "./dashboard/EmployeeSalaryArchivePage";
 import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
 import OrgStructurePage from "./dashboard/OrgStructurePage";
@@ -1216,7 +1217,9 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             ? "متابعة الخطابات"
             : activeMenu === "faculty_salary_archive"
               ? "أرشيف مفردات مرتب أعضاء هيئة التدريس"
-              : activeMenu === "employee_salary_archive"
+              : activeMenu === "faculty_smart_archive"
+                ? "الأرشيف الذكي لأعضاء هيئة التدريس"
+                : activeMenu === "employee_salary_archive"
                 ? "أرشيف مفردات مرتب الموظفين"
                 : activeMenu === "executive_orders_add"
                   ? "إضافة أمر تنفيذي"
@@ -1229,6 +1232,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   /* صفحات الأرشيف لها هيدر كامل خاص بها، فنخفي الهيدر العام لتجنب التكرار */
   const isArchivePage =
     activeMenu === "faculty_salary_archive" ||
+    activeMenu === "faculty_smart_archive" ||
     activeMenu === "employee_salary_archive";
 
   if (appLoading) {
@@ -1808,6 +1812,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         {activeMenu === "faculty_salary_archive" &&
           canAccessMenu(currentUser, "faculty_salary_archive") && (
             <FacultySalaryArchivePage currentUser={currentUser} />
+          )}
+
+        {activeMenu === "faculty_smart_archive" &&
+          canAccessMenu(currentUser, "faculty_smart_archive") && (
+            <SmartFacultyArchivePage currentUser={currentUser} />
           )}
 
         {activeMenu === "employee_salary_archive" &&
