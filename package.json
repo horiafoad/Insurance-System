@@ -1,7 +1,7 @@
 {
   "name": "asu-engineering-system",
   "private": true,
-  "version": "1.0.34",
+  "version": "1.0.35",
   "type": "module",
   "main": "main.js",
   "author": "ASU Engineering",
@@ -43,6 +43,7 @@
     "files": [
       "dist/**/*",
       "main.js",
+      "preload.cjs",
       "package.json",
       "build/ASU-Engineering-System.ico"
     ],
