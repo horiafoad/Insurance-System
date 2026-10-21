@@ -19,6 +19,7 @@ const MENU_ITEMS_PERMISSION = {
   user_management: "user_management",
   org_structure: "org_structure",
   connection_test: "system_settings",
+  monthly_reports: "monthly_reports",
 };
 
 function taskActionType(typeId) {
@@ -256,20 +257,6 @@ export default function Sidebar({
           </div>
 
           <button
-            onClick={() => setActiveMenu("faculty_smart_archive")}
-            style={{
-              ...styles.smallMenuButton,
-
-              ...(activeMenu === "faculty_smart_archive"
-                ? styles.smallMenuButtonActive
-                : {}),
-            }}
-          >
-            <span>🧠</span>
-            <span>الأرشيف الذكي (أعضاء هيئة التدريس)</span>
-          </button>
-
-          <button
             onClick={() => setActiveMenu("faculty_salary_archive")}
             style={{
               ...styles.smallMenuButton,
@@ -300,43 +287,49 @@ export default function Sidebar({
       )}
 
       {/* =========================================
-          أرشيف الأوامر التنفيذية - قسم مستقل
+          الأرشيف الذكي لأعضاء هيئة التدريس - قسم مستقل
           ========================================= */}
 
-      {canEntitlements && (
+      {canArchive && (
         <>
           <div style={styles.sidebarDivider} />
 
-          <div style={{ padding: "6px 14px 2px", fontSize: 11, fontWeight: 800, color: "#94A3B8" }}>
-            📜 أرشيف الأوامر التنفيذية
-          </div>
-
           <button
-            onClick={() => setActiveMenu("executive_orders_add")}
+            onClick={() => setActiveMenu("faculty_smart_archive")}
             style={{
               ...styles.smallMenuButton,
 
-              ...(activeMenu === "executive_orders_add"
+              ...(activeMenu === "faculty_smart_archive"
                 ? styles.smallMenuButtonActive
                 : {}),
             }}
           >
-            <span>➕</span>
-            <span>إضافة أمر تنفيذي</span>
+            <span>🧠</span>
+            <span>الأرشيف الذكي (أعضاء هيئة التدريس)</span>
           </button>
+        </>
+      )}
+
+      {/* =========================================
+          التبليغات الشهرية - قسم مستقل
+          ========================================= */}
+
+      {hasPermission(currentUser, "monthly_reports") && (
+        <>
+          <div style={styles.sidebarDivider} />
 
           <button
-            onClick={() => setActiveMenu("executive_orders_archive")}
+            onClick={() => setActiveMenu("monthly_reports")}
             style={{
               ...styles.smallMenuButton,
 
-              ...(activeMenu === "executive_orders_archive"
+              ...(activeMenu === "monthly_reports"
                 ? styles.smallMenuButtonActive
                 : {}),
             }}
           >
-            <span>🗂️</span>
-            <span>أرشيف الأوامر التنفيذية</span>
+            <span>📝</span>
+            <span>التبليغات الشهرية</span>
           </button>
         </>
       )}

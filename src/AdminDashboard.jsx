@@ -36,6 +36,7 @@ import AdminPushDevicesPanel from "./dashboard/AdminPushDevicesPanel";
 import InstallAppButton from "./dashboard/InstallAppButton";
 import CheckForUpdatesButton from "./dashboard/CheckForUpdatesButton";
 import SupportDrawerButton from "./dashboard/SupportDrawerButton";
+import MonthlyReportsPage from "./dashboard/MonthlyReportsPage";
 import {
   ClaimFormModal,
   TaskDetailsModal,
@@ -846,6 +847,104 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   };
 
+  const updateClaim = async (claimId, data, sheetName) => {
+    try {
+      setClaimLoading(true);
+      setClaimError("");
+
+      const { error } = await supabase
+        .from("claims")
+        .update({
+          sheet_name: sheetName || "بدون شيت",
+          data: data || {},
+        })
+        .eq("id", claimId);
+
+      if (error) {
+        console.error(error);
+        setClaimError(
+          "حدث خطأ أثناء حفظ تعديلات المطالبة: " + error.message
+        );
+        return false;
+      }
+
+      await loadClaims();
+      return true;
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر حفظ تعديلات المطالبة في قاعدة البيانات.");
+      return false;
+    } finally {
+      setClaimLoading(false);
+    }
+  };
+
+  const deleteClaim = async (claimId) => {
+    const confirmed = window.confirm(
+      "هل تريد حذف هذه المطالبة نهائيًا من قاعدة البيانات؟"
+    );
+
+    if (!confirmed) return false;
+
+    try {
+      setClaimLoading(true);
+      setClaimError("");
+
+      const { error } = await supabase
+        .from("claims")
+        .delete()
+        .eq("id", claimId);
+
+      if (error) {
+        console.error(error);
+        setClaimError("حدث خطأ أثناء حذف المطالبة: " + error.message);
+        return false;
+      }
+
+      await loadClaims();
+      return true;
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر حذف المطالبة من قاعدة البيانات.");
+      return false;
+    } finally {
+      setClaimLoading(false);
+    }
+  };
+
+  // حذف كل سجلات المطالبات (المطالبات داخل بند "المطالبات") مع الإبقاء على البند نفسه.
+  const deleteAllClaims = async () => {
+    try {
+      setClaimLoading(true);
+      setClaimError("");
+
+      const { error } = await supabase
+        .from("claims")
+        .delete()
+        .gte("id", 1);
+
+      if (error) {
+        console.error(error);
+        setClaimError(
+          "حدث خطأ أثناء حذف المطالبات: " + error.message
+        );
+        return false;
+      }
+
+      await loadClaims();
+      setClaimSearch("");
+      setClaimSheetFilter("all");
+
+      return true;
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر حذف المطالبات من قاعدة البيانات.");
+      return false;
+    } finally {
+      setClaimLoading(false);
+    }
+  };
+
   const filteredClaims = useMemo(() => {
     const search = claimSearch.trim().toLowerCase();
 
@@ -1221,13 +1320,15 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                 ? "الأرشيف الذكي لأعضاء هيئة التدريس"
                 : activeMenu === "employee_salary_archive"
                 ? "أرشيف مفردات مرتب الموظفين"
-                : activeMenu === "executive_orders_add"
-                  ? "إضافة أمر تنفيذي"
-                  : activeMenu === "executive_orders_archive"
-                    ? "أرشيف الأوامر التنفيذية"
-                    : MENU_ITEMS.find(
-                      (item) => item.id === activeMenu
-                    )?.title || "الرئيسية";
+                : activeMenu === "monthly_reports"
+                  ? "التبليغات الشهرية"
+                  : activeMenu === "executive_orders_add"
+                    ? "إضافة أمر تنفيذي"
+                    : activeMenu === "executive_orders_archive"
+                      ? "أرشيف الأوامر التنفيذية"
+                      : MENU_ITEMS.find(
+                        (item) => item.id === activeMenu
+                      )?.title || "الرئيسية";
 
   /* صفحات الأرشيف لها هيدر كامل خاص بها، فنخفي الهيدر العام لتجنب التكرار */
   const isArchivePage =
@@ -1763,6 +1864,13 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
                 setClaimForm(createEmptyClaim());
                 setShowClaimForm(true);
               }}
+              onDeleteClaim={deleteClaim}
+              onUpdateClaim={updateClaim}
+              onDeleteAllClaims={deleteAllClaims}
+              canManage={
+                currentUser?.role === "super_admin" ||
+                currentUser?.role === "admin"
+              }
             />
           )}
 
@@ -1822,6 +1930,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         {activeMenu === "employee_salary_archive" &&
           canAccessMenu(currentUser, "employee_salary_archive") && (
             <EmployeeSalaryArchivePage currentUser={currentUser} />
+          )}
+
+        {activeMenu === "monthly_reports" &&
+          canAccessMenu(currentUser, "monthly_reports") && (
+            <MonthlyReportsPage currentUser={currentUser} />
           )}
 
         {activeMenu === "executive_orders_add" &&

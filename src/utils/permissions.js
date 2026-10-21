@@ -10,6 +10,7 @@ export const PERMISSIONS = [
   { id: "user_management", title: "إدارة المستخدمين", icon: "👥" },
   { id: "org_structure", title: "الهيكل التنظيمي", icon: "🏛️" },
   { id: "system_settings", title: "إعدادات النظام", icon: "⚙️" },
+  { id: "monthly_reports", title: "التبليغات الشهرية", icon: "📝" },
 ];
 
 export const MENU_PERMISSION = {
@@ -36,6 +37,7 @@ export const MENU_PERMISSION = {
   executive_orders_add: "entitlements",
   executive_orders_archive: "entitlements",
   letters_tracking: "letters",
+  monthly_reports: "monthly_reports",
 };
 
 export function hasPermission(user, permissionId) {

@@ -188,6 +188,11 @@ export const MENU_ITEMS = [
     title: "أجهزتي والإشعارات",
     icon: "🔔",
   },
+  {
+    id: "monthly_reports",
+    title: "التبليغات الشهرية",
+    icon: "📝",
+  },
 ];
 
 export const createEmptyTask = () => ({
