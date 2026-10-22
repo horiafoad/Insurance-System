@@ -232,6 +232,21 @@
     flexWrap: "wrap",
   },
 
+  clearAllClaimsButton: {
+    border: "1px solid #DC2626",
+    background: "#FEE2E2",
+    color: "#B91C1C",
+    borderRadius: 9,
+    padding: "11px 16px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
+    whiteSpace: "nowrap",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   emptyClaimButtons: {
     display: "flex",
     alignItems: "center",

@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
-import { uploadFile } from "../services/fileStorage";
+import {
+  uploadFile,
+  deleteFile,
+  isLocalRef,
+} from "../services/fileStorage";
 import { FileAnchor, FileDownloadLink } from "../components/FileLink";
 import { useRealtimeSync } from "../utils/realtimeSync";
 import * as XLSX from "xlsx";
@@ -589,7 +593,10 @@ export default function IssuesManagementPage() {
         );
       }
 
-      setSuccess("تم رفع ملف القضية بنجاح!");
+      setSuccess(
+        "تم رفع ملف القضية بنجاح!" +
+          (isLocalRef(uploaded.url) ? ` الملف محفوظ في: ${uploaded.dir}` : "")
+      );
       setPdfFile(null);
       setCaseNumber("");
       setCaseTitle("");
@@ -644,7 +651,10 @@ export default function IssuesManagementPage() {
 
       if (insertError) throw insertError;
 
-      setSuccess("تم إضافة PDF للقضية بنجاح!");
+      setSuccess(
+        "تم إضافة PDF للقضية بنجاح!" +
+          (isLocalRef(uploaded.url) ? ` الملف محفوظ في: ${uploaded.dir}` : "")
+      );
       loadIssues();
       if (detailModalIssue && detailModalIssue.id === issueId) {
         loadAdditionalDocs(issueId);
@@ -693,7 +703,10 @@ export default function IssuesManagementPage() {
 
       if (insertError) throw insertError;
 
-      setSuccess("تم إضافة الملف بنجاح!");
+      setSuccess(
+        "تم إضافة الملف بنجاح!" +
+          (isLocalRef(uploaded.url) ? ` الملف محفوظ في: ${uploaded.dir}` : "")
+      );
       setAddDocFile(null);
       loadAdditionalDocs(detailModalIssue.id);
       loadIssues();
@@ -707,6 +720,19 @@ export default function IssuesManagementPage() {
   const handleDeleteAdditionalDoc = async (docId) => {
     if (!confirm("هل أنت متأكد من حذف هذا الملف؟")) return;
     try {
+      const { data: doc, error: fetchErr } = await supabase
+        .from("case_documents")
+        .select("id, file_url, storage_provider, storage_key")
+        .eq("id", docId)
+        .single();
+      if (fetchErr) throw fetchErr;
+      if (doc) {
+        try {
+          await deleteFile(doc);
+        } catch (err) {
+          console.warn("تعذر حذف الملف من الجهاز:", err.message);
+        }
+      }
       const { error } = await supabase
         .from("case_documents")
         .delete()
@@ -724,6 +750,19 @@ export default function IssuesManagementPage() {
     if (!confirm("هل أنت متأكد من حذف هذه القضية؟")) return;
     try {
       setError("");
+      const { data: issue, error: fetchErr } = await supabase
+        .from("issues")
+        .select("id, file_url, storage_provider, storage_key")
+        .eq("id", issueId)
+        .single();
+      if (fetchErr) throw fetchErr;
+      if (issue) {
+        try {
+          await deleteFile(issue);
+        } catch (err) {
+          console.warn("تعذر حذف الملف من الجهاز:", err.message);
+        }
+      }
       const { error } = await supabase
         .from("issues")
         .delete()
