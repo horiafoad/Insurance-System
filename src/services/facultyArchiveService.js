@@ -19,7 +19,7 @@ import {
   getLocalStorageDir,
   isElectronNative,
 } from "./fileStorage";
-import { normalizeArabicKey, toDisplayName } from "../utils/arabicText";
+import { normalizeArabicKey, toDisplayName, normalizeMemberCode } from "../utils/arabicText";
 
 export const FACULTY_MEMBERS_TABLE = "faculty_members";
 export const FACULTY_ALIASES_TABLE = "faculty_member_aliases";
@@ -155,6 +155,47 @@ export async function fetchMembers() {
     FACULTY_MEMBERS_TABLE,
     "id,member_code,member_code_raw,full_name,full_name_raw,full_name_normalized,job_title,group_name,grade,grade_date,salary_306,salary_306_raw,source_row_no,source_file,status,created_at,updated_at"
   );
+}
+
+export async function createOrFindMember({ fullName, memberCode, jobTitle, status } = {}) {
+  const name = toDisplayName(fullName);
+  if (!name) throw new Error("الاسم مطلوب.");
+  const code = normalizeMemberCode(memberCode);
+  if (!code) throw new Error("رقم الصرف مطلوب.");
+
+  const { data: existing } = await supabase
+    .from(FACULTY_MEMBERS_TABLE)
+    .select("*")
+    .eq("member_code", code)
+    .limit(1);
+
+  if (existing && existing.length) return existing[0];
+
+  const { data: byName } = await supabase
+    .from(FACULTY_MEMBERS_TABLE)
+    .select("*")
+    .eq("full_name_normalized", normalizeArabicKey(name))
+    .limit(1);
+
+  if (byName && byName.length) return byName[0];
+
+  const { data, error } = await supabase
+    .from(FACULTY_MEMBERS_TABLE)
+    .insert({
+      member_code: code,
+      member_code_raw: memberCode || code,
+      full_name: name,
+      full_name_raw: fullName || name,
+      full_name_normalized: normalizeArabicKey(name),
+      job_title: jobTitle || null,
+      status: status || "active",
+      source_file: "smart-upload",
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 /** روابط عضو واحد. */

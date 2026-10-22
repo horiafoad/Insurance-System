@@ -40,8 +40,10 @@ import {
   localArchiveDir,
   canStoreLocally,
   searchSourceRecords,
+  createOrFindMember,
 } from "../services/facultyArchiveService";
-import { normalizeArabicKey, formatArabicNumber } from "../utils/arabicText";
+import { normalizeArabicKey, formatArabicNumber, normalizeMemberCode, toDisplayName } from "../utils/arabicText";
+import { analyzeArchiveFile } from "../utils/facultyArchiveMatcher";
 
 /* ------------------------------------------------------------------ */
 /* أدوات العرض                                                         */
@@ -1092,6 +1094,25 @@ export default function SmartFacultyArchivePage({ currentUser }) {
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [storageDir, setStorageDir] = useState("");
 
+  const smartUploadRef = useRef(null);
+  const [smartBusy, setSmartBusy] = useState(false);
+  const [smartNotice, setSmartNotice] = useState("");
+  const [smartError, setSmartError] = useState("");
+  const [newMemberForm, setNewMemberForm] = useState({
+    open: false,
+    file: null,
+    name: "",
+    code: "",
+    jobTitle: "",
+    status: "active",
+    docType: "salary",
+    year: "",
+    month: "",
+    suggested: null,
+    ambiguous: false,
+    candidates: [],
+  });
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -1127,6 +1148,68 @@ export default function SmartFacultyArchivePage({ currentUser }) {
       setLoading(false);
     }
   }, []);
+
+  const handleSmartUpload = useCallback(async (file) => {
+    if (!file) return;
+    setSmartBusy(true);
+    setSmartError("");
+    setSmartNotice("");
+    try {
+      const analysis = await analyzeArchiveFile(file, members);
+      const suggestedName = file.name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ");
+      const suggestedCode = analysis.code || "";
+      const match = analysis.match;
+
+      if (match?.member && !match?.ambiguous) {
+        await uploadMemberDocument(match.member, file, {
+          docType: analysis.docType || "other",
+          title: file.name,
+          year: analysis.year || null,
+          month: analysis.month || null,
+          createdBy: currentUser?.full_name || currentUser?.username || null,
+        });
+        setSmartNotice(`✅ تم رفع الملف تلقائياً إلى ${match.member.full_name} (${match.reason})`);
+        await loadAll();
+      } else if (match?.ambiguous && Array.isArray(match.candidates) && match.candidates.length) {
+        setNewMemberForm({
+          open: true,
+          file,
+          name: toDisplayName(suggestedName),
+          code: normalizeMemberCode(suggestedCode),
+          jobTitle: "",
+          status: "active",
+          docType: analysis.docType || "other",
+          year: analysis.year ? String(analysis.year) : "",
+          month: analysis.month ? String(analysis.month) : "",
+          suggested: analysis,
+          ambiguous: true,
+          candidates: match.candidates,
+        });
+        setSmartNotice("⚠️ تطابق متساوٍ بين أكثر من عضو. حدد العضو أو أضف بيانات جديدة.");
+      } else {
+        setNewMemberForm({
+          open: true,
+          file,
+          name: toDisplayName(suggestedName),
+          code: normalizeMemberCode(suggestedCode),
+          jobTitle: "",
+          status: "active",
+          docType: analysis.docType || "other",
+          year: analysis.year ? String(analysis.year) : "",
+          month: analysis.month ? String(analysis.month) : "",
+          suggested: analysis,
+          ambiguous: false,
+          candidates: [],
+        });
+        setSmartNotice("⚠️ لم يتم العثور على العضو. أدخل الاسم ورقم الصرف والحالة ثم أضف الملف.");
+      }
+    } catch (err) {
+      setSmartError(err?.message || "فشل التحليل أو الرفع.");
+    } finally {
+      setSmartBusy(false);
+      if (smartUploadRef.current) smartUploadRef.current.value = "";
+    }
+  }, [members, currentUser, loadAll]);
 
   useEffect(() => {
     loadAll();
@@ -1237,6 +1320,32 @@ export default function SmartFacultyArchivePage({ currentUser }) {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <input
+            ref={smartUploadRef}
+            type="file"
+            accept="application/pdf"
+            hidden
+            onChange={(e) => handleSmartUpload(e.target.files?.[0])}
+          />
+          <button
+            type="button"
+            onClick={() => smartUploadRef.current?.click()}
+            disabled={smartBusy}
+            style={{
+              border: 0,
+              background: "#059669",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "9px 14px",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: smartBusy ? "not-allowed" : "pointer",
+              boxShadow: "0 3px 10px rgba(5,150,105,.22)",
+            }}
+            title="رفع ذكي يحدد العضو تلقائياً ويضع الملف في مكانه"
+          >
+            {smartBusy ? "⏳ جارٍ التحليل..." : "🧠 رفع ذكي"}
+          </button>
           <button
             type="button"
             onClick={loadAll}
@@ -1324,17 +1433,11 @@ export default function SmartFacultyArchivePage({ currentUser }) {
           <div style={{ fontSize: 14.5, fontWeight: 900, color: "#102A43" }}>
             {PAGE_TITLE}
           </div>
-          <div style={{ fontSize: 12.5, lineHeight: 1.7, color: "#66788F", marginTop: 3 }}>
-            سجل مركزي واحد لكل عضو مستورد من ملف Excel، مع ربط تلقائي لما يقابله في
-            المطالبات والطلبات والقضايا والخطابات والأوامر التنفيذية — وإمكانية
-            ربط يدوي لأي سجل لم يُربط.
-            {storageDir ? (
-              <>
-                <br />
-                📁 ملفات الأرشيف تُحفظ على جهازك في: <b>{storageDir}</b>
-              </>
-            ) : null}
-          </div>
+          {storageDir ? (
+            <div style={{ fontSize: 12.5, lineHeight: 1.7, color: "#66788F", marginTop: 3 }}>
+              📁 ملفات الأرشيف تُحفظ على جهازك في: <b>{storageDir}</b>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1369,7 +1472,7 @@ export default function SmartFacultyArchivePage({ currentUser }) {
         ))}
       </div>
 
-      {error && (
+      {(error || smartError) && (
         <div
           style={{
             background: "#FEE2E2",
@@ -1383,7 +1486,23 @@ export default function SmartFacultyArchivePage({ currentUser }) {
             lineHeight: 1.9,
           }}
         >
-          {error}
+          {error || smartError}
+        </div>
+      )}
+      {smartNotice && !(error || smartError) && (
+        <div
+          style={{
+            background: "#ECFDF5",
+            border: "1px solid #A7F3D0",
+            color: "#065F46",
+            borderRadius: 9,
+            padding: 12,
+            marginBottom: 14,
+            fontSize: 13,
+            lineHeight: 1.9,
+          }}
+        >
+          {smartNotice}
         </div>
       )}
 
@@ -1742,6 +1861,178 @@ export default function SmartFacultyArchivePage({ currentUser }) {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {newMemberForm.open && (
+        <div style={overlayStyle} onClick={() => setNewMemberForm({ ...newMemberForm, open: false })}>
+          <div style={{ ...modalStyle, width: "min(560px, 100%)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={modalHeaderStyle}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, color: "#102A43" }}>
+                  {newMemberForm.ambiguous ? "تحديد العضو صاحب الملف" : "إضافة عضو جديد ورفع الملف"}
+                </h3>
+                <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>
+                  📄 {newMemberForm.file?.name}
+                </div>
+              </div>
+              <button type="button" onClick={() => setNewMemberForm({ ...newMemberForm, open: false })} style={closeButtonStyle}>✕</button>
+            </div>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              {newMemberForm.ambiguous && newMemberForm.candidates?.length > 0 && (
+                <div
+                  style={{
+                    background: "#FEF3C7",
+                    border: "1px solid #FDE68A",
+                    color: "#92400E",
+                    borderRadius: 9,
+                    padding: 11,
+                    fontSize: 12.5,
+                    lineHeight: 1.8,
+                  }}
+                >
+                  ⚠️ أكثر من عضو يطابق نفس الاسم — اختر العضو الصحيح:
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+                    {newMemberForm.candidates.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setNewMemberForm({
+                            ...newMemberForm,
+                            ambiguous: false,
+                            candidates: [],
+                            name: c.full_name,
+                            code: c.member_code,
+                            jobTitle: c.job_title || "",
+                          });
+                        }}
+                        style={{ ...linkPillStyle, fontSize: 12 }}
+                      >
+                        {c.full_name} — #{c.member_code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <label style={{ fontSize: 13, fontWeight: 800 }}>الاسم الكامل *</label>
+              <input
+                value={newMemberForm.name}
+                onChange={(e) => setNewMemberForm({ ...newMemberForm, name: e.target.value })}
+                placeholder="مثال: د. محمد أحمد"
+                style={smallInputStyle}
+              />
+
+              <label style={{ fontSize: 13, fontWeight: 800 }}>رقم الصرف *</label>
+              <input
+                value={newMemberForm.code}
+                onChange={(e) => setNewMemberForm({ ...newMemberForm, code: e.target.value })}
+                placeholder="مثال: 4716"
+                style={smallInputStyle}
+              />
+
+              <label style={{ fontSize: 13, fontWeight: 800 }}>الوظيفة (اختياري)</label>
+              <input
+                value={newMemberForm.jobTitle}
+                onChange={(e) => setNewMemberForm({ ...newMemberForm, jobTitle: e.target.value })}
+                style={smallInputStyle}
+              />
+
+              <label style={{ fontSize: 13, fontWeight: 800 }}>الحالة *</label>
+              <select
+                value={newMemberForm.status}
+                onChange={(e) => setNewMemberForm({ ...newMemberForm, status: e.target.value })}
+                style={smallSelectStyle}
+              >
+                <option value="active">نشط</option>
+                <option value="inactive">غير نشط</option>
+                <option value="on_leave">في إجازة</option>
+                <option value="retired">متقاعد</option>
+              </select>
+
+              <label style={{ fontSize: 13, fontWeight: 800 }}>نوع الوثيقة</label>
+              <select
+                value={newMemberForm.docType}
+                onChange={(e) => setNewMemberForm({ ...newMemberForm, docType: e.target.value })}
+                style={smallSelectStyle}
+              >
+                <option value="salary">مفردة مرتب</option>
+                <option value="certificate">شهادة</option>
+                <option value="contract">عقد / كتاب</option>
+                <option value="decision">قرار</option>
+                <option value="other">أخرى</option>
+              </select>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  value={newMemberForm.year}
+                  onChange={(e) => setNewMemberForm({ ...newMemberForm, year: e.target.value })}
+                  placeholder="السنة"
+                  style={{ ...smallInputStyle, flex: 1 }}
+                />
+                <input
+                  value={newMemberForm.month}
+                  onChange={(e) => setNewMemberForm({ ...newMemberForm, month: e.target.value })}
+                  placeholder="الشهر"
+                  style={{ ...smallInputStyle, flex: 1 }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setNewMemberForm({ ...newMemberForm, open: false })}
+                  style={secondarySmallStyle}
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={smartBusy}
+                  onClick={async () => {
+                    try {
+                      if (!newMemberForm.name.trim()) throw new Error("الاسم مطلوب.");
+                      if (!normalizeMemberCode(newMemberForm.code)) throw new Error("رقم الصرف مطلوب.");
+                      setSmartBusy(true);
+                      setSmartError("");
+                      const member = await createOrFindMember({
+                        fullName: newMemberForm.name,
+                        memberCode: newMemberForm.code,
+                        jobTitle: newMemberForm.jobTitle,
+                        status: newMemberForm.status,
+                      });
+                      const existingCode = normalizeMemberCode(member.member_code);
+                      const enteredCode = normalizeMemberCode(newMemberForm.code);
+                      await uploadMemberDocument(member, newMemberForm.file, {
+                        docType: newMemberForm.docType || "other",
+                        title: newMemberForm.file.name,
+                        year: newMemberForm.year ? Number(newMemberForm.year) : null,
+                        month: newMemberForm.month ? Number(newMemberForm.month) : null,
+                        createdBy: currentUser?.full_name || currentUser?.username || null,
+                      });
+                      setNewMemberForm({ ...newMemberForm, open: false });
+                      setSmartNotice(
+                        existingCode && enteredCode && existingCode !== enteredCode
+                          ? `⚠️ العضو مسجّل مسبقًا برقم صرف ${existingCode} — تم رفع الملف إليه.`
+                          : `✅ تم تسجيل العضو ورفع الملف إلى مكانه الصحيح (${member.full_name}).`
+                      );
+                      await loadAll();
+                      setSelected(member);
+                    } catch (err) {
+                      setSmartError(err?.message || "فشل إضافة العضو أو رفع الملف.");
+                    } finally {
+                      setSmartBusy(false);
+                    }
+                  }}
+                  style={primarySmallStyle}
+                >
+                  {smartBusy ? "جاري..." : "حفظ ورفع الملف"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
