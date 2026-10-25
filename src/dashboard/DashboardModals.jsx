@@ -369,6 +369,7 @@ export function InstallmentModal({
   claim,
   installmentNumber,
   amount,
+  saving = false,
   onClose,
   onSave,
 }) {
@@ -426,16 +427,82 @@ export function InstallmentModal({
       </div>
 
       <div style={styles.modalActions}>
-        <button style={styles.secondaryButton} onClick={onClose}>
+        <button style={styles.secondaryButton} onClick={onClose} disabled={saving}>
           إلغاء
         </button>
         <button
           style={styles.primaryButton}
+          disabled={saving}
           onClick={() =>
             onSave(claim.id, installmentNumber, form.amount, form.receiptNumber, form.paidAt, form.notes)
           }
         >
-          💾 تأكيد السداد
+          {saving ? "جاري الحفظ..." : "💾 تأكيد السداد"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+export function SettleClaimModal({ claim, saving = false, onClose, onSave }) {
+  const [reason, setReason] = useState("سداد كامل");
+  const [notes, setNotes] = useState("");
+  const remaining = Number(claim?.remaining_amount || 0);
+  const fmt = (value) =>
+    Number(value || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  return (
+    <Modal title="تسوية المطالبة" onClose={onClose}>
+      <div style={{ ...styles.infoBox, marginBottom: 12, lineHeight: 1.9 }}>
+        <div><strong>الاسم:</strong> {claim?.claimant_name || "—"}</div>
+        <div><strong>الإجمالي:</strong> {fmt(claim?.total_amount)}</div>
+        <div><strong>المدفوع:</strong> {fmt(claim?.paid_amount)}</div>
+        <div><strong>المتبقي:</strong> {fmt(remaining)}</div>
+      </div>
+
+      <div style={styles.formGrid}>
+        <Field label="سبب التسوية">
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            style={styles.input}
+          >
+            <option value="سداد كامل">سداد كامل</option>
+            <option value="تنازل">تنازل</option>
+            <option value="تسوية ودية">تسوية ودية</option>
+            <option value="شطب إداري">شطب إداري</option>
+            <option value="أخرى">أخرى</option>
+          </select>
+        </Field>
+
+        <Field label="ملاحظات" full>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            style={{ ...styles.input, minHeight: 80, resize: "vertical" }}
+          />
+        </Field>
+      </div>
+
+      {remaining > 0 && (
+        <div style={{ ...styles.infoBox, background: "#FEF3C7", marginBottom: 12 }}>
+          المتبقي {fmt(remaining)} سيُغلق إداريًا مع الاحتفاظ بالمبالغ المسجلة.
+        </div>
+      )}
+
+      <div style={styles.modalActions}>
+        <button style={styles.secondaryButton} onClick={onClose} disabled={saving}>
+          إلغاء
+        </button>
+        <button
+          style={styles.primaryButton}
+          onClick={() => onSave(claim.id, reason, notes)}
+          disabled={saving}
+        >
+          {saving ? "جاري الحفظ..." : "✅ تأكيد التسوية"}
         </button>
       </div>
     </Modal>

@@ -53,6 +53,20 @@ export async function startPayment(claimId) {
   return true;
 }
 
+/**
+ * يضمن وجود خطة أقساط تغطي إجمالي المطالبة قبل السداد.
+ * ضروري لأن محفّز claims_recalc_amounts يعيد كتابة total_amount من مجموع
+ * الأقساط، فأي مطالبة بلا خطة (أو بخطة ناقصة) تفقد إجماليها عند أول سداد.
+ * الدالة idempotent وترجع عدد الأقساط التي أضافتها.
+ */
+export async function ensureInstallmentPlan(claimId) {
+  const { data, error } = await supabase.rpc("claims_ensure_installment_plan", {
+    p_claim_id: claimId,
+  });
+  if (error) throw error;
+  return Number(data) || 0;
+}
+
 export async function payInstallment(claimId, installmentNumber, amount, paid = true, receiptNumber = null, paidAt = null, notes = null) {
   if (installmentNumber < 1 || installmentNumber > 4) throw new Error("رقم القسط غير صحيح");
   const { data: existing } = await supabase.from("claim_installments").select("*").eq("claim_id", claimId).eq("installment_number", installmentNumber).maybeSingle();
@@ -82,6 +96,33 @@ export async function settleClaim(claimId, reason, notes = null) {
     p_notes: notes,
   });
   if (error) throw error;
+  return true;
+}
+
+/**
+ * بعد سداد آخر قسط يصبح المتبقي صفرًا، فنغلق المطالبة تلقائيًا.
+ * ترجع true إذا أصبحت المطالبة مسددة بالكامل.
+ */
+export async function closeClaimIfFullyPaid(claimId) {
+  const { data: claim, error } = await supabase
+    .from("claims")
+    .select("remaining_amount, payment_status")
+    .eq("id", claimId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!claim) return false;
+  if (Number(claim.remaining_amount) > 0) return false;
+  if (claim.payment_status === PAYMENT_STATUS.SETTLED) return true;
+
+  const { error: updateError } = await supabase
+    .from("claims")
+    .update({
+      payment_status: PAYMENT_STATUS.SETTLED,
+      settled_at: new Date().toISOString(),
+      settlement_reason: "سداد كامل",
+    })
+    .eq("id", claimId);
+  if (updateError) throw updateError;
   return true;
 }
 

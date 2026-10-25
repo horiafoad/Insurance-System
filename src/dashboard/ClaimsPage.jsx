@@ -2,6 +2,18 @@ import React, { useMemo, useState } from "react";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
 
+const formatAmount = (value) =>
+  Number(value || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+const actionButtonStyle = {
+  padding: "4px 8px",
+  fontSize: "12px",
+  whiteSpace: "nowrap",
+};
+
 export default function ClaimsPage({
   claims,
   allClaims,
@@ -180,6 +192,20 @@ export default function ClaimsPage({
                   </option>
                 ))}
               </select>
+
+              {setPaymentStatusFilter && (
+                <select
+                  value={paymentStatusFilter || "all"}
+                  onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                  style={styles.claimSelect}
+                >
+                  <option value="all">كل حالات السداد</option>
+                  <option value="لم يسدد">لم يسدد</option>
+                  <option value="جاري السداد">جاري السداد</option>
+                  <option value="خالي الطرف">خالي الطرف</option>
+                  <option value="none">بدون حالة سداد</option>
+                </select>
+              )}
             </div>
 
             <div style={styles.resultText}>
@@ -194,6 +220,7 @@ export default function ClaimsPage({
                     <tr>
                       {canManage && <th style={styles.th}>التصنيف</th>}
                       <th style={styles.th}>رقم الصف</th>
+                      {canManage && <th style={styles.th}>المتبقي</th>}
                       {columns.map((column) => (
                         <th key={column} style={styles.th}>
                           {column}
@@ -222,6 +249,11 @@ export default function ClaimsPage({
                         <td style={styles.td}>
                           {claim.row_number === 0 ? "يدوي" : claim.row_number}
                         </td>
+                        {canManage && (
+                          <td style={styles.td}>
+                            {formatAmount(claim.remaining_amount)}
+                          </td>
+                        )}
                         {columns.map((column) => (
                           <td key={column} style={styles.td}>
                             {String(claim.data?.[column] ?? "")}
@@ -229,15 +261,73 @@ export default function ClaimsPage({
                         ))}
                         {canManage && (
                           <td style={styles.td}>
-                            <div style={{ display: "flex", gap: "6px" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "6px",
+                                flexWrap: "wrap",
+                                minWidth: 210,
+                              }}
+                            >
+                              {claim.payment_status !== "خالي الطرف" &&
+                                claim.payment_status !== "جاري السداد" &&
+                                onStartPayment && (
+                                  <button
+                                    style={{
+                                      ...styles.viewButton,
+                                      background: "#EFF6FF",
+                                      color: "#1D4ED8",
+                                      borderColor: "#BFDBFE",
+                                      ...actionButtonStyle,
+                                    }}
+                                    onClick={() => onStartPayment(claim)}
+                                    title="بدء سداد المطالبة"
+                                  >
+                                    ▶️ بدء السداد
+                                  </button>
+                                )}
+
+                              {claim.payment_status === "جاري السداد" &&
+                                onPayInstallment && (
+                                  <button
+                                    style={{
+                                      ...styles.viewButton,
+                                      background: "#ECFDF5",
+                                      color: "#047857",
+                                      borderColor: "#A7F3D0",
+                                      ...actionButtonStyle,
+                                    }}
+                                    onClick={() => onPayInstallment(claim)}
+                                    title="تسديد قسط"
+                                  >
+                                    💵 تسديد قسط
+                                  </button>
+                                )}
+
+                              {claim.payment_status !== "خالي الطرف" &&
+                                onSettleClaim && (
+                                  <button
+                                    style={{
+                                      ...styles.viewButton,
+                                      background: "#F5F3FF",
+                                      color: "#6D28D9",
+                                      borderColor: "#DDD6FE",
+                                      ...actionButtonStyle,
+                                    }}
+                                    onClick={() => onSettleClaim(claim)}
+                                    title="تسوية المطالبة"
+                                  >
+                                    🤝 تسوية
+                                  </button>
+                                )}
+
                               <button
                                 style={{
                                   ...styles.viewButton,
                                   background: "#FEF3C7",
                                   color: "#92400E",
                                   borderColor: "#FDE68A",
-                                  padding: "4px 8px",
-                                  fontSize: "12px",
+                                  ...actionButtonStyle,
                                 }}
                                 onClick={() => handleOpenEdit(claim)}
                                 title="تعديل المطالبة"
@@ -248,8 +338,7 @@ export default function ClaimsPage({
                                 <button
                                   style={{
                                     ...styles.deleteButton,
-                                    padding: "4px 8px",
-                                    fontSize: "12px",
+                                    ...actionButtonStyle,
                                   }}
                                   onClick={() => onDeleteClaim(claim.id)}
                                   title="حذف المطالبة"

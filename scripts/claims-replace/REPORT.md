@@ -1,4 +1,4 @@
-﻿# تقرير استبدال بيانات المطالبات
+# تقرير استبدال بيانات المطالبات
 
 - التاريخ: 2026-10-25
 - قاعدة البيانات: `https://epfppicdvkklzryworzu.supabase.co` (الإنتاج الحالي المرتبط بالتطبيق)
@@ -137,6 +137,43 @@
   (`restore.sql`, `claims*.ndjson`, `claim_installments*.ndjson`, `post-import-report.json`, `SHA256SUMS.json`).
 - `scripts/backup/claims-old-project-2026-10-25/` — نسخة المشروع القديم
   (`claims.ndjson` 367 صفًا, `metadata.json`, `delete-old-claims.sql`).
+
+## 11. واجهة السداد والتسوية
+
+- `supabase/migrations/20261025_claim_installment_plan.sql` (مطبَّق على الإنتاج):
+  دالة `claims_ensure_installment_plan(p_claim_id)` التي تبني خطة أقساط تغطي
+  إجمالي المطالبة قبل أول سداد، لأن محفّز `claims_recalc_amounts` يعيد كتابة
+  `total_amount` من مجموع الأقساط. الدالة idempotent، وتعيد عدد الأقساط المضافة.
+- `src/services/claimInstallmentsService.js`: إضافة `ensureInstallmentPlan`
+  و`closeClaimIfFullyPaid` (إغلاق تلقائي عند سداد كامل المتبقي).
+- `src/AdminDashboard.jsx`:
+  - `handleStartPayment`: تحويل الحالة إلى «جاري السداد».
+  - `handleOpenInstallment`: استدعاء RPC تجهيز الخطة ثم تحميل الأقساط واختيار
+    القسط المعلق أو أول خانة فارغة.
+  - `handleSaveInstallment`: تثبيت المبلغ بين صفر والمتبقي، ثم إعادة تثبيت
+    `total_amount` الأصلي وحساب `remaining_amount` من المدفوع الفعلي
+    (يحمي السداد الجزئي من فقدان الإجمالي).
+  - `handleOpenSettle` / `handleConfirmSettle`: التسوية الإدارية عبر RPC.
+- `src/dashboard/ClaimsPage.jsx`: أزرار «بدء السداد / تسديد قسط / تسوية»،
+  عمود «المتبقي»، وفلتر «كل حالات السداد».
+- `src/dashboard/DashboardModals.jsx`: `SettleClaimModal` جديد، حالة حفظ في
+  `InstallmentModal`، وإصلاح خيارات `ExcelPreviewModal`.
+
+## 12. اختبار مسار السداد على الإنتاج
+
+`scripts/claims-replace/test-installment-plan.mjs` (ينشئ مطالبات مؤقتة ثم يحذفها):
+
+| الحالة | النتيجة |
+|---|---|
+| مطالبة بلا خطة (إجمالي 529,298.66 / مدفوع 396,974.00) | أُنشئ قسط مدفوع + قسط متبقٍ 132,324.66، والإجمالي لم يتغير |
+| استدعاء RPC مرة ثانية | أضاف 0 قسط (idempotent) |
+| سداد القسط المتبقي كاملًا | الإجمالي 529,298.66 / المدفوع 529,298.66 / المتبقي 0 |
+| سداد جزئي 300 من 1,000 | الإجمالي 1,000 / المدفوع 300 / المتبقي 700 |
+| إعادة تجهيز الخطة بعد السداد الجزئي | أضاف قسطًا معلقًا 700 دون تغيير الإجمالي |
+| التنظيف بعد الاختبار | 275 مطالبة و43 قسطًا (لا تغيير في بيانات الإنتاج) |
+
+`scripts/claims-replace/test-payment-flow.mjs` (اختبار سابق للمسار الأساسي):
+أقساط ← إعادة حساب ← سداد ← إغلاق تلقائي ← تسوية عبر RPC ← تنظيف.
 
 > ملاحظة: مجلدات النسخ الاحتياطية والملفات التي تحتوي بيانات شخصية
 > (`import-plan.json`, `import.sql`, `excel-raw.json`) مستثناة من git عبر `.gitignore`.

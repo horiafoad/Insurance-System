@@ -40,6 +40,8 @@ import MonthlyReportsPage from "./dashboard/MonthlyReportsPage";
 import {
   ClaimFormModal,
   ExcelPreviewModal,
+  InstallmentModal,
+  SettleClaimModal,
   TaskDetailsModal,
   TaskFormModal,
 } from "./dashboard/DashboardModals";
@@ -54,6 +56,14 @@ import {
 } from "./utils/permissions";
 import { useRealtimeSync, applyRowChange } from "./utils/realtimeSync";
 import { parseClaimsWorkbook } from "./services/claimsExcelImport";
+import {
+  startPayment as startClaimPayment,
+  payInstallment as payClaimInstallment,
+  settleClaim as settleClaimPayment,
+  closeClaimIfFullyPaid,
+  ensureInstallmentPlan,
+  getClaimSummary,
+} from "./services/claimInstallmentsService";
 
 export default function AdminDashboard({ currentUser, focusRequestId: propFocusId }) {
   const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
@@ -164,6 +174,9 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   const [excelPreview, setExcelPreview] = useState(null);
   const [excelPreviewOpen, setExcelPreviewOpen] = useState(false);
   const [importingClaims, setImportingClaims] = useState(false);
+  const [installmentModal, setInstallmentModal] = useState(null);
+  const [settleModal, setSettleModal] = useState(null);
+  const [savingPayment, setSavingPayment] = useState(false);
 
   const [studyLeaves, setStudyLeaves] = useState([]);
   const [studyLeaveLoading, setStudyLeaveLoading] = useState(false);
@@ -987,6 +1000,163 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   };
 
+  // --- سداد الأقساط والتسوية ---
+  const handleStartPayment = async (claim) => {
+    if (!claim?.id) return;
+    try {
+      setClaimError("");
+      await startClaimPayment(claim.id);
+      await loadClaims();
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر بدء السداد: " + error.message);
+    }
+  };
+
+  const handleOpenInstallment = async (claim) => {
+    if (!claim?.id) return;
+    try {
+      setClaimError("");
+      // تجهيز خطة الأقساط أولًا حتى لا يفقد المحفّز إجمالي المطالبة.
+      await ensureInstallmentPlan(claim.id);
+      const { claim: freshClaim, installments } = await getClaimSummary(claim.id);
+      const pending = installments.find((inst) => !inst.paid);
+
+      if (pending) {
+        setInstallmentModal({
+          claim: freshClaim || claim,
+          number: pending.installment_number,
+          amount: Number(pending.amount) || 0,
+        });
+        return;
+      }
+
+      const used = new Set(
+        installments.map((inst) => inst.installment_number)
+      );
+      const freeNumber = [1, 2, 3, 4].find((n) => !used.has(n));
+      if (!freeNumber) {
+        alert("كل الأقساط الأربعة مسجلة بالفعل. استخدمي «تعديل» أو «تسوية».");
+        return;
+      }
+
+      const remaining = Number(
+        freshClaim?.remaining_amount ?? claim.remaining_amount
+      );
+      if (remaining <= 0) {
+        alert("لا يوجد مبلغ متبقٍ على هذه المطالبة.");
+        return;
+      }
+
+      setInstallmentModal({
+        claim: freshClaim || claim,
+        number: freeNumber,
+        amount: remaining,
+      });
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر تحميل أقساط المطالبة: " + error.message);
+    }
+  };
+
+  const handleSaveInstallment = async (
+    claimId,
+    installmentNumber,
+    amount,
+    receiptNumber,
+    paidAt,
+    notes
+  ) => {
+    try {
+      setSavingPayment(true);
+      setClaimError("");
+
+      const { data: before, error: beforeError } = await supabase
+        .from("claims")
+        .select("total_amount, paid_amount, remaining_amount")
+        .eq("id", claimId)
+        .maybeSingle();
+      if (beforeError) throw beforeError;
+
+      const originalTotal = Number(before?.total_amount) || 0;
+      const originalPaid = Number(before?.paid_amount) || 0;
+      const remaining = Math.max(
+        0,
+        Number(before?.remaining_amount) || originalTotal - originalPaid
+      );
+      const safeAmount = Math.min(
+        Math.max(0, Number(amount) || 0),
+        remaining
+      );
+
+      if (safeAmount <= 0) {
+        throw new Error(
+          remaining > 0
+            ? "أدخلي مبلغًا أكبر من صفر لا يتجاوز المتبقي."
+            : "لا يوجد مبلغ متبقٍ على هذه المطالبة."
+        );
+      }
+
+      await payClaimInstallment(
+        claimId,
+        installmentNumber,
+        safeAmount,
+        true,
+        receiptNumber || null,
+        paidAt || null,
+        notes || null
+      );
+
+      // المحفّز أعاد حساب الإجمالي من الأقساط؛ نعيد تثبيت الإجمالي الأصلي
+      // ونحسب المتبقي من المدفوع الفعلي (يحدث فرقًا عند سداد جزئي).
+      const newPaid = originalPaid + safeAmount;
+      const { error: restoreError } = await supabase
+        .from("claims")
+        .update({
+          total_amount: originalTotal,
+          paid_amount: newPaid,
+          remaining_amount: Math.max(0, originalTotal - newPaid),
+        })
+        .eq("id", claimId);
+      if (restoreError) throw restoreError;
+
+      const closed = await closeClaimIfFullyPaid(claimId);
+      setInstallmentModal(null);
+      await loadClaims();
+      alert(
+        closed
+          ? "تم سداد القسط وإغلاق المطالبة بالكامل."
+          : "تم تسجيل سداد القسط بنجاح."
+      );
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر حفظ القسط: " + error.message);
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  const handleOpenSettle = (claim) => {
+    if (!claim?.id) return;
+    setSettleModal(claim);
+  };
+
+  const handleConfirmSettle = async (claimId, reason, notes) => {
+    try {
+      setSavingPayment(true);
+      setClaimError("");
+      await settleClaimPayment(claimId, reason, notes || null);
+      setSettleModal(null);
+      await loadClaims();
+      alert("تمت تسوية المطالبة.");
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر تسوية المطالبة: " + error.message);
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
   const addManualClaim = async () => {
     if (
       !claimForm.claimantName.trim() &&
@@ -1143,6 +1313,9 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   };
 
+  // ---- Payment status filter state ----
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+
   const filteredClaims = useMemo(() => {
     const search = claimSearch.trim().toLowerCase();
 
@@ -1152,16 +1325,20 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         claim.sheet_name === claimSheetFilter;
 
       if (!sheetMatch) return false;
+
+      const status = claim.payment_status || "";
+      const statusMatch =
+        paymentStatusFilter === "all" ||
+        (paymentStatusFilter === "none" ? !status : status === paymentStatusFilter);
+
+      if (!statusMatch) return false;
       if (!search) return true;
 
       return Object.values(claim.data || {}).some((value) =>
         String(value).toLowerCase().includes(search)
       );
     });
-  }, [claims, claimSearch, claimSheetFilter]);
-
-  // ---- Payment status filter state ----
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+  }, [claims, claimSearch, claimSheetFilter, paymentStatusFilter]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -2070,6 +2247,9 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               onDeleteClaim={deleteClaim}
               onUpdateClaim={updateClaim}
               onDeleteAllClaims={deleteAllClaims}
+              onStartPayment={handleStartPayment}
+              onPayInstallment={handleOpenInstallment}
+              onSettleClaim={handleOpenSettle}
               canManage={
                 currentUser?.role === "super_admin" ||
                 currentUser?.role === "admin"
@@ -2292,6 +2472,26 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             setExcelPreview(null);
           }}
           onImport={executeClaimsImport}
+        />
+      )}
+
+      {installmentModal && (
+        <InstallmentModal
+          claim={installmentModal.claim}
+          installmentNumber={installmentModal.number}
+          amount={installmentModal.amount}
+          saving={savingPayment}
+          onClose={() => setInstallmentModal(null)}
+          onSave={handleSaveInstallment}
+        />
+      )}
+
+      {settleModal && (
+        <SettleClaimModal
+          claim={settleModal}
+          saving={savingPayment}
+          onClose={() => setSettleModal(null)}
+          onSave={handleConfirmSettle}
         />
       )}
     </div>
