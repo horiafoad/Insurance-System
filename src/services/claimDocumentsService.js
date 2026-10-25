@@ -16,7 +16,10 @@ import {
 } from "./fileStorage";
 
 export const CLAIMS_TABLE = "claims";
-export const CLAIMS_BUCKET = "claims-files";
+// نفس سبب STUDY_LEAVES_BUCKET: البوابة لا تقبل حاوية claims-files، فتُحفظ
+// مرفقات المطالبات داخل الحاوية المعتمدة executive-orders تحت مسار claims/.
+export const CLAIMS_BUCKET = "executive-orders";
+export const CLAIMS_PDF_PREFIX = "claims";
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const SAFE_NAME = /[^\p{L}\p{N}._-]+/gu;
 
@@ -46,7 +49,7 @@ export async function attachClaimPdf(claim, file, { user = null } = {}) {
   const oldUrl = claim.pdf_url;
   const oldKey = claim.pdf_storage_key;
   const safeName = String(file.name || "file.pdf").replace(SAFE_NAME, "_").slice(-80);
-  const path = `${claim.id}/${Date.now()}-${safeName}`;
+  const path = `${CLAIMS_PDF_PREFIX}/${claim.id}/${Date.now()}-${safeName}`;
 
   const saved = await uploadFile(CLAIMS_BUCKET, path, file, {
     contentType: "application/pdf",

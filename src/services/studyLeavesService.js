@@ -20,7 +20,13 @@ import {
 } from "./fileStorage";
 
 export const STUDY_LEAVES_TABLE = "study_leaves";
-export const STUDY_LEAVES_BUCKET = "study-leaves-files";
+// بوابة التخزين لا تقبل إلا الحاويات المعتمدة لديها (executive-orders،
+// issues-files، faculty-salaries، faculty-salary-archive،
+// employee-salary-archive، letter-images، scanner-inbox)، ولذلك تُحفظ
+// مرفقات الإجازات داخل حاوية الأوامر التنفيذية تحت مسار مستقل study-leaves/
+// بدل إنشاء حاوية جديدة غير مدعومة. المسار يمنع أي تعارض مع ملفات الأوامر.
+export const STUDY_LEAVES_BUCKET = "executive-orders";
+export const STUDY_LEAVES_PDF_PREFIX = "study-leaves";
 export const STUDY_LEAVES_BACKUP_KEY = "study_leaves_db_backup_v1";
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const PAGE_SIZE = 1000;
@@ -512,7 +518,7 @@ export async function attachStudyLeavePdf(leave, file, { user = null } = {}) {
   const oldKey = leave.pdfStorageKey;
 
   const safeName = String(file.name || "file.pdf").replace(SAFE_NAME, "_").slice(-80);
-  const path = `${leave.id}/${Date.now()}-${safeName}`;
+  const path = `${STUDY_LEAVES_PDF_PREFIX}/${leave.id}/${Date.now()}-${safeName}`;
 
   const saved = await uploadFile(STUDY_LEAVES_BUCKET, path, file, {
     contentType: "application/pdf",
