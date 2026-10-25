@@ -33,3 +33,27 @@ scripts/claims-replace/import.sql
 Thumbs.db
 *.bak
 cursor/
+
+# --- بيئات ومشاريع محلية ضخمة (لا تُرفع للمستودع) ---
+# بيئة Python/conda محلية ينشئها Jupyter — مجلدها باسم عشوائي
+/b5bf2e54cb654f7b/
+.conda/
+environment.yml
+# مشروع منفصل تمامًا عن نظام التأمين
+wedding-invitation/
+# مشروع أندرويد المولّد محليًا (Capacitor) — يُبنى على الجهاز فقط
+android/
+# ملفات تشخيص مؤقتة
+storage-diagnostic.txt
+storage-next-check.txt
+
+# --- أسرار ومفاتيح لا تُرفع أبدًا ---
+# supabase/.temp/ يحتوي fcm-service-account.json (مفتاح حساب خدمة)
+supabase/.temp/
+*service-account*.json
+fcm-service-account.json
+
+# --- نسخ بيانات خام وحالة سكربتات الترحيل ---
+scripts/export-old-data/
+scripts/migration/.import-progress.json
+scripts/migration/.schema-progress.json
