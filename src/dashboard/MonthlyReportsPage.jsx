@@ -33,6 +33,7 @@ import { hasPermission } from "../utils/permissions";
 import MonthlyReportsTypesManager from "./MonthlyReportsTypesManager";
 import MonthlyReportsCreateForm from "./MonthlyReportsCreateForm";
 import MonthlyReportsMonthlyView from "./MonthlyReportsMonthlyView";
+import FacultyNotificationsPage from "./FacultyNotificationsPage";
 
 const PAGE_TITLE = "التبليغات الشهرية";
 const PAGE_SUBTITLE = "إدارة التبليغات الشهرية لهيئة التدريس والموظفين والعقود";
@@ -75,6 +76,63 @@ function SectionCard({ section, onOpen }) {
   };
   
   const colors = sectionColors[section.code] || { bg: "#6366f1", icon: "📋" };
+
+  // بطاقة خاصة لتبليغات هيئة التدريس
+  if (section.code === SECTION_CODES.FACULTY) {
+    return (
+      <div
+        onClick={() => onOpen(section)}
+        style={{
+          cursor: "pointer",
+          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          border: "none",
+          borderRadius: "16px",
+          padding: "0",
+          backgroundColor: "#FFFFFF",
+          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+          overflow: "hidden",
+          position: "relative",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-8px) scale(1.02)";
+          e.currentTarget.style.boxShadow = "0 20px 40px -12px rgba(0, 0, 0, 0.2)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0) scale(1)";
+          e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
+        }}
+      >
+        <div
+          style={{
+            background: colors.bg,
+            padding: "32px 24px",
+            color: "#FFFFFF",
+          }}
+        >
+          <div style={{ fontSize: "48px", marginBottom: "12px", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.2))" }}>
+            {colors.icon}
+          </div>
+          <div style={{ fontSize: "22px", fontWeight: "700", marginBottom: "4px" }}>
+            {section.name_ar}
+          </div>
+          <div style={{ fontSize: "14px", opacity: 0.9 }}>
+            {section.description}
+          </div>
+        </div>
+        <div style={{ padding: "20px 24px" }}>
+          <div style={{ fontSize: "13px", color: "#64748B", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>انقر للدخول</span>
+            <span style={{ fontSize: "16px" }}>→</span>
+          </div>
+          <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748B", backgroundColor: "#F8FAFC", padding: "4px 8px", borderRadius: "4px", display: "inline-block" }}>
+            ⚡ نظام صلاحيات ثنائي المدقق
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // البطاقة الافتراضية للأقسام الأخرى
 
   return (
     <div
@@ -608,6 +666,12 @@ export default function MonthlyReportsPage({ currentUser }) {
   };
 
   const handleOpenSection = (section) => {
+    // إذا كان قسم هيئة التدريس، افتح صفحة التبليغات المخصصة
+    if (section.code === SECTION_CODES.FACULTY) {
+      setSelectedSection(section);
+      setView("faculty_notifications");
+      return;
+    }
     setSelectedSection(section);
     setView("section");
   };
@@ -666,6 +730,15 @@ export default function MonthlyReportsPage({ currentUser }) {
     return (
       <MonthlyReportsTypesManager
         section={selectedSection}
+        currentUser={currentUser}
+        onBack={handleBackToList}
+      />
+    );
+  }
+
+  if (view === "faculty_notifications") {
+    return (
+      <FacultyNotificationsPage
         currentUser={currentUser}
         onBack={handleBackToList}
       />

@@ -67,3 +67,77 @@ export function canManageSupport(user) {
   const username = String(user.username || "").toLowerCase().trim();
   return username === "horia";
 }
+
+// ============================================================================
+// أدوار تبليغات هيئة التدريس
+// ============================================================================
+
+export const FACULTY_NOTIFICATION_ROLES = {
+  CREATOR: "creator",
+  INPUT_REVIEWER: "input_reviewer",
+  FINAL_REVIEWER: "final_reviewer",
+};
+
+export const FACULTY_NOTIFICATION_ROLE_LABELS = {
+  [FACULTY_NOTIFICATION_ROLES.CREATOR]: "منشئ التبليغ",
+  [FACULTY_NOTIFICATION_ROLES.INPUT_REVIEWER]: "مدخل البيرول",
+  [FACULTY_NOTIFICATION_ROLES.FINAL_REVIEWER]: "مراجع البيرول",
+};
+
+/**
+ * التحقق من دور المستخدم في تبليغات هيئة التدريس
+ * الدور يُخزّن في عمود users.faculty_notification_role
+ */
+export function getFacultyNotificationRole(user) {
+  if (!user) return null;
+  return user.faculty_notification_role || null;
+}
+
+/**
+ * هل المستخدم منشئ تبليغ؟
+ */
+export function isFacultyNotificationCreator(user) {
+  return getFacultyNotificationRole(user) === FACULTY_NOTIFICATION_ROLES.CREATOR;
+}
+
+/**
+ * هل المستخدم مدخل بيرول؟
+ */
+export function isFacultyNotificationInputReviewer(user) {
+  return getFacultyNotificationRole(user) === FACULTY_NOTIFICATION_ROLES.INPUT_REVIEWER;
+}
+
+/**
+ * هل المستخدم مراجع بيرول نهائي؟
+ */
+export function isFacultyNotificationFinalReviewer(user) {
+  return getFacultyNotificationRole(user) === FACULTY_NOTIFICATION_ROLES.FINAL_REVIEWER;
+}
+
+/**
+ * هل يمكن للمستخدم إكمال مرحلة الإدخال والمراجعة؟
+ */
+export function canCompleteInputStage(user) {
+  return isFacultyNotificationInputReviewer(user);
+}
+
+/**
+ * هل يمكن للمستخدم إكمال المراجعة النهائية؟
+ */
+export function canCompleteReviewStage(user) {
+  return isFacultyNotificationFinalReviewer(user);
+}
+
+/**
+ * هل يمكن للمستخدم إنشاء تبليغات جديدة؟
+ */
+export function canCreateFacultyNotification(user) {
+  return isFacultyNotificationCreator(user);
+}
+
+/**
+ * هل يمكن للمستخدم إعادة التبليغ للتصحيح؟
+ */
+export function canReturnForCorrection(user) {
+  return isFacultyNotificationInputReviewer(user) || isFacultyNotificationFinalReviewer(user);
+}
