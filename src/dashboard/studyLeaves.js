@@ -217,9 +217,9 @@ export function daysUntil(value, today = new Date()) {
 }
 
 export function computeRemainingDays(leave, today = new Date()) {
-  const fiveYearDays = daysUntil(leave.fiveYearEnd, today);
-  if (fiveYearDays != null) return fiveYearDays;
-  return daysUntil(leave.endDate, today);
+  // الأساس الوحيد لحساب الأيام المتبقية وإيقاف المرتب هو تاريخ انتهاء الخمس
+  // سنوات. لا نستخدم نهاية الإجازة ولا أي تاريخ آخر بديلًا عنه.
+  return daysUntil(leave.fiveYearEnd, today);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -255,49 +255,48 @@ export function isSalaryUnset(leave) {
 }
 
 export function enrichLeave(leave, today = new Date()) {
+  // القاعدة: المرتب يُوقف على أساس انتهاء الخمس سنوات فقط.
   const remaining = computeRemainingDays(leave, today);
   const daysToEnd = daysUntil(leave.endDate, today);
-  const daysToFive = daysUntil(leave.fiveYearEnd, today);
+  const daysToFive = remaining;
   const fiveYearsEnded = daysToFive != null && daysToFive < 0;
 
   let alertLevel = "ok";
   let alertTitle = "المرتب مستمر";
-  let alertMessage = "لا يوجد إجراء عاجل على المرتب.";
+  let alertMessage = "لم تنتهِ مدة الخمس سنوات بعد.";
 
   if (isSalaryStopped(leave)) {
     alertLevel = "stopped";
     alertTitle = "المرتب موقوف";
     alertMessage = "تم تسجيل إيقاف المرتب. راجعي التنفيذ على شيت المرتبات.";
-  } else if (isSalaryUnset(leave)) {
-    alertLevel = "unset";
-    alertTitle = "حالة المرتب غير محددة";
-    alertMessage = "الملف لم يحدد حالة المرتب لهذا السجل — تحتاج مراجعة يدوية.";
+  } else if (daysToFive == null) {
+    // بلا تاريخ انتهاء خمس سنوات لا يمكن تحديد موعد الإيقاف — لا نستخدم أي
+    // تاريخ آخر بديلًا.
+    alertLevel = "no_date";
+    alertTitle = "بدون تاريخ انتهاء 5 سنوات";
+    alertMessage =
+      "سجّلي تاريخ انتهاء الخمس سنوات لتحديد موعد إيقاف المرتب.";
   } else if (fiveYearsEnded) {
     alertLevel = "stop_now";
     alertTitle = "يجب إيقاف المرتب الآن";
-    alertMessage =
-      "تجاوزت بداية الإجازة خمس سنوات من تاريخ بداية الإجازة. المرتب يقف.";
-  } else if (
-    (daysToFive != null && daysToFive <= 30) ||
-    (remaining != null && remaining <= 30)
-  ) {
+    alertMessage = `انتهت مدة الخمس سنوات بتاريخ ${formatDisplayDate(
+      leave.fiveYearEnd
+    )} — يجب إيقاف المرتب.`;
+  } else if (daysToFive <= 30) {
     alertLevel = "soon";
     alertTitle = "إنذار: المرتب قرب يقف";
-    alertMessage = `باقي ${Math.min(
-      ...[daysToFive, remaining].filter((n) => n != null)
-    )} يوم. جهّزي إيقاف المرتب.`;
-  } else if (
-    (daysToFive != null && daysToFive <= 90) ||
-    (remaining != null && remaining <= 90)
-  ) {
+    alertMessage = `باقي ${daysToFive} يوم على انتهاء الخمس سنوات. جهّزي إيقاف المرتب.`;
+  } else if (daysToFive <= 90) {
     alertLevel = "watch";
     alertTitle = "تنبيه: اقترب موعد الإيقاف";
-    alertMessage = `باقي أقل من 90 يومًا على نهاية الخمس سنوات.`;
+    alertMessage = `باقي ${daysToFive} يوم على انتهاء الخمس سنوات.`;
+  } else {
+    alertMessage = `باقي ${daysToFive} يوم على انتهاء الخمس سنوات.`;
   }
 
   return {
     ...leave,
-    remainingDays: remaining == null ? leave.remainingDays || "" : String(remaining),
+    remainingDays: remaining == null ? "" : String(remaining),
     daysToEnd,
     daysToFive,
     alertLevel,
@@ -316,6 +315,7 @@ export function getLeaveStats(leaves, today = new Date()) {
       (leave) => normalizeSalaryStatus(leave.salaryStatus) === "بدون مرتب"
     ).length,
     unset: enriched.filter((leave) => isSalaryUnset(leave)).length,
+    noDate: enriched.filter((leave) => leave.alertLevel === "no_date").length,
     stopNow: enriched.filter((leave) => leave.alertLevel === "stop_now").length,
     soon: enriched.filter((leave) => leave.alertLevel === "soon").length,
     watch: enriched.filter((leave) => leave.alertLevel === "watch").length,
@@ -326,10 +326,12 @@ export function getAlertLeaves(leaves, today = new Date()) {
   return leaves
     .map((leave) => enrichLeave(leave, today))
     .filter((leave) =>
-      ["stop_now", "soon", "watch", "stopped"].includes(leave.alertLevel)
+      ["stop_now", "soon", "watch", "no_date", "stopped"].includes(
+        leave.alertLevel
+      )
     )
     .sort((a, b) => {
-      const order = { stop_now: 0, soon: 1, watch: 2, stopped: 3 };
+      const order = { stop_now: 0, soon: 1, watch: 2, no_date: 3, stopped: 4 };
       return order[a.alertLevel] - order[b.alertLevel];
     });
 }

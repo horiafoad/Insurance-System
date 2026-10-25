@@ -33,6 +33,11 @@ const ALERT_STYLES = {
     border: "1px solid #FEF08A",
     color: "#854D0E",
   },
+  no_date: {
+    background: "#EFF6FF",
+    border: "1px solid #BFDBFE",
+    color: "#1E40AF",
+  },
   stopped: {
     background: "#F8FAFC",
     border: "1px solid #E2E8F0",
@@ -44,12 +49,25 @@ const BADGE_STYLES = {
   stop_now: { background: "#FEE2E2", color: "#B91C1C" },
   soon: { background: "#FFEDD5", color: "#C2410C" },
   watch: { background: "#FEF3C7", color: "#A16207" },
+  no_date: { background: "#DBEAFE", color: "#1D4ED8" },
   stopped: { background: "#E2E8F0", color: "#334155" },
   unset: { background: "#E0E7FF", color: "#3730A3" },
   ok: { background: "#D1FAE5", color: "#047857" },
 };
 
+// المستويات التي يجوز فيها إيقاف المرتب (مبنية على تاريخ انتهاء 5 سنوات).
+const STOPPABLE_ALERTS = ["stop_now", "soon", "watch"];
+
 const smallNote = { fontSize: 12, color: "#64748B", marginTop: 4 };
+
+// عرض الأيام المتبقية حتى انتهاء الخمس سنوات (السالب = متأخر).
+function formatRemainingDays(value) {
+  if (value === "" || value == null) return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  if (n < 0) return `متأخر ${Math.abs(n)} يوم`;
+  return `${n} يوم`;
+}
 
 function reportLine(label, value) {
   return (
@@ -253,7 +271,8 @@ export default function StudyLeavesPage({
             <h2 style={styles.cardTitle}>🎓 الإجازات الدراسية</h2>
             <p style={styles.cardSub}>
               البيانات محفوظة في قاعدة البيانات (جدول study_leaves) — ولكل إجازة
-              زر PDF مستقل لرفع مستند الإجازة الخاص بالدكتور.
+              زر PDF مستقل لرفع مستند الإجازة الخاص بالدكتور. تنبيهات المرتب
+              تُحسب على تاريخ <strong>انتهاء الخمس سنوات</strong> فقط.
             </p>
           </div>
           <div style={styles.claimHeaderButtons}>
@@ -317,11 +336,15 @@ export default function StudyLeavesPage({
 
         <div style={styles.claimStats}>
           <ClaimStat title="إجمالي الموظفين" value={stats.total} icon="👥" />
-          <ClaimStat title="يصرف المرتب" value={stats.paying} icon="💰" />
-          <ClaimStat title="يوقف/بدون مرتب" value={stats.stopped} icon="⛔" />
-          <ClaimStat title="حالة غير محددة" value={stats.unset} icon="❔" />
           <ClaimStat title="يجب الإيقاف الآن" value={stats.stopNow} icon="🚨" />
           <ClaimStat title="باقي أقل من 30 يوم" value={stats.soon} icon="⏰" />
+          <ClaimStat title="تنبيه (90 يوم)" value={stats.watch} icon="⚠️" />
+          <ClaimStat title="المرتب موقوف فعلًا" value={stats.stopped} icon="⛔" />
+          <ClaimStat
+            title="بدون تاريخ انتهاء 5 سنوات"
+            value={stats.noDate}
+            icon="📅"
+          />
         </div>
       </div>
 
@@ -331,8 +354,8 @@ export default function StudyLeavesPage({
             <div>
               <h2 style={styles.cardTitle}>تنبيهات المرتب</h2>
               <p style={styles.cardSub}>
-                إنذار عندما ينتهي المرتب أو يقترب موعد الإيقاف حتى تتمكني من وقف
-                المرتب في وقته
+                كل التنبيهات محسوبة على تاريخ <strong>انتهاء الخمس سنوات</strong>{" "}
+                فقط — لا نهاية الإجازة ولا أي تاريخ آخر
               </p>
             </div>
           </div>
@@ -351,9 +374,11 @@ export default function StudyLeavesPage({
                     {leave.name} — كود {leave.employeeCode || "غير مسجل"}
                   </div>
                   <div style={{ marginTop: 4, fontSize: 13 }}>
-                    {leave.alertMessage} | نهاية الإجازة:{" "}
-                    {formatDisplayDate(leave.endDate)} | انتهاء 5 سنوات:{" "}
+                    {leave.alertMessage} | انتهاء 5 سنوات:{" "}
                     {formatDisplayDate(leave.fiveYearEnd)}
+                    {leave.remainingDays
+                      ? ` | ${formatRemainingDays(leave.remainingDays)}`
+                      : ""}
                   </div>
                 </div>
                 <div style={styles.alertActions} className="alert-actions">
@@ -363,7 +388,7 @@ export default function StudyLeavesPage({
                   >
                     تعديل
                   </button>
-                  {leave.alertLevel !== "stopped" && (
+                  {STOPPABLE_ALERTS.includes(leave.alertLevel) && (
                     <button
                       style={styles.deleteButton}
                       onClick={() => onStopSalary(leave.id)}
@@ -410,7 +435,7 @@ export default function StudyLeavesPage({
             <option value="soon">قرب يقف (30 يوم)</option>
             <option value="watch">تنبيه (90 يوم)</option>
             <option value="stopped">المرتب موقوف</option>
-            <option value="unset">حالة غير محددة</option>
+            <option value="no_date">بدون تاريخ انتهاء 5 سنوات</option>
           </select>
         </div>
 
@@ -434,7 +459,7 @@ export default function StudyLeavesPage({
                   <th style={styles.th}>بداية الإجازة</th>
                   <th style={styles.th}>نهاية الإجازة</th>
                   <th style={styles.th}>انتهاء 5 سنوات</th>
-                  <th style={styles.th}>الأيام المتبقية</th>
+                  <th style={styles.th}>باقي على 5 سنوات</th>
                   <th style={styles.th}>حالة المرتب</th>
                   <th style={styles.th}>PDF</th>
                   <th style={styles.th}>إجراءات</th>
@@ -462,7 +487,9 @@ export default function StudyLeavesPage({
                     <td style={styles.td}>
                       {formatDisplayDate(leave.fiveYearEnd)}
                     </td>
-                    <td style={styles.td}>{leave.remainingDays || "—"}</td>
+                    <td style={styles.td}>
+                      {formatRemainingDays(leave.remainingDays)}
+                    </td>
                     <td style={styles.td}>{leave.salaryStatus || "—"}</td>
                     <td style={styles.td}>
                       <button
@@ -491,16 +518,14 @@ export default function StudyLeavesPage({
                       >
                         تعديل
                       </button>
-                      {leave.alertLevel !== "stopped" &&
-                        leave.alertLevel !== "ok" &&
-                        leave.alertLevel !== "unset" && (
-                          <button
-                            style={styles.deleteButton}
-                            onClick={() => onStopSalary(leave.id)}
-                          >
-                            إيقاف المرتب
-                          </button>
-                        )}
+                      {STOPPABLE_ALERTS.includes(leave.alertLevel) && (
+                        <button
+                          style={styles.deleteButton}
+                          onClick={() => onStopSalary(leave.id)}
+                        >
+                          إيقاف المرتب
+                        </button>
+                      )}
                       <button
                         style={styles.deleteButton}
                         onClick={() => onDelete(leave.id)}
