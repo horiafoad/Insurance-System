@@ -8,6 +8,20 @@ const formatAmount = (value) =>
     maximumFractionDigits: 2,
   });
 
+/**
+ * حالات المطالبات ثلاث فقط (باستخدام الحالات الموجودة في قاعدة البيانات):
+ * «لم يسدد» / «جاري السداد» / «خالي الطرف».
+ * أي قيمة قديمة أخرى أو فارغة تُعرض كـ«لم يسدد» ولا تُحذف من قاعدة البيانات.
+ */
+export function normalizeClaimPaymentStatus(claim) {
+  const raw = String(claim?.payment_status || "").trim();
+  if (raw === "جاري السداد") return "جاري السداد";
+  if (["خالي الطرف", "مكتمل", "تم السداد"].includes(raw)) {
+    return "خالي الطرف";
+  }
+  return "لم يسدد";
+}
+
 const actionButtonStyle = {
   padding: "4px 8px",
   fontSize: "12px",
@@ -22,8 +36,6 @@ export default function ClaimsPage({
   setSearch,
   sheetFilter,
   setSheetFilter,
-  paymentStatusFilter,
-  setPaymentStatusFilter,
   loading,
   error,
   onImport,
@@ -34,9 +46,11 @@ export default function ClaimsPage({
   onStartPayment,
   onPayInstallment,
   onSettleClaim,
+  onOpenDetails,
   canManage = false,
 }) {
   const [editingClaim, setEditingClaim] = useState(null);
+  const [activeTab, setActiveTab] = useState("all");
   const [editFormData, setEditFormData] = useState({
     sheet_name: "",
     data: {},
@@ -60,14 +74,14 @@ export default function ClaimsPage({
 
   const total = allClaims.length;
   const stats = useMemo(() => {
-    const pending = allClaims.filter((claim) =>
-      ["لم يسدد", "جديد", "قيد المراجعة"].includes(String(claim.payment_status || claim.status || ""))
+    const pending = allClaims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === "لم يسدد"
     ).length;
-    const inProgress = allClaims.filter((claim) =>
-      claim.payment_status === "جاري السداد"
+    const inProgress = allClaims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === "جاري السداد"
     ).length;
-    const completed = allClaims.filter((claim) =>
-      ["خالي الطرف", "مكتمل", "تم السداد"].includes(String(claim.payment_status || claim.status || ""))
+    const completed = allClaims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === "خالي الطرف"
     ).length;
 
     return {
@@ -82,6 +96,31 @@ export default function ClaimsPage({
     sheetFilter === "all"
       ? total
       : allClaims.filter((item) => item.sheet_name === sheetFilter).length;
+
+  const tabs = useMemo(() => {
+    const count = (status) =>
+      claims.filter((claim) => normalizeClaimPaymentStatus(claim) === status)
+        .length;
+    return [
+      { id: "all", label: "كل المطالبات", count: claims.length },
+      { id: "unpaid", label: "لم يسدد", count: count("لم يسدد") },
+      { id: "in_progress", label: "جاري السداد", count: count("جاري السداد") },
+      { id: "settled", label: "خالي الطرف", count: count("خالي الطرف") },
+    ];
+  }, [claims]);
+
+  const visibleClaims = useMemo(() => {
+    if (activeTab === "all") return claims;
+    const status =
+      activeTab === "in_progress"
+        ? "جاري السداد"
+        : activeTab === "settled"
+          ? "خالي الطرف"
+          : "لم يسدد";
+    return claims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === status
+    );
+  }, [claims, activeTab]);
 
   const handleOpenEdit = (claim) => {
     setEditingClaim(claim);
@@ -171,6 +210,37 @@ export default function ClaimsPage({
 
         {sheets.length > 0 && (
           <>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 12,
+              }}
+            >
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    border:
+                      activeTab === tab.id
+                        ? "1px solid #2563EB"
+                        : "1px solid #E2E8F0",
+                    background: activeTab === tab.id ? "#EFF6FF" : "#fff",
+                    color: activeTab === tab.id ? "#1D4ED8" : "#475569",
+                    borderRadius: 9,
+                    padding: "7px 13px",
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </div>
+
             <div className="service-filter-bar" style={styles.filterRow}>
               <input
                 type="text"
@@ -192,33 +262,20 @@ export default function ClaimsPage({
                   </option>
                 ))}
               </select>
-
-              {setPaymentStatusFilter && (
-                <select
-                  value={paymentStatusFilter || "all"}
-                  onChange={(e) => setPaymentStatusFilter(e.target.value)}
-                  style={styles.claimSelect}
-                >
-                  <option value="all">كل حالات السداد</option>
-                  <option value="لم يسدد">لم يسدد</option>
-                  <option value="جاري السداد">جاري السداد</option>
-                  <option value="خالي الطرف">خالي الطرف</option>
-                  <option value="none">بدون حالة سداد</option>
-                </select>
-              )}
             </div>
 
             <div style={styles.resultText}>
-              عدد النتائج الحالية: <strong>{claims.length}</strong> من{" "}
+              عدد النتائج الحالية: <strong>{visibleClaims.length}</strong> من{" "}
               <strong>{currentSheetCount}</strong>
             </div>
 
-            {claims.length > 0 && (
+            {visibleClaims.length > 0 && (
               <div className="mobile-hscroll" style={styles.claimTableWrapper}>
                 <table style={styles.table}>
                   <thead>
                     <tr>
                       {canManage && <th style={styles.th}>التصنيف</th>}
+                      {canManage && <th style={styles.th}>حالة السداد</th>}
                       <th style={styles.th}>رقم الصف</th>
                       {canManage && <th style={styles.th}>المتبقي</th>}
                       {columns.map((column) => (
@@ -230,7 +287,7 @@ export default function ClaimsPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {claims.slice(0, 300).map((claim) => (
+                    {visibleClaims.slice(0, 300).map((claim) => (
                       <tr key={claim.id} style={styles.tr}>
                         {canManage && <td style={styles.td}>
                           <span
@@ -246,6 +303,37 @@ export default function ClaimsPage({
                             {claim.sheet_name}
                           </span>
                         </td>}
+                        {canManage && (
+                          <td style={styles.td}>
+                            <span
+                              style={{
+                                background:
+                                  normalizeClaimPaymentStatus(claim) ===
+                                  "خالي الطرف"
+                                    ? "#DCFCE7"
+                                    : normalizeClaimPaymentStatus(claim) ===
+                                        "جاري السداد"
+                                      ? "#FEF3C7"
+                                      : "#F1F5F9",
+                                color:
+                                  normalizeClaimPaymentStatus(claim) ===
+                                  "خالي الطرف"
+                                    ? "#166534"
+                                    : normalizeClaimPaymentStatus(claim) ===
+                                        "جاري السداد"
+                                      ? "#92400E"
+                                      : "#334155",
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: "700",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {normalizeClaimPaymentStatus(claim)}
+                            </span>
+                          </td>
+                        )}
                         <td style={styles.td}>
                           {claim.row_number === 0 ? "يدوي" : claim.row_number}
                         </td>
@@ -269,6 +357,21 @@ export default function ClaimsPage({
                                 minWidth: 210,
                               }}
                             >
+                              {onOpenDetails && (
+                                <button
+                                  style={{
+                                    ...styles.viewButton,
+                                    background: claim.pdf_url ? "#DCFCE7" : "#F8FAFC",
+                                    color: claim.pdf_url ? "#166534" : "#334155",
+                                    borderColor: claim.pdf_url ? "#A7F3D0" : "#E2E8F0",
+                                    ...actionButtonStyle,
+                                  }}
+                                  onClick={() => onOpenDetails(claim)}
+                                  title="تفاصيل المطالبة والأقساط ومرفق PDF"
+                                >
+                                  {claim.pdf_url ? "📄 PDF/تفاصيل" : "🧾 تفاصيل"}
+                                </button>
+                              )}
                               {claim.payment_status !== "خالي الطرف" &&
                                 claim.payment_status !== "جاري السداد" &&
                                 onStartPayment && (
@@ -354,7 +457,7 @@ export default function ClaimsPage({
                   </tbody>
                 </table>
 
-                {claims.length > 300 && (
+                {visibleClaims.length > 300 && (
                   <div style={styles.infoBox}>
                     يتم عرض أول 300 سجل في الشاشة فقط.
                   </div>
@@ -362,7 +465,7 @@ export default function ClaimsPage({
               </div>
             )}
 
-            {claims.length === 0 && (
+            {visibleClaims.length === 0 && (
               <EmptyState text="لا توجد بيانات مطابقة للبحث." />
             )}
           </>

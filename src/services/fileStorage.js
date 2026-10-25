@@ -881,6 +881,40 @@ export async function openLocalFile(input, options = {}) {
   return native.open({ relPath: ref.path });
 }
 
+/**
+ * يفتح أي ملف (محلي أو عبر مزوّد التخزين) في نافذة/تبويب جديد.
+ * المحلي يُفتح بالتطبيق الأصلي، والبعيد برابط موقّع مؤقت.
+ */
+export async function openFile(input, options = {}) {
+  const ref = resolveRef(input, options);
+  if (!ref) throw new Error("لا يوجد ملف لفتحه.");
+
+  if (ref.provider === STORAGE_PROVIDER.LOCAL) {
+    const native = nativeLocalFiles();
+    if (!native) {
+      throw new Error(
+        "هذا الملف محفوظ على جهاز آخر؛ نزّليه على جهازك ثم افتحيه منه."
+      );
+    }
+    const result = await native.open({ relPath: ref.path });
+    if (result && result.ok === false && result.error) {
+      throw new Error(result.error);
+    }
+    return result;
+  }
+
+  const url = await getFileUrl(ref, options);
+  if (!url) throw new Error("تعذر الحصول على رابط الملف.");
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  return { ok: true, provider: ref.provider, url };
+}
+
 /** المسار الكامل لمجلد تخزين الملفات على الجهاز (ديسكتوب فقط). */
 export async function getLocalStorageDir() {
   const native = nativeLocalFiles();

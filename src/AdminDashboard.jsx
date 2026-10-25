@@ -50,6 +50,20 @@ import {
   saveStudyLeaves,
 } from "./dashboard/studyLeaves";
 import {
+  fetchStudyLeaves,
+  saveStudyLeaveRecord,
+  deleteStudyLeaveRecord,
+  setStudyLeaveSalaryStatus,
+  replaceStudyLeaves,
+  attachStudyLeavePdf,
+  openStudyLeavePdf,
+  downloadStudyLeavePdf,
+  deleteStudyLeavePdf,
+  loadStudyLeavesBackup,
+  restoreStudyLeavesBackup,
+  downloadStudyLeavesBackup,
+} from "./services/studyLeavesService";
+import {
   hasAnyPermission,
   hasPermission,
   canAccessMenu,
@@ -57,12 +71,21 @@ import {
 import { useRealtimeSync, applyRowChange } from "./utils/realtimeSync";
 import { parseClaimsWorkbook } from "./services/claimsExcelImport";
 import { autoLinkFacultySources } from "./services/facultyAutoLinkService";
+import ClaimDetailsModal from "./dashboard/ClaimDetailsModal";
+import {
+  attachClaimPdf,
+  openClaimPdf,
+  downloadClaimPdf,
+  deleteClaimPdf,
+} from "./services/claimDocumentsService";
 import {
   startPayment as startClaimPayment,
   payInstallment as payClaimInstallment,
+  undoInstallmentPayment,
   settleClaim as settleClaimPayment,
   closeClaimIfFullyPaid,
   ensureInstallmentPlan,
+  getClaimInstallments,
   getClaimSummary,
 } from "./services/claimInstallmentsService";
 
@@ -177,11 +200,13 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   const [importingClaims, setImportingClaims] = useState(false);
   const [installmentModal, setInstallmentModal] = useState(null);
   const [settleModal, setSettleModal] = useState(null);
+  const [claimDetails, setClaimDetails] = useState(null);
   const [savingPayment, setSavingPayment] = useState(false);
 
   const [studyLeaves, setStudyLeaves] = useState([]);
   const [studyLeaveLoading, setStudyLeaveLoading] = useState(false);
   const [studyLeaveError, setStudyLeaveError] = useState("");
+  const [studyLeaveBackup, setStudyLeaveBackup] = useState(null);
 
   const [serviceRequestFilter, setServiceRequestFilter] = useState("all");
   // وضع عرض طلبات الخدمة: "incoming" = الطلبات الواردة، "archive" = بند الخدمة (المنفّذ/المستلَم).
@@ -221,11 +246,39 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     if (hasPermission(currentUser, "entitlements")) {
       loadTasks();
       loadClaims();
-      setStudyLeaves(loadStudyLeaves());
+      loadStudyLeavesFromDb();
     } else {
       setAppLoading(false);
     }
   }, []);
+
+  const loadStudyLeavesFromDb = async () => {
+    setStudyLeaveLoading(true);
+    setStudyLeaveError("");
+    try {
+      const rows = await fetchStudyLeaves();
+      setStudyLeaves(rows);
+      // مرآة محلية للعمل بلا اتصال وللنسخ الاحتياطي.
+      saveStudyLeaves(rows);
+    } catch (error) {
+      console.error("تعذر تحميل الإجازات الدراسية:", error);
+      // 42P01 = الجدول غير موجود (نسخة قديمة من قاعدة البيانات) → localStorage.
+      if (error?.code === "42P01") {
+        setStudyLeaves(loadStudyLeaves());
+        setStudyLeaveError(
+          "جدول الإجازات الدراسية غير موجود في قاعدة البيانات — يتم العرض من النسخة المحلية مؤقتًا."
+        );
+      } else {
+        setStudyLeaves(loadStudyLeaves());
+        setStudyLeaveError(
+          `تعذر تحميل الإجازات من قاعدة البيانات (${error?.message || "خطأ غير معروف"}). يتم العرض من النسخة المحلية.`
+        );
+      }
+    } finally {
+      setStudyLeaveLoading(false);
+      setStudyLeaveBackup(loadStudyLeavesBackup());
+    }
+  };
 
   const loadTasks = async () => {
     try {
@@ -1016,16 +1069,56 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   };
 
   // --- سداد الأقساط والتسوية ---
+  const actorLabel =
+    currentUser?.full_name || currentUser?.username || null;
+
   const handleStartPayment = async (claim) => {
     if (!claim?.id) return;
+    if (
+      !window.confirm(
+        `تحويل المطالبة «${
+          claim.claimant_name || claim.claim_number || claim.id
+        }» إلى «جاري السداد»؟\nلن تتغير أي مبالغ، وسيتم تجهيز خطة الأقساط تلقائيًا.`
+      )
+    ) {
+      return;
+    }
     try {
       setClaimError("");
-      await startClaimPayment(claim.id);
+      await startClaimPayment(claim.id, actorLabel);
+      // إنشاء/استكمال خطة الأقساط الأربعة مرة واحدة فقط (الدالة idempotent
+      // ولا تكرر أي قسط موجود).
+      await ensureInstallmentPlan(claim.id);
       await loadClaims();
+      alert("تم تحويل المطالبة إلى «جاري السداد» وتجهيز خطة الأقساط.");
     } catch (error) {
       console.error(error);
       setClaimError("تعذر بدء السداد: " + error.message);
     }
+  };
+
+  const refreshClaimRow = (updated) => {
+    if (!updated?.id) return;
+    setClaims((prev) =>
+      prev.map((claim) =>
+        claim.id === updated.id ? { ...claim, ...updated } : claim
+      )
+    );
+    setClaimDetails((prev) =>
+      prev && prev.id === updated.id ? { ...prev, ...updated } : prev
+    );
+  };
+
+  const handleAttachClaimPdf = async (claim, file) => {
+    const updated = await attachClaimPdf(claim, file, { user: currentUser });
+    refreshClaimRow(updated);
+    return updated;
+  };
+
+  const handleDeleteClaimPdf = async (claim) => {
+    const updated = await deleteClaimPdf(claim);
+    refreshClaimRow(updated);
+    return updated;
   };
 
   const handleOpenInstallment = async (claim) => {
@@ -1086,54 +1179,55 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       setSavingPayment(true);
       setClaimError("");
 
+      // نعتمد قيمة القسط المخططة، ونسمح بسداد ما تبقّى فقط إن كان أقل منها.
+      const installments = await getClaimInstallments(claimId);
+      const existing = installments.find(
+        (inst) => inst.installment_number === installmentNumber
+      );
+      if (existing?.paid) {
+        throw new Error(
+          `القسط ${installmentNumber} مسدد بالفعل — لا يمكن سداده مرتين. استخدمي «تصحيح السداد» عند وجود خطأ.`
+        );
+      }
+
       const { data: before, error: beforeError } = await supabase
         .from("claims")
-        .select("total_amount, paid_amount, remaining_amount")
+        .select("remaining_amount")
         .eq("id", claimId)
         .maybeSingle();
       if (beforeError) throw beforeError;
 
-      const originalTotal = Number(before?.total_amount) || 0;
-      const originalPaid = Number(before?.paid_amount) || 0;
-      const remaining = Math.max(
+      const remainingCents = Math.max(
         0,
-        Number(before?.remaining_amount) || originalTotal - originalPaid
+        Math.round(Number(before?.remaining_amount || 0) * 100)
       );
-      const safeAmount = Math.min(
-        Math.max(0, Number(amount) || 0),
-        remaining
+      const plannedCents = Math.round(
+        Number(existing?.amount ?? amount ?? 0) * 100
+      );
+      const payCents = Math.min(
+        plannedCents > 0 ? plannedCents : remainingCents,
+        remainingCents
       );
 
-      if (safeAmount <= 0) {
+      if (payCents <= 0) {
         throw new Error(
-          remaining > 0
+          remainingCents > 0
             ? "أدخلي مبلغًا أكبر من صفر لا يتجاوز المتبقي."
             : "لا يوجد مبلغ متبقٍ على هذه المطالبة."
         );
       }
 
+      // المحفّز يعيد حساب الإجمالي والمسدد والمتبقي من الأقساط تلقائيًا،
+      // وخطة الأقساط مضبوطة لتساوي الإجمالي — فلا حاجة لأي تصحيح يدوي.
       await payClaimInstallment(
         claimId,
         installmentNumber,
-        safeAmount,
+        payCents / 100,
         true,
         receiptNumber || null,
         paidAt || null,
         notes || null
       );
-
-      // المحفّز أعاد حساب الإجمالي من الأقساط؛ نعيد تثبيت الإجمالي الأصلي
-      // ونحسب المتبقي من المدفوع الفعلي (يحدث فرقًا عند سداد جزئي).
-      const newPaid = originalPaid + safeAmount;
-      const { error: restoreError } = await supabase
-        .from("claims")
-        .update({
-          total_amount: originalTotal,
-          paid_amount: newPaid,
-          remaining_amount: Math.max(0, originalTotal - newPaid),
-        })
-        .eq("id", claimId);
-      if (restoreError) throw restoreError;
 
       const closed = await closeClaimIfFullyPaid(claimId);
       setInstallmentModal(null);
@@ -1146,8 +1240,35 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     } catch (error) {
       console.error(error);
       setClaimError("تعذر حفظ القسط: " + error.message);
+      alert("تعذر حفظ القسط: " + error.message);
     } finally {
       setSavingPayment(false);
+    }
+  };
+
+  /* تصحيح السداد: متاح للمخوّل فقط عبر شاشة تفاصيل المطالبة. */
+  const handleUndoInstallment = async (claim, installmentNumber) => {
+    const reason = window.prompt(
+      `تصحيح سداد القسط ${installmentNumber} للمطالبة «${
+        claim.claimant_name || claim.claim_number || claim.id
+      }».\nسيُلغى تسجيل السداد ويُحفظ اسمك وسبب التصحيح في ملاحظات القسط.\nاكتبي السبب (اختياري):`,
+      ""
+    );
+    if (reason === null) return false;
+    try {
+      setClaimError("");
+      await undoInstallmentPayment(claim.id, installmentNumber, {
+        user: currentUser,
+        reason,
+      });
+      await loadClaims();
+      alert(`تم إلغاء تسجيل سداد القسط ${installmentNumber}. يمكنك تسجيله من جديد.`);
+      return true;
+    } catch (error) {
+      console.error(error);
+      setClaimError("تعذر تصحيح السداد: " + error.message);
+      alert("تعذر تصحيح السداد: " + error.message);
+      return false;
     }
   };
 
@@ -1160,7 +1281,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     try {
       setSavingPayment(true);
       setClaimError("");
-      await settleClaimPayment(claimId, reason, notes || null);
+      await settleClaimPayment(claimId, reason, notes || null, actorLabel);
       setSettleModal(null);
       await loadClaims();
       alert("تمت تسوية المطالبة.");
@@ -1333,8 +1454,9 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   };
 
-  // ---- Payment status filter state ----
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+  // ---- Payment status filter ----
+  // أُزيلت القائمة المنسدلة القديمة: الحالات الثلاث صارت تبويبات داخل
+  // صفحة المطالبات (لم يسدد / جاري السداد / خالي الطرف).
 
   const filteredClaims = useMemo(() => {
     const search = claimSearch.trim().toLowerCase();
@@ -1345,20 +1467,13 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         claim.sheet_name === claimSheetFilter;
 
       if (!sheetMatch) return false;
-
-      const status = claim.payment_status || "";
-      const statusMatch =
-        paymentStatusFilter === "all" ||
-        (paymentStatusFilter === "none" ? !status : status === paymentStatusFilter);
-
-      if (!statusMatch) return false;
       if (!search) return true;
 
       return Object.values(claim.data || {}).some((value) =>
         String(value).toLowerCase().includes(search)
       );
     });
-  }, [claims, claimSearch, claimSheetFilter, paymentStatusFilter]);
+  }, [claims, claimSearch, claimSheetFilter]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -1623,99 +1738,163 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   };
 
-  const persistStudyLeaves = (nextLeaves) => {
+  const applyStudyLeaves = (nextLeaves) => {
     setStudyLeaves(nextLeaves);
     saveStudyLeaves(nextLeaves);
   };
 
   const importStudyLeaves = async (imported) => {
-    persistStudyLeaves(imported);
-
-    let autoLinkNote = "";
-    try {
-      const linkReport = await autoLinkFacultySources({
-        sources: ["study_leave"],
-        studyLeaves: imported,
-      });
-      const linkedCount = linkReport.sources?.study_leave?.linked || 0;
-      if (linkedCount > 0) {
-        autoLinkNote = ` وربط ${linkedCount} إجازة بالأرشيف الذكي تلقائيًا.`;
-      }
-    } catch (linkError) {
-      console.warn("تعذر الربط التلقائي للإجازات الدراسية:", linkError);
-    }
-
-    alert(
-      `تم ربط شيت الإجازات الدراسية. تم استيراد ${imported.length} سجل.${autoLinkNote}`
-    );
-  };
-
-  const saveStudyLeave = (leave) => {
     setStudyLeaveError("");
     setStudyLeaveLoading(true);
-
     try {
-      let nextLeaves;
-      if (leave.id) {
-        nextLeaves = studyLeaves.map((item) =>
-          item.id === leave.id ? leave : item
-        );
-      } else {
-        nextLeaves = [
-          {
-            ...leave,
-            id: `leave-${Date.now()}`,
-            serial:
-              leave.serial ||
-              String(studyLeaves.length + 1),
-          },
-          ...studyLeaves,
-        ];
-      }
-      persistStudyLeaves(nextLeaves);
+      const { leaves: rows } = await replaceStudyLeaves(imported, {
+        user: currentUser,
+      });
+      applyStudyLeaves(rows);
+      setStudyLeaveBackup(loadStudyLeavesBackup());
 
-      // ربط الإجازة بالأرشيف الذكي في الخلفية.
+      // ربط الإجازات الجديدة بالأرشيف الذكي (لا يوقف النجاح لو فشل).
+      try {
+        await autoLinkFacultySources({
+          sources: ["study_leave"],
+          studyLeaves: rows,
+        });
+      } catch (linkError) {
+        console.warn("تعذر الربط التلقائي للإجازات الدراسية:", linkError);
+      }
+
+      return rows;
+    } catch (importError) {
+      console.error(importError);
+      setStudyLeaveError(
+        importError.message || "تعذر استبدال بيانات الإجازات الدراسية."
+      );
+      throw importError;
+    } finally {
+      setStudyLeaveLoading(false);
+    }
+  };
+
+  const saveStudyLeave = async (leave) => {
+    setStudyLeaveError("");
+    setStudyLeaveLoading(true);
+    try {
+      const saved = await saveStudyLeaveRecord(leave, { user: currentUser });
+      const nextLeaves = leave.id
+        ? studyLeaves.map((item) => (item.id === saved.id ? saved : item))
+        : [saved, ...studyLeaves];
+      applyStudyLeaves(nextLeaves);
+
       autoLinkFacultySources({
         sources: ["study_leave"],
         studyLeaves: nextLeaves,
       }).catch((linkError) => {
         console.warn("تعذر الربط التلقائي للإجازة الدراسية:", linkError);
       });
+
+      return saved;
     } catch (error) {
       console.error(error);
-      setStudyLeaveError("تعذر حفظ الإجازة الدراسية.");
+      setStudyLeaveError(error.message || "تعذر حفظ الإجازة الدراسية.");
+      throw error;
     } finally {
       setStudyLeaveLoading(false);
     }
   };
 
-  const deleteStudyLeave = (id) => {
+  const deleteStudyLeave = async (id) => {
+    if (!window.confirm("هل تريدين حذف سجل هذه الإجازة الدراسية؟")) {
+      return;
+    }
+    const target = studyLeaves.find((leave) => leave.id === id);
+    setStudyLeaveError("");
+    setStudyLeaveLoading(true);
+    try {
+      // نحذف ملف PDF من الجهاز أولًا (لو موجود) ثم السجل.
+      if (target?.hasPdf) {
+        await deleteStudyLeavePdf(target).catch((pdfError) => {
+          console.warn("تعذر حذف مرفق PDF قبل حذف الإجازة:", pdfError);
+        });
+      }
+      await deleteStudyLeaveRecord(id);
+      applyStudyLeaves(studyLeaves.filter((leave) => leave.id !== id));
+    } catch (error) {
+      console.error(error);
+      setStudyLeaveError(error.message || "تعذر حذف الإجازة الدراسية.");
+    } finally {
+      setStudyLeaveLoading(false);
+    }
+  };
+
+  const stopStudyLeaveSalary = async (id) => {
+    setStudyLeaveError("");
+    try {
+      const updated = await setStudyLeaveSalaryStatus(id, "يوقف المرتب");
+      applyStudyLeaves(
+        studyLeaves.map((leave) => (leave.id === updated.id ? updated : leave))
+      );
+    } catch (error) {
+      console.error(error);
+      setStudyLeaveError(error.message || "تعذر إيقاف مرتب الإجازة.");
+    }
+  };
+
+  /* ---------------------- مرفقات PDF للإجازات الدراسية ---------------------- */
+
+  const attachPdfToStudyLeave = async (leave, file) => {
+    const updated = await attachStudyLeavePdf(leave, file, {
+      user: currentUser,
+    });
+    applyStudyLeaves(
+      studyLeaves.map((item) => (item.id === updated.id ? updated : item))
+    );
+    return updated;
+  };
+
+  const removePdfFromStudyLeave = async (leave) => {
+    const updated = await deleteStudyLeavePdf(leave);
+    applyStudyLeaves(
+      studyLeaves.map((item) => (item.id === updated.id ? updated : item))
+    );
+    return updated;
+  };
+
+  const restoreStudyLeaves = async () => {
+    const backup = loadStudyLeavesBackup();
+    if (!backup?.count) {
+      alert("لا توجد نسخة احتياطية محفوظة.");
+      return;
+    }
     if (
       !window.confirm(
-        "هل تريدين حذف سجل هذه الإجازة الدراسية؟"
+        `استعادة ${backup.count} سجل من النسخة المحفوظة بتاريخ ${new Date(
+          backup.savedAt
+        ).toLocaleString("ar-EG")}؟ سيتم استبدال البيانات الحالية.`
       )
     ) {
       return;
     }
-
-    persistStudyLeaves(
-      studyLeaves.filter((leave) => leave.id !== id)
-    );
+    setStudyLeaveLoading(true);
+    setStudyLeaveError("");
+    try {
+      const rows = await restoreStudyLeavesBackup(backup);
+      applyStudyLeaves(rows);
+      alert(`تمت استعادة ${rows.length} سجل من النسخة الاحتياطية.`);
+    } catch (error) {
+      console.error(error);
+      setStudyLeaveError(error.message || "تعذر استعادة النسخة الاحتياطية.");
+    } finally {
+      setStudyLeaveLoading(false);
+      setStudyLeaveBackup(loadStudyLeavesBackup());
+    }
   };
 
-  const stopStudyLeaveSalary = (id) => {
-    persistStudyLeaves(
-      studyLeaves.map((leave) =>
-        leave.id === id
-          ? {
-              ...leave,
-              salaryStatus: "يوقف المرتب",
-              leaveStatus:
-                leave.leaveStatus || "منتهية",
-            }
-          : leave
-      )
-    );
+  const downloadLatestStudyLeavesBackup = () => {
+    try {
+      downloadStudyLeavesBackup(loadStudyLeavesBackup());
+    } catch (error) {
+      alert(error.message || "لا توجد نسخة احتياطية.");
+    }
   };
 
   const goTo = (nextMenu) => {
@@ -2277,8 +2456,6 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               setSearch={setClaimSearch}
               sheetFilter={claimSheetFilter}
               setSheetFilter={setClaimSheetFilter}
-              paymentStatusFilter={paymentStatusFilter}
-              setPaymentStatusFilter={setPaymentStatusFilter}
               loading={claimLoading}
               error={claimError}
               onImport={importClaimsExcel}
@@ -2292,6 +2469,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               onStartPayment={handleStartPayment}
               onPayInstallment={handleOpenInstallment}
               onSettleClaim={handleOpenSettle}
+              onOpenDetails={setClaimDetails}
               canManage={
                 currentUser?.role === "super_admin" ||
                 currentUser?.role === "admin"
@@ -2309,6 +2487,13 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               onSave={saveStudyLeave}
               onDelete={deleteStudyLeave}
               onStopSalary={stopStudyLeaveSalary}
+              onOpenPdf={openStudyLeavePdf}
+              onAttachPdf={attachPdfToStudyLeave}
+              onDownloadPdf={downloadStudyLeavePdf}
+              onDeletePdf={removePdfFromStudyLeave}
+              onRestoreBackup={restoreStudyLeaves}
+              onDownloadBackup={downloadLatestStudyLeavesBackup}
+              backupInfo={studyLeaveBackup}
             />
           )}
 
@@ -2534,6 +2719,22 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
           saving={savingPayment}
           onClose={() => setSettleModal(null)}
           onSave={handleConfirmSettle}
+        />
+      )}
+
+      {claimDetails && (
+        <ClaimDetailsModal
+          claim={claimDetails}
+          onClose={() => setClaimDetails(null)}
+          onAttachPdf={handleAttachClaimPdf}
+          onOpenPdf={openClaimPdf}
+          onDownloadPdf={downloadClaimPdf}
+          onDeletePdf={handleDeleteClaimPdf}
+          onUndoInstallment={handleUndoInstallment}
+          canManage={
+            currentUser?.role === "super_admin" ||
+            currentUser?.role === "admin"
+          }
         />
       )}
     </div>

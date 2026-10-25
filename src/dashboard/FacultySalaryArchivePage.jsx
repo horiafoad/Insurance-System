@@ -10,6 +10,13 @@ import { FileAnchor, FileDownloadLink } from "../components/FileLink";
 import OcrSplitPanel from "./OcrSplitPanel";
 import { FACULTY_SALARY_CONFIG } from "./salaryArchiveConfig";
 import { useRealtimeSync } from "../utils/realtimeSync";
+import {
+  fetchFacultySalaryStatuses,
+  indexSalaryStatuses,
+  salaryMemberKey,
+  stopFacultySalary,
+  reactivateFacultySalary,
+} from "../services/facultySalaryStatusService";
 import { pdfPageCount } from "../utils/executiveOrderPdf";
 import { renderPdfPageFromSource, renderPdfPageWithCount } from "../utils/pdfPageCache";
 
@@ -610,6 +617,11 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
 
   const [ocrMode, setOcrMode] = useState(false);
 
+  /* حالة إيقاف/إعادة تفعيل المرتب — جدول مستقل، بلا أي مساس بالأرشيف أو الملفات */
+  const [salaryStatusMap, setSalaryStatusMap] = useState({});
+  const [salaryStatusBusy, setSalaryStatusBusy] = useState("");
+  const [stoppedOnly, setStoppedOnly] = useState(false);
+
   const pageRef = useRef(0);
 
   /* قوائم الخيارات مشتقة من البيانات الفعلية (تُعرَّف بعد كل الـ states) — لا قوائم ثابتة */
@@ -704,6 +716,74 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
       mounted = false;
     };
   }, []);
+
+  /* ------------------ حالة إيقاف/إعادة تفعيل المرتب ------------------ */
+  const loadSalaryStatuses = async () => {
+    try {
+      const rows = await fetchFacultySalaryStatuses();
+      setSalaryStatusMap(indexSalaryStatuses(rows));
+    } catch (statusError) {
+      console.warn("تعذر تحميل حالات إيقاف المرتب:", statusError);
+    }
+  };
+
+  useEffect(() => {
+    loadSalaryStatuses();
+  }, []);
+
+  const handleStopFacultySalary = async (member) => {
+    const key = salaryMemberKey(member.faculty_name, member.computer_number);
+    const reason = window.prompt(
+      `سبب إيقاف مرتب «${member.faculty_name || "عضو هيئة التدريس"}»؟\n(يمكن تركه فارغًا — لن تُحذف أي بيانات أو ملفات)`,
+      ""
+    );
+    if (reason === null) return;
+
+    setSalaryStatusBusy(key);
+    setError("");
+    try {
+      const row = await stopFacultySalary({
+        facultyName: member.faculty_name,
+        computerNumber: member.computer_number,
+        reason,
+        user: currentUser,
+      });
+      setSalaryStatusMap((prev) => ({ ...prev, [key]: row }));
+    } catch (statusError) {
+      console.error(statusError);
+      setError(`تعذر إيقاف المرتب: ${statusError.message || "خطأ غير معروف"}`);
+    } finally {
+      setSalaryStatusBusy("");
+    }
+  };
+
+  const handleReactivateFacultySalary = async (member) => {
+    const key = salaryMemberKey(member.faculty_name, member.computer_number);
+    if (
+      !window.confirm(
+        `إعادة تفعيل مرتب «${member.faculty_name || "عضو هيئة التدريس"}»؟`
+      )
+    ) {
+      return;
+    }
+    setSalaryStatusBusy(key);
+    setError("");
+    try {
+      const row = await reactivateFacultySalary({
+        facultyName: member.faculty_name,
+        computerNumber: member.computer_number,
+        user: currentUser,
+      });
+      setSalaryStatusMap((prev) => ({ ...prev, [key]: row }));
+    } catch (statusError) {
+      console.error(statusError);
+      setError(
+        `تعذر إعادة تفعيل المرتب: ${statusError.message || "خطأ غير معروف"}`
+      );
+    } finally {
+      setSalaryStatusBusy("");
+    }
+  };
 
   /* ------------------ تحميل النتائج (Server-side pagination) ------------------ */
   useEffect(() => {
@@ -915,6 +995,48 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
 
     return yearsSorted(sortedMembers);
   }, [records]);
+
+  /* حالة المرتب لكل عضو + فلتر «المرتبات الموقوفة» */
+  const groupedWithSalary = useMemo(
+    () =>
+      grouped.map((member) => ({
+        ...member,
+        salaryStatus:
+          salaryStatusMap[
+            salaryMemberKey(member.faculty_name, member.computer_number)
+          ] || null,
+      })),
+    [grouped, salaryStatusMap]
+  );
+
+  const visibleGrouped = useMemo(
+    () =>
+      stoppedOnly
+        ? groupedWithSalary.filter(
+            (member) => member.salaryStatus?.status === "stopped"
+          )
+        : groupedWithSalary,
+    [groupedWithSalary, stoppedOnly]
+  );
+
+  const stoppedSalaryMembers = useMemo(
+    () =>
+      Object.values(salaryStatusMap).filter(
+        (row) => row.status === "stopped"
+      ),
+    [salaryStatusMap]
+  );
+
+  const stoppedWithoutFiles = useMemo(() => {
+    const keys = new Set(
+      groupedWithSalary.map((member) =>
+        salaryMemberKey(member.faculty_name, member.computer_number)
+      )
+    );
+    return stoppedSalaryMembers.filter(
+      (row) => !keys.has(salaryMemberKey(row.facultyName, row.computerNumber))
+    );
+  }, [groupedWithSalary, stoppedSalaryMembers]);
 
   const openRecord = (record) => {
     setSelectedRecord(record);
@@ -1854,7 +1976,81 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
             <button className="fsa-filter-clear" onClick={clearFilters} style={clearFiltersButtonStyle}>
               🗑 مسح الفلاتر
             </button>
+
+            <button
+              type="button"
+              onClick={() => setStoppedOnly((value) => !value)}
+              style={{
+                ...clearFiltersButtonStyle,
+                background: stoppedOnly ? "#FEE2E2" : "#F4F7FB",
+                borderColor: stoppedOnly ? "#FCA5A5" : "#DDE4EC",
+                color: stoppedOnly ? "#991B1B" : "#47607D",
+              }}
+              title="عرض أعضاء هيئة التدريس الذين أُوقف مرتبهم فقط"
+            >
+              ⛔ المرتبات الموقوفة ({stoppedSalaryMembers.length})
+            </button>
           </div>
+
+          {stoppedOnly && stoppedWithoutFiles.length > 0 && (
+            <div
+              style={{
+                marginBottom: 14,
+                border: "1px solid #FECACA",
+                background: "#FEF2F2",
+                borderRadius: 12,
+                padding: 12,
+              }}
+            >
+              <div style={{ fontWeight: 900, color: "#991B1B", marginBottom: 8 }}>
+                ⛔ مرتبات موقوفة بلا ملفات أرشيف ({stoppedWithoutFiles.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {stoppedWithoutFiles.map((row) => (
+                  <div
+                    key={row.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      background: "#fff",
+                      border: "1px solid #FEE2E2",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 800, color: "#0F2942" }}>
+                        {row.facultyName}
+                      </div>
+                      <div style={{ fontSize: 12.5, color: "#64748B" }}>
+                        💻 {cfg.numberLabel}: {row.computerNumber || "—"}
+                        {row.stoppedAt
+                          ? ` · أُوقف في ${new Date(row.stoppedAt).toLocaleDateString("ar-EG")}`
+                          : ""}
+                        {row.stoppedBy ? ` · بواسطة ${row.stoppedBy}` : ""}
+                        {row.stopReason ? ` · السبب: ${row.stopReason}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() =>
+                        handleReactivateFacultySalary({
+                          faculty_name: row.facultyName,
+                          computer_number: row.computerNumber,
+                        })
+                      }
+                      disabled={salaryStatusBusy === salaryMemberKey(row.facultyName, row.computerNumber)}
+                      style={{ ...clearFiltersButtonStyle, background: "#ECFDF5", color: "#047857", borderColor: "#A7F3D0" }}
+                    >
+                      ♻️ إعادة تفعيل
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(selectedYears.length > 0 || selectedMonths.length > 0) && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
@@ -1933,7 +2129,7 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
                 </div>
               ))}
             </div>
-          ) : grouped.length === 0 ? (
+          ) : visibleGrouped.length === 0 ? (
             <div
               style={{
                 textAlign: "center",
@@ -1946,15 +2142,19 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
             >
               <div style={{ fontSize: 46, marginBottom: 10 }}>📁</div>
               <div style={{ fontSize: 16, fontWeight: 800, color: "#334155", marginBottom: 6 }}>
-                لا توجد ملفات مطابقة للبحث
+                {stoppedOnly
+                  ? "لا توجد مرتبات موقوفة مطابقة"
+                  : "لا توجد ملفات مطابقة للبحث"}
               </div>
               <div style={{ fontSize: 13.5, lineHeight: 1.9 }}>
-                جرّب تغيير الاسم أو السنة أو الشهر، أو اضغطي «مسح الفلاتر» لعرض كامل الأرشيف.
+                {stoppedOnly
+                  ? "اضغطي «المرتبات الموقوفة» مرة أخرى لعرض كل الأرشيف."
+                  : "جرّب تغيير الاسم أو السنة أو الشهر، أو اضغطي «مسح الفلاتر» لعرض كامل الأرشيف."}
               </div>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-              {grouped.map((member) => (
+              {visibleGrouped.map((member) => (
                 <div
                   key={`${member.computer_number}|${member.faculty_name}`}
                   style={{
@@ -2001,6 +2201,29 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
                         <div style={{ fontSize: 12.5, color: "#64748B", marginTop: 2 }}>
                           💻 {cfg.numberLabel}: {member.computer_number}
                         </div>
+                        {member.salaryStatus?.status === "stopped" && (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: "#B91C1C",
+                            }}
+                          >
+                            ⛔ المرتب موقوف
+                            {member.salaryStatus.stoppedAt
+                              ? ` · ${new Date(
+                                  member.salaryStatus.stoppedAt
+                                ).toLocaleDateString("ar-EG")}`
+                              : ""}
+                            {member.salaryStatus.stoppedBy
+                              ? ` · بواسطة ${member.salaryStatus.stoppedBy}`
+                              : ""}
+                            {member.salaryStatus.stopReason
+                              ? ` · السبب: ${member.salaryStatus.stopReason}`
+                              : ""}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -2023,6 +2246,50 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
                       <button onClick={() => handleDownload(member.latest)} style={downloadButtonStyle}>
                         📥 تحميل
                       </button>
+
+                      {member.salaryStatus?.status === "stopped" ? (
+                        <button
+                          onClick={() => handleReactivateFacultySalary(member)}
+                          disabled={
+                            salaryStatusBusy ===
+                            salaryMemberKey(member.faculty_name, member.computer_number)
+                          }
+                          style={{
+                            border: "1px solid #A7F3D0",
+                            background: "#ECFDF5",
+                            color: "#047857",
+                            borderRadius: 9,
+                            padding: "8px 12px",
+                            fontWeight: 800,
+                            fontSize: 12.5,
+                            cursor: "pointer",
+                          }}
+                          title="إعادة تفعيل المرتب بدون حذف أي بيانات أو ملفات"
+                        >
+                          ♻️ إعادة تفعيل المرتب
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleStopFacultySalary(member)}
+                          disabled={
+                            salaryStatusBusy ===
+                            salaryMemberKey(member.faculty_name, member.computer_number)
+                          }
+                          style={{
+                            border: "1px solid #FCA5A5",
+                            background: "#FEF2F2",
+                            color: "#B91C1C",
+                            borderRadius: 9,
+                            padding: "8px 12px",
+                            fontWeight: 800,
+                            fontSize: 12.5,
+                            cursor: "pointer",
+                          }}
+                          title="إيقاف المرتب بدون حذف أي بيانات أو ملفات"
+                        >
+                          ⛔ إيقاف المرتب
+                        </button>
+                      )}
                     </div>
                   </div>
 

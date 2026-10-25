@@ -26,6 +26,9 @@ scripts/backup/
 scripts/claims-replace/excel-raw.json
 scripts/claims-replace/import-plan.json
 scripts/claims-replace/import.sql
+# مخرجات تحليل تحتوي أسماء وأكواد موظفين — تُولَّد محليًا فقط
+scripts/claims-replace/preview-compare.json
+scripts/study-leaves/new-file-analysis.json
 
 # --- نظام التشغيل والمحرر ---
 .idea/

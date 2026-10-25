@@ -44,11 +44,16 @@ export async function getClaimInstallments(claimId) {
   return data || [];
 }
 
-export async function startPayment(claimId) {
+export async function startPayment(claimId, actor = null) {
   const { data: claim } = await supabase.from("claims").select("payment_status").eq("id", claimId).maybeSingle();
   if (!claim) throw new Error("مطالبة غير موجودة");
   if (claim.payment_status === PAYMENT_STATUS.IN_PROGRESS) return true;
-  const { error } = await supabase.from("claims").update({ payment_status: PAYMENT_STATUS.IN_PROGRESS, started_at: new Date().toISOString() }).eq("id", claimId);
+  const patch = {
+    payment_status: PAYMENT_STATUS.IN_PROGRESS,
+    started_at: new Date().toISOString(),
+  };
+  if (actor) patch.started_by = actor;
+  const { error } = await supabase.from("claims").update(patch).eq("id", claimId);
   if (error) throw error;
   return true;
 }
@@ -67,13 +72,27 @@ export async function ensureInstallmentPlan(claimId) {
   return Number(data) || 0;
 }
 
-export async function payInstallment(claimId, installmentNumber, amount, paid = true, receiptNumber = null, paidAt = null, notes = null) {
+export async function payInstallment(claimId, installmentNumber, amount, paid = true, receiptNumber = null, paidAt = null, notes = null, options = {}) {
   if (installmentNumber < 1 || installmentNumber > 4) throw new Error("رقم القسط غير صحيح");
   const { data: existing } = await supabase.from("claim_installments").select("*").eq("claim_id", claimId).eq("installment_number", installmentNumber).maybeSingle();
+
+  // منع سداد القسط مرتين: التسجيل المكرر يحتاج «تصحيح السداد» صريحًا.
+  if (existing?.paid && paid && !options.correct) {
+    throw new Error(
+      `القسط ${installmentNumber} مسدد بالفعل — لا يمكن سداده مرتين. استخدمي «تصحيح السداد» عند وجود خطأ.`
+    );
+  }
+
+  const plannedAmount = Number(existing?.amount);
   const payload = {
     claim_id: claimId,
     installment_number: installmentNumber,
-    amount: Number(amount) || 0,
+    amount:
+      Number(amount) > 0
+        ? Number(amount)
+        : Number.isFinite(plannedAmount)
+          ? plannedAmount
+          : 0,
     paid,
     paid_at: paid ? (paidAt || new Date().toISOString()) : null,
     receipt_number: receiptNumber || null,
@@ -89,13 +108,80 @@ export async function payInstallment(claimId, installmentNumber, amount, paid = 
   return true;
 }
 
-export async function settleClaim(claimId, reason, notes = null) {
+/**
+ * تصحيح سداد قسط مسدد: يُلغي تسجيل السداد (مع حفظ السبب والمستخدم في notes)
+ * ثم يعيد المطالبة إلى «جاري السداد» لو كانت قد أُغلقت وصار عليها متبقٍ.
+ * هذا هو المسار الوحيد المسموح لتعديل قسط مسدد — ولا يحذف القسط.
+ */
+export async function undoInstallmentPayment(claimId, installmentNumber, { user = null, reason = "" } = {}) {
+  const actor = user?.full_name || user?.username || "مستخدم غير معروف";
+  const { data: existing, error: loadError } = await supabase
+    .from("claim_installments")
+    .select("*")
+    .eq("claim_id", claimId)
+    .eq("installment_number", installmentNumber)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!existing) throw new Error("هذا القسط غير موجود.");
+  if (!existing.paid) throw new Error("هذا القسط غير مسدد أصلًا.");
+
+  const stamp = new Date().toISOString();
+  const noteLine = `تصحيح سداد: أُلغي تسجيل السداد بواسطة ${actor} بتاريخ ${stamp}${
+    String(reason || "").trim() ? ` — السبب: ${String(reason).trim()}` : ""
+  }`;
+
+  const { error } = await supabase
+    .from("claim_installments")
+    .update({
+      paid: false,
+      paid_at: null,
+      receipt_number: null,
+      notes: existing.notes ? `${existing.notes} | ${noteLine}` : noteLine,
+    })
+    .eq("id", existing.id);
+  if (error) throw error;
+
+  // المحفّز أعاد حساب المبالغ. لو كانت المطالبة «خالي الطرف» وصار عليها متبقٍ
+  // نعيدها إلى «جاري السداد» بدل إبقائها مغلقة بالخطأ.
+  const { data: claim } = await supabase
+    .from("claims")
+    .select("payment_status, remaining_amount")
+    .eq("id", claimId)
+    .maybeSingle();
+
+  if (
+    claim &&
+    claim.payment_status === PAYMENT_STATUS.SETTLED &&
+    Math.round(Number(claim.remaining_amount || 0) * 100) > 0
+  ) {
+    const { error: reopenError } = await supabase
+      .from("claims")
+      .update({
+        payment_status: PAYMENT_STATUS.IN_PROGRESS,
+        settled_at: null,
+        settlement_reason: null,
+      })
+      .eq("id", claimId);
+    if (reopenError) throw reopenError;
+  }
+
+  return true;
+}
+
+export async function settleClaim(claimId, reason, notes = null, actor = null) {
   const { error } = await supabase.rpc("claims_settle_claim", {
     p_claim_id: claimId,
     p_reason: reason,
     p_notes: notes,
   });
   if (error) throw error;
+  if (actor) {
+    const { error: actorError } = await supabase
+      .from("claims")
+      .update({ settled_by: actor })
+      .eq("id", claimId);
+    if (actorError) throw actorError;
+  }
   return true;
 }
 
@@ -111,7 +197,14 @@ export async function closeClaimIfFullyPaid(claimId) {
     .maybeSingle();
   if (error) throw error;
   if (!claim) return false;
-  if (Number(claim.remaining_amount) > 0) return false;
+
+  // شرط «خالي الطرف»: كل الأقساط مسددة AND المتبقي صفر بدقة العملة (قرشان).
+  const installments = await getClaimInstallments(claimId);
+  if (installments.length === 0) return false;
+  if (installments.some((inst) => !inst.paid)) return false;
+
+  const remainingCents = Math.round(Number(claim.remaining_amount || 0) * 100);
+  if (remainingCents > 0) return false;
   if (claim.payment_status === PAYMENT_STATUS.SETTLED) return true;
 
   const { error: updateError } = await supabase

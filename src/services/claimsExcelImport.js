@@ -12,6 +12,17 @@ const isRemainingLabel = (value) => /متبق/.test(asText(value));
 const round2 = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
 const pad2 = (value) => String(value).padStart(2, "0");
 
+function isValidYmd(year, month, day) {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (year < 1950 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 /**
  * يحوّل قيمة خلية تاريخ إلى YYYY-MM-DD، ويرجع null لو تعذّر التعرف عليها.
  * يدعم تواريخ Excel الرقمية والنصوص بصيغة YYYY-MM-DD أو D/M/YYYY أو D\M\YYYY.
@@ -37,7 +48,11 @@ export function toIsoDate(value) {
   if (!text) return null;
 
   const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  if (iso) {
+    return isValidYmd(Number(iso[1]), Number(iso[2]), Number(iso[3]))
+      ? `${iso[1]}-${iso[2]}-${iso[3]}`
+      : null;
+  }
 
   const loose = text.match(/^(\d{1,2})[/\\.-](\d{1,2})[/\\.-](\d{2,4})$/);
   if (loose) {
@@ -58,7 +73,7 @@ export function toIsoDate(value) {
       day = second;
     }
 
-    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+    if (isValidYmd(year, month, day)) {
       return `${year}-${pad2(month)}-${pad2(day)}`;
     }
   }
@@ -83,15 +98,17 @@ function buildClaimFromRow(sheetName, rowNumber, cells, headers) {
 
   if (sheet === "بدون وجه حق") {
     data["المبلغ"] = total;
-    data["من"] = fromDate ?? asText(cells[3]);
-    data["الى"] = toDate ?? asText(cells[4]);
+    data["من"] = fromDate ?? "";
+    data["الى"] = toDate ?? "";
   } else {
     data["مبلغ مطلوب"] = total;
-    data["مدة من "] = fromDate ?? asText(cells[3]);
-    data["حتى تاريخ"] = toDate ?? asText(cells[4]);
+    data["مدة من "] = fromDate ?? "";
+    data["حتى تاريخ"] = toDate ?? "";
     data["القسم"] = department;
     data["حالة السداد"] = sheetStatus || sheet;
     if (sheet === "خالي الطرف" && note) data["ملاحظات"] = note;
+    // بعض صفوف "بدون وجه حق" تحتوي ملاحظة في عمود القسم بدل اسم القسم.
+    if (sheet === "بدون وجه حق" && department) data["ملاحظات"] = department;
   }
 
   return {
@@ -153,16 +170,27 @@ function finalizeClaim(claim) {
         );
       }
 
-      installments = paidRows.map((inst) => ({
-        number: inst.number,
-        amount: inst.amount,
-        paid: true,
-        paid_at: inst.paidAt,
-        receipt_number: inst.receipt,
-      }));
+      installments = [];
+      const used = new Set();
+      paidRows.forEach((inst) => {
+        let number = inst.number;
+        if (!number) {
+          let free = 1;
+          while (free <= 4 && used.has(free)) free += 1;
+          number = free <= 4 ? free : null;
+        }
+        if (number) used.add(number);
+        installments.push({
+          number,
+          amount: inst.amount,
+          paid: true,
+          paid_at: inst.paidAt,
+          receipt_number: inst.receipt,
+        });
+      });
+      installments.sort((a, b) => (a.number || 99) - (b.number || 99));
 
       if (remaining > 0) {
-        const used = new Set(installments.map((inst) => inst.number));
         let next = 1;
         while (next <= 4 && used.has(next)) next += 1;
         if (next <= 4) {
@@ -193,7 +221,9 @@ function finalizeClaim(claim) {
 
     claim.data["مبلغ متبقى"] = remaining;
     for (let n = 1; n <= 4; n += 1) {
-      const paidInst = paidRows.find((inst) => inst.number === n);
+      const paidInst = installments.find(
+        (inst) => inst.number === n && inst.paid
+      );
       claim.data[`ق ${n}`] = paidInst ? paidInst.amount : "";
     }
   } else {
@@ -234,21 +264,26 @@ function parseSheetWithMergedInstallments(sheetName, worksheet, fileName) {
 
   const claims = [];
   let current = null;
-  let awaitingRemainingValue = false;
 
-  rows.forEach((cells, index) => {
+  for (let index = 0; index < rows.length; index += 1) {
+    const cells = rows[index];
     const rowNumber = index + 1;
     const name = asText(cells?.[1]);
     const amount = cells?.[2];
 
     if (name === "الاسم") {
       current = null;
-      awaitingRemainingValue = false;
-      return;
+      continue;
     }
 
     // صف مطالبة رئيسي: اسم + مبلغ موجب.
-    if (!isInstallmentLabel(name) && name !== "" && isNumber(amount) && amount > 0) {
+    if (
+      !isInstallmentLabel(name) &&
+      !isRemainingLabel(name) &&
+      name !== "" &&
+      isNumber(amount) &&
+      amount > 0
+    ) {
       current = buildClaimFromRow(
         sheetName,
         rowNumber,
@@ -256,26 +291,39 @@ function parseSheetWithMergedInstallments(sheetName, worksheet, fileName) {
         { fileName }
       );
       claims.push(current);
-      awaitingRemainingValue = false;
-      return;
+      continue;
     }
 
-    if (!current) return;
+    if (!current) continue;
 
     if (isRemainingLabel(amount)) {
-      awaitingRemainingValue = true;
       const inlineValue = cells?.[1];
       if (isNumber(inlineValue)) {
         current.remaining = round2(Math.abs(inlineValue));
-        awaitingRemainingValue = false;
+        continue;
       }
-      return;
-    }
 
-    if (awaitingRemainingValue && name === "" && isNumber(amount)) {
-      current.remaining = round2(Math.abs(amount));
-      awaitingRemainingValue = false;
-      return;
+      // بعض الكتل التالفة تفقد تسمية «ق N» وتضع قيمة الدفع في عمود المتبقي
+      // مع تاريخ دفع/رقم إيصال؛ نعتبرها دفعة مجهولة الترقيم لا مبلغًا متبقيًا.
+      const next = rows[index + 1];
+      const nextName = asText(next?.[1]);
+      const nextAmount = next?.[2];
+      const hasPaymentProof = Boolean(asText(next?.[3]) || asText(next?.[4]));
+      if (nextName === "" && isNumber(nextAmount)) {
+        if (hasPaymentProof) {
+          current.raw_installments.push({
+            number: null,
+            amount: round2(nextAmount),
+            paidAt: toIsoDate(next?.[3]),
+            receipt: asText(next?.[4]) || null,
+            unnamed: true,
+          });
+        } else {
+          current.remaining = round2(Math.abs(nextAmount));
+        }
+        index += 1;
+      }
+      continue;
     }
 
     if (isInstallmentLabel(name)) {
@@ -286,13 +334,13 @@ function parseSheetWithMergedInstallments(sheetName, worksheet, fileName) {
         paidAt: toIsoDate(cells?.[3]),
         receipt: asText(cells?.[4]) || null,
       });
-      return;
+      continue;
     }
 
     if (name === "" && isNumber(amount)) {
       current.remaining = round2(Math.abs(amount));
     }
-  });
+  }
 
   return claims;
 }
