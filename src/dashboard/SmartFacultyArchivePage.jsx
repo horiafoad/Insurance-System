@@ -44,6 +44,8 @@ import {
 } from "../services/facultyArchiveService";
 import { normalizeArabicKey, formatArabicNumber, normalizeMemberCode, toDisplayName } from "../utils/arabicText";
 import { analyzeArchiveFile } from "../utils/facultyArchiveMatcher";
+import { autoLinkFacultySources } from "../services/facultyAutoLinkService";
+import { loadStudyLeaves } from "./studyLeaves";
 
 /* ------------------------------------------------------------------ */
 /* أدوات العرض                                                         */
@@ -74,6 +76,8 @@ const MATCH_LABEL = {
   alias: "اسم بديل",
   manual: "ربط يدوي",
   exact_code: "تطابق رقم",
+  similar_name: "تشابه اسم",
+  partial_name: "اسم مختصر",
 };
 
 /**
@@ -314,7 +318,9 @@ function LinkPicker({ member, onClose, onLinked }) {
             marginBottom: 12,
           }}
         >
-          {LINK_TYPES.filter((t) => LINK_SOURCES[t].table).map((t) => (
+          {LINK_TYPES.filter(
+            (t) => LINK_SOURCES[t].table && t !== "study_leave"
+          ).map((t) => (
             <button
               key={t}
               type="button"
@@ -1098,6 +1104,9 @@ export default function SmartFacultyArchivePage({ currentUser }) {
   const [smartBusy, setSmartBusy] = useState(false);
   const [smartNotice, setSmartNotice] = useState("");
   const [smartError, setSmartError] = useState("");
+  const [autoLinkBusy, setAutoLinkBusy] = useState(false);
+  const [autoLinkReport, setAutoLinkReport] = useState(null);
+  const [autoLinkError, setAutoLinkError] = useState("");
   const [newMemberForm, setNewMemberForm] = useState({
     open: false,
     file: null,
@@ -1148,6 +1157,65 @@ export default function SmartFacultyArchivePage({ currentUser }) {
       setLoading(false);
     }
   }, []);
+
+  const handleAutoLink = useCallback(async () => {
+    setAutoLinkBusy(true);
+    setAutoLinkError("");
+    setAutoLinkReport(null);
+    try {
+      const report = await autoLinkFacultySources({
+        studyLeaves: loadStudyLeaves(),
+      });
+      setAutoLinkReport(report);
+      await loadAll();
+    } catch (err) {
+      setAutoLinkError(
+        "تعذر الربط التلقائي: " + (err?.message || "خطأ غير معروف")
+      );
+    } finally {
+      setAutoLinkBusy(false);
+    }
+  }, [loadAll]);
+
+  const confirmAutoLinkCandidate = useCallback(
+    async (item, candidate) => {
+      setAutoLinkError("");
+      try {
+        await createLink({
+          memberId: candidate.memberId,
+          linkType: item.linkType,
+          refTable: item.refTable,
+          refId: item.refId,
+          refLabel: item.label,
+          refDate: item.refDate,
+          snapshot: item.snapshot,
+          matchedBy: "manual",
+          confidence: 1,
+        });
+        setAutoLinkReport((previous) =>
+          previous
+            ? {
+                ...previous,
+                review: previous.review.filter(
+                  (row) =>
+                    !(
+                      row.linkType === item.linkType &&
+                      row.refId === item.refId
+                    )
+                ),
+                confirmed: (previous.confirmed || 0) + 1,
+              }
+            : previous
+        );
+        await loadAll();
+      } catch (err) {
+        setAutoLinkError(
+          "تعذر ربط السجل يدويًا: " + (err?.message || "خطأ غير معروف")
+        );
+      }
+    },
+    [loadAll]
+  );
 
   const handleSmartUpload = useCallback(async (file) => {
     if (!file) return;
@@ -1348,6 +1416,25 @@ export default function SmartFacultyArchivePage({ currentUser }) {
           </button>
           <button
             type="button"
+            onClick={handleAutoLink}
+            disabled={autoLinkBusy || loading}
+            style={{
+              border: 0,
+              background: "#B45309",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "9px 14px",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: autoLinkBusy || loading ? "not-allowed" : "pointer",
+              boxShadow: "0 3px 10px rgba(180,83,9,.22)",
+            }}
+            title="مطابقة أسماء المطالبات والقضايا والإجازات الدراسية مع الأرشيف وربطها تلقائيًا"
+          >
+            {autoLinkBusy ? "⏳ جارٍ الربط..." : "🔗 ربط تلقائي"}
+          </button>
+          <button
+            type="button"
             onClick={loadAll}
             disabled={loading}
             style={{
@@ -1503,6 +1590,142 @@ export default function SmartFacultyArchivePage({ currentUser }) {
           }}
         >
           {smartNotice}
+        </div>
+      )}
+
+      {autoLinkError && (
+        <div
+          style={{
+            background: "#FEE2E2",
+            border: "1px solid #FECACA",
+            color: "#991B1B",
+            borderRadius: 9,
+            padding: 12,
+            marginBottom: 14,
+            fontSize: 13,
+            lineHeight: 1.9,
+          }}
+        >
+          {autoLinkError}
+        </div>
+      )}
+
+      {autoLinkReport && (
+        <div
+          style={{
+            background: "#FFFBEB",
+            border: "1px solid #FDE68A",
+            borderRadius: 12,
+            padding: 14,
+            marginBottom: 16,
+            fontSize: 13,
+            color: "#78350F",
+            lineHeight: 1.9,
+          }}
+        >
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>
+            🔗 نتيجة الربط التلقائي بالأرشيف
+          </div>
+          <div>
+            أُضيف <b>{autoLinkReport.created}</b> رابطًا جديدًا.{" "}
+            {[
+              autoLinkReport.sources?.claim
+                ? `مطالبات: ${autoLinkReport.sources.claim.linked}`
+                : null,
+              autoLinkReport.sources?.issue
+                ? `قضايا: ${autoLinkReport.sources.issue.linked}`
+                : null,
+              autoLinkReport.sources?.study_leave
+                ? `إجازات دراسية: ${autoLinkReport.sources.study_leave.linked}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" • ")}
+            {autoLinkReport.existing
+              ? ` • موجود مسبقًا: ${autoLinkReport.existing}`
+              : ""}
+            {autoLinkReport.noMatch
+              ? ` • بلا مطابقة: ${autoLinkReport.noMatch}`
+              : ""}
+            {autoLinkReport.confirmed
+              ? ` • تم تأكيدها يدويًا: ${autoLinkReport.confirmed}`
+              : ""}
+          </div>
+
+          {(autoLinkReport.review || []).length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", fontWeight: 800 }}>
+                ⚠️ أسماء متشابهة تحتاج مراجعة (
+                {(autoLinkReport.review || []).length}) — اضغطي لاختيار العضو
+                الصحيح
+              </summary>
+              <div
+                style={{
+                  maxHeight: 340,
+                  overflowY: "auto",
+                  marginTop: 8,
+                  paddingLeft: 4,
+                }}
+              >
+                {(autoLinkReport.review || []).map((item, index) => (
+                  <div
+                    key={`${item.linkType}-${item.refId}-${index}`}
+                    style={{
+                      background: "#fff",
+                      border: "1px solid #FDE68A",
+                      borderRadius: 10,
+                      padding: "9px 11px",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, color: "#1F2937" }}>
+                      [{LINK_SOURCES[item.linkType]?.label || item.linkType}]{" "}
+                      {item.name || item.label}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        flexWrap: "wrap",
+                        marginTop: 6,
+                      }}
+                    >
+                      {(item.candidates || []).map((candidate) => (
+                        <button
+                          key={candidate.memberId}
+                          type="button"
+                          onClick={() =>
+                            confirmAutoLinkCandidate(item, candidate)
+                          }
+                          style={{
+                            border: "1px solid #BFDBFE",
+                            background: "#EFF6FF",
+                            color: "#1D4ED8",
+                            borderRadius: 8,
+                            padding: "4px 9px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                          title="ربط هذا السجل بالعضو"
+                        >
+                          {candidate.name} (#{candidate.code || "—"}){" "}
+                          {Math.round((candidate.score || 0) * 100)}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {autoLinkReport.writeErrors?.length > 0 && (
+            <div style={{ color: "#B91C1C", marginTop: 6 }}>
+              تعذّر حفظ {autoLinkReport.writeErrors.length} دفعة:{" "}
+              {autoLinkReport.writeErrors[0]}
+            </div>
+          )}
         </div>
       )}
 

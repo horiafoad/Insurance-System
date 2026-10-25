@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node scripts/export-old-data/selftest.mjs && node scripts/migration/tests/guard.test.mjs && node scripts/migration/tests/schema-audit.test.mjs",
+    "test:faculty": "node scripts/faculty-archive/tests/name-matcher.test.mjs",
     "schema:build": "node scripts/migration/build-new-schema.mjs",
     "schema:audit": "node scripts/migration/tests/schema-audit.test.mjs",
     "migrate:schema": "node scripts/migration/auto-migrate.mjs --phase schema",

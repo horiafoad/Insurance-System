@@ -63,6 +63,18 @@ export const LINK_SOURCES = {
     title: (r) => r.case_number || r.case_title || "قضية",
     subtitle: (r) => [r.case_title, r.status].filter(Boolean).join(" • "),
   },
+  study_leave: {
+    table: "study_leaves",
+    label: "إجازات دراسية",
+    icon: "🎓",
+    color: "#FEF9C3",
+    title: (r) =>
+      r.name
+        ? `${r.leaveKind || "إجازة دراسية"} — ${r.name}`
+        : r.leaveKind || "إجازة دراسية",
+    subtitle: (r) =>
+      [r.startDate, r.endDate, r.salaryStatus].filter(Boolean).join(" • "),
+  },
   letter: {
     table: "letters",
     label: "خطابات",

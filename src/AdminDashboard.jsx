@@ -56,6 +56,7 @@ import {
 } from "./utils/permissions";
 import { useRealtimeSync, applyRowChange } from "./utils/realtimeSync";
 import { parseClaimsWorkbook } from "./services/claimsExcelImport";
+import { autoLinkFacultySources } from "./services/facultyAutoLinkService";
 import {
   startPayment as startClaimPayment,
   payInstallment as payClaimInstallment,
@@ -989,8 +990,22 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         );
       }
 
+      let autoLinkNote = "";
+      try {
+        const linkReport = await autoLinkFacultySources({
+          sources: ["claim"],
+        });
+        const linkedCount = linkReport.sources?.claim?.linked || 0;
+        if (linkedCount > 0) {
+          autoLinkNote = ` وربط ${linkedCount} مطالبة بالأرشيف الذكي تلقائيًا.`;
+        }
+      } catch (linkError) {
+        // فشل الربط لا يُفشل الاستيراد — يُسجَّل فقط.
+        console.warn("تعذر الربط التلقائي بعد الاستيراد:", linkError);
+      }
+
       alert(
-        `تم استيراد ${newClaims.length} مطالبة جديدة وتحديث ${updatedClaims.length} مطالبة و ${instCount} قسط بنجاح.`
+        `تم استيراد ${newClaims.length} مطالبة جديدة وتحديث ${updatedClaims.length} مطالبة و ${instCount} قسط بنجاح.${autoLinkNote}`
       );
     } catch (error) {
       console.error(error);
@@ -1207,6 +1222,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       setClaimSheetFilter("all");
 
       alert("تمت إضافة المطالبة وحفظها في قاعدة البيانات بنجاح.");
+
+      // ربط المطالبة الجديدة بالأرشيف الذكي في الخلفية (لا يعطّل الحفظ).
+      autoLinkFacultySources({ sources: ["claim"] }).catch((linkError) => {
+        console.warn("تعذر الربط التلقائي للمطالبة الجديدة:", linkError);
+      });
     } catch (error) {
       console.error(error);
       setClaimError("تعذر حفظ المطالبة في قاعدة البيانات.");
@@ -1608,11 +1628,25 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     saveStudyLeaves(nextLeaves);
   };
 
-  const importStudyLeaves = (imported) => {
+  const importStudyLeaves = async (imported) => {
     persistStudyLeaves(imported);
 
+    let autoLinkNote = "";
+    try {
+      const linkReport = await autoLinkFacultySources({
+        sources: ["study_leave"],
+        studyLeaves: imported,
+      });
+      const linkedCount = linkReport.sources?.study_leave?.linked || 0;
+      if (linkedCount > 0) {
+        autoLinkNote = ` وربط ${linkedCount} إجازة بالأرشيف الذكي تلقائيًا.`;
+      }
+    } catch (linkError) {
+      console.warn("تعذر الربط التلقائي للإجازات الدراسية:", linkError);
+    }
+
     alert(
-      `تم ربط شيت الإجازات الدراسية. تم استيراد ${imported.length} سجل.`
+      `تم ربط شيت الإجازات الدراسية. تم استيراد ${imported.length} سجل.${autoLinkNote}`
     );
   };
 
@@ -1621,14 +1655,13 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     setStudyLeaveLoading(true);
 
     try {
+      let nextLeaves;
       if (leave.id) {
-        persistStudyLeaves(
-          studyLeaves.map((item) =>
-            item.id === leave.id ? leave : item
-          )
+        nextLeaves = studyLeaves.map((item) =>
+          item.id === leave.id ? leave : item
         );
       } else {
-        persistStudyLeaves([
+        nextLeaves = [
           {
             ...leave,
             id: `leave-${Date.now()}`,
@@ -1637,8 +1670,17 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               String(studyLeaves.length + 1),
           },
           ...studyLeaves,
-        ]);
+        ];
       }
+      persistStudyLeaves(nextLeaves);
+
+      // ربط الإجازة بالأرشيف الذكي في الخلفية.
+      autoLinkFacultySources({
+        sources: ["study_leave"],
+        studyLeaves: nextLeaves,
+      }).catch((linkError) => {
+        console.warn("تعذر الربط التلقائي للإجازة الدراسية:", linkError);
+      });
     } catch (error) {
       console.error(error);
       setStudyLeaveError("تعذر حفظ الإجازة الدراسية.");

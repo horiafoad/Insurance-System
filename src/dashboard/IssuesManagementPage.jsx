@@ -8,6 +8,7 @@ import {
 } from "../services/fileStorage";
 import { FileAnchor, FileDownloadLink } from "../components/FileLink";
 import { useRealtimeSync } from "../utils/realtimeSync";
+import { autoLinkFacultySources } from "../services/facultyAutoLinkService";
 import * as XLSX from "xlsx";
 
 const PAYMENT_STATUS_OPTIONS = [
@@ -496,6 +497,9 @@ export default function IssuesManagementPage() {
       );
       setExcelFile(null);
       loadIssues();
+      autoLinkFacultySources({ sources: ["issue"] }).catch((linkError) => {
+        console.warn("تعذر الربط التلقائي لقضايا Excel:", linkError);
+      });
     } catch (err) {
       setError("فشل رفع ملف Excel: " + err.message);
     } finally {
@@ -597,6 +601,9 @@ export default function IssuesManagementPage() {
         "تم رفع ملف القضية بنجاح!" +
           (isLocalRef(uploaded.url) ? ` الملف محفوظ في: ${uploaded.dir}` : "")
       );
+      autoLinkFacultySources({ sources: ["issue"] }).catch((linkError) => {
+        console.warn("تعذر الربط التلقائي للقضية:", linkError);
+      });
       setPdfFile(null);
       setCaseNumber("");
       setCaseTitle("");
