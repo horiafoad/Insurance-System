@@ -10,6 +10,8 @@ export default function ClaimsPage({
   setSearch,
   sheetFilter,
   setSheetFilter,
+  paymentStatusFilter,
+  setPaymentStatusFilter,
   loading,
   error,
   onImport,
@@ -17,6 +19,9 @@ export default function ClaimsPage({
   onDeleteClaim,
   onUpdateClaim,
   onDeleteAllClaims,
+  onStartPayment,
+  onPayInstallment,
+  onSettleClaim,
   canManage = false,
 }) {
   const [editingClaim, setEditingClaim] = useState(null);
@@ -44,15 +49,13 @@ export default function ClaimsPage({
   const total = allClaims.length;
   const stats = useMemo(() => {
     const pending = allClaims.filter((claim) =>
-      ["قيد المراجعة", "جديد", "معلق"].includes(String(claim.data?.الحالة || claim.status || ""))
+      ["لم يسدد", "جديد", "قيد المراجعة"].includes(String(claim.payment_status || claim.status || ""))
     ).length;
     const inProgress = allClaims.filter((claim) =>
-      ["جاري التنفيذ", "قيد التنفيذ", "قيد المعالجة"].includes(
-        String(claim.data?.الحالة || claim.status || "")
-      )
+      claim.payment_status === "جاري السداد"
     ).length;
     const completed = allClaims.filter((claim) =>
-      ["مكتمل", "تم الصرف", "منتهي"].includes(String(claim.data?.الحالة || claim.status || ""))
+      ["خالي الطرف", "مكتمل", "تم السداد"].includes(String(claim.payment_status || claim.status || ""))
     ).length;
 
     return {

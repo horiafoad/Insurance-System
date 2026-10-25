@@ -39,6 +39,7 @@ import SupportDrawerButton from "./dashboard/SupportDrawerButton";
 import MonthlyReportsPage from "./dashboard/MonthlyReportsPage";
 import {
   ClaimFormModal,
+  ExcelPreviewModal,
   TaskDetailsModal,
   TaskFormModal,
 } from "./dashboard/DashboardModals";
@@ -52,6 +53,7 @@ import {
   canAccessMenu,
 } from "./utils/permissions";
 import { useRealtimeSync, applyRowChange } from "./utils/realtimeSync";
+import { parseClaimsWorkbook } from "./services/claimsExcelImport";
 
 export default function AdminDashboard({ currentUser, focusRequestId: propFocusId }) {
   const qrCodeFromUrl = new URLSearchParams(window.location.search).get("qr")?.trim() || "";
@@ -157,6 +159,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
 
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [claimForm, setClaimForm] = useState(createEmptyClaim());
+
+  // Preview / Import state
+  const [excelPreview, setExcelPreview] = useState(null);
+  const [excelPreviewOpen, setExcelPreviewOpen] = useState(false);
+  const [importingClaims, setImportingClaims] = useState(false);
 
   const [studyLeaves, setStudyLeaves] = useState([]);
   const [studyLeaveLoading, setStudyLeaveLoading] = useState(false);
@@ -731,61 +738,252 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         cellDates: true,
       });
 
-      const importedClaims = [];
+      const { claims: parsedClaims, sheets, issues } = parseClaimsWorkbook(
+        workbook,
+        file.name
+      );
 
-      workbook.SheetNames.forEach((sheetName) => {
-        const worksheet = workbook.Sheets[sheetName];
-
-        const rows = XLSX.utils.sheet_to_json(worksheet, {
-          defval: "",
-          raw: false,
-        });
-
-        rows.forEach((row, index) => {
-          importedClaims.push({
-            sheet_name: sheetName,
-            row_number: index + 2,
-            data: row,
-          });
-        });
-      });
-
-      if (importedClaims.length === 0) {
-        setClaimError("تم فتح الملف ولكن لا توجد بيانات داخله.");
+      if (parsedClaims.length === 0) {
+        setClaimError("تم فتح الملف ولكن لا توجد مطالبات داخله.");
         return;
       }
 
-      const { error } = await supabase
-        .from("claims")
-        .insert(importedClaims);
+      // --- Preview & duplicate analysis ---
+      const existingKeys = new Set(
+        claims.map((c) => `${c.sheet_name}||${c.row_number}`)
+      );
 
-      if (error) {
-        console.error(error);
+      let duplicateCount = 0;
+      const previewRows = parsedClaims.map((item) => {
+        const key = `${item.sheet_name}||${item.row_number}`;
+        const isDup = existingKeys.has(key);
+        if (isDup) duplicateCount++;
+        return {
+          ...item,
+          isDuplicate: isDup,
+        };
+      });
 
-        setClaimError(
-          "تمت قراءة Excel ولكن حدث خطأ أثناء حفظ البيانات في قاعدة البيانات: " +
-            error.message
-        );
+      const newCount = previewRows.filter((r) => !r.isDuplicate).length;
+      const columns = Array.from(
+        new Set(parsedClaims.flatMap((p) => Object.keys(p.data || {})))
+      );
 
+      setExcelPreview({
+        rows: previewRows,
+        totalRows: parsedClaims.length,
+        newRows: newCount,
+        duplicateRows: duplicateCount,
+        sheets,
+        columns,
+        fileName: file.name,
+        issues,
+      });
+      setExcelPreviewOpen(true);
+    } catch (error) {
+      console.error(error);
+
+      setClaimError(
+        "حدث خطأ أثناء قراءة الملف. تأكدي أن الملف XLSX أو XLS."
+      );
+    } finally {
+      setClaimLoading(false);
+      event.target.value = "";
+    }
+  };
+
+  const executeClaimsImport = async (onlyNew = true) => {
+    if (!excelPreview) return;
+    setImportingClaims(true);
+    setClaimError("");
+
+    try {
+      const rowsToImport = onlyNew
+        ? excelPreview.rows.filter((r) => !r.isDuplicate)
+        : excelPreview.rows;
+
+      if (rowsToImport.length === 0) {
+        setClaimError("لا توجد سجلات جديدة للاستيراد.");
         return;
+      }
+
+      // Prepare claims records from the parsed Excel (installment rows already merged)
+      const claimsToSave = rowsToImport.map((item) => ({
+        sheet_name: item.sheet_name,
+        row_number: item.row_number,
+        data: item.data,
+        claimant_name: item.claimant_name,
+        claim_number: item.claim_number,
+        amount: item.total_amount,
+        payment_status: item.payment_status,
+        total_amount: item.total_amount,
+        file_name: excelPreview.fileName,
+      }));
+
+      // Read current keys from the database so stale client state cannot cause duplicates.
+      // The unique index on (sheet_name, row_number) is partial, so ON CONFLICT cannot target it.
+      const sheetNames = Array.from(
+        new Set(claimsToSave.map((c) => c.sheet_name))
+      );
+      const { data: existingClaims, error: existingError } = await supabase
+        .from("claims")
+        .select("id, sheet_name, row_number, paid_amount")
+        .in("sheet_name", sheetNames);
+
+      if (existingError) {
+        console.error(existingError);
+        setClaimError(
+          "حدث خطأ أثناء قراءة المطالبات الحالية: " + existingError.message
+        );
+        return;
+      }
+
+      const existingByKey = new Map(
+        (existingClaims || []).map((c) => [
+          `${c.sheet_name}||${c.row_number}`,
+          c,
+        ])
+      );
+
+      const newClaims = [];
+      const updatedClaims = [];
+      const parsedByKey = new Map(
+        rowsToImport.map((row) => [
+          `${row.sheet_name}||${row.row_number}`,
+          row,
+        ])
+      );
+
+      claimsToSave.forEach((record) => {
+        const key = `${record.sheet_name}||${record.row_number}`;
+        const existing = existingByKey.get(key);
+        const parsed = parsedByKey.get(key);
+
+        if (!existing) {
+          newClaims.push({
+            ...record,
+            paid_amount: parsed?.paid_amount ?? 0,
+            remaining_amount: parsed?.remaining_amount ?? record.total_amount,
+          });
+          return;
+        }
+
+        if (!onlyNew) {
+          const paidAmount = Number(existing.paid_amount) || 0;
+          const updatePayload = {
+            id: existing.id,
+            data: record.data,
+            claimant_name: record.claimant_name,
+            claim_number: record.claim_number,
+            amount: record.amount,
+            total_amount: record.total_amount,
+            remaining_amount: Math.max(0, record.total_amount - paidAmount),
+            file_name: record.file_name,
+          };
+
+          if (record.payment_status !== null) {
+            updatePayload.payment_status = record.payment_status;
+          }
+
+          updatedClaims.push(updatePayload);
+        }
+      });
+
+      if (newClaims.length === 0 && updatedClaims.length === 0) {
+        setClaimError("لا توجد سجلات جديدة أو قابلة للتحديث.");
+        return;
+      }
+
+      const savedClaims = [];
+
+      if (newClaims.length > 0) {
+        const { data: insertedRows, error: insertError } = await supabase
+          .from("claims")
+          .insert(newClaims)
+          .select();
+
+        if (insertError) {
+          console.error(insertError);
+          setClaimError(
+            "حدث خطأ أثناء حفظ المطالبات: " + insertError.message
+          );
+          return;
+        }
+
+        savedClaims.push(...(insertedRows || []));
+      }
+
+      if (updatedClaims.length > 0) {
+        const { data: updatedRows, error: updateError } = await supabase
+          .from("claims")
+          .upsert(updatedClaims, { onConflict: "id" })
+          .select();
+
+        if (updateError) {
+          console.error(updateError);
+          setClaimError(
+            "حدث خطأ أثناء تحديث المطالبات: " + updateError.message
+          );
+          return;
+        }
+
+        savedClaims.push(...(updatedRows || []));
+      }
+
+      const savedByKey = new Map(
+        savedClaims.map((c) => [`${c.sheet_name}||${c.row_number}`, c])
+      );
+
+      // Insert missing installments only; existing installments are kept.
+      let instCount = 0;
+      const instErrors = [];
+      for (const row of rowsToImport) {
+        const insts = row.installments || [];
+        if (insts.length === 0) continue;
+        const saved = savedByKey.get(
+          `${row.sheet_name}||${row.row_number}`
+        );
+        if (!saved) continue;
+        for (const inst of insts) {
+          const { error: instErr } = await supabase.from("claim_installments").upsert(
+            {
+              claim_id: saved.id,
+              installment_number: inst.number,
+              amount: inst.amount,
+              paid: Boolean(inst.paid),
+              paid_at: inst.paid_at || null,
+              receipt_number: inst.receipt_number || null,
+            },
+            { onConflict: "claim_id,installment_number", ignoreDuplicates: true }
+          );
+          if (instErr) {
+            instErrors.push(instErr.message);
+          } else {
+            instCount++;
+          }
+        }
       }
 
       await loadClaims();
       setClaimSearch("");
       setClaimSheetFilter("all");
+      setExcelPreview(null);
+      setExcelPreviewOpen(false);
+
+      if (instErrors.length > 0) {
+        setClaimError(
+          `تم حفظ المطالبات، لكن تعذّر حفظ ${instErrors.length} قسط: ${instErrors[0]}`
+        );
+      }
 
       alert(
-        `تم استيراد ${importedClaims.length} مطالبة بنجاح.`
+        `تم استيراد ${newClaims.length} مطالبة جديدة وتحديث ${updatedClaims.length} مطالبة و ${instCount} قسط بنجاح.`
       );
     } catch (error) {
       console.error(error);
-
-      setClaimError(
-        "حدث خطأ أثناء قراءة ملف Excel. تأكدي أن الملف XLSX أو XLS."
-      );
+      setClaimError("حدث خطأ أثناء الاستيراد.");
     } finally {
-      setClaimLoading(false);
-      event.target.value = "";
+      setImportingClaims(false);
     }
   };
 
@@ -961,6 +1159,9 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       );
     });
   }, [claims, claimSearch, claimSheetFilter]);
+
+  // ---- Payment status filter state ----
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -1857,6 +2058,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               setSearch={setClaimSearch}
               sheetFilter={claimSheetFilter}
               setSheetFilter={setClaimSheetFilter}
+              paymentStatusFilter={paymentStatusFilter}
+              setPaymentStatusFilter={setPaymentStatusFilter}
               loading={claimLoading}
               error={claimError}
               onImport={importClaimsExcel}
@@ -2077,6 +2280,18 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
           onClose={() => setSelectedTask(null)}
           onUpdate={updateTask}
           onDelete={deleteTask}
+        />
+      )}
+
+      {excelPreviewOpen && excelPreview && (
+        <ExcelPreviewModal
+          preview={excelPreview}
+          importing={importingClaims}
+          onClose={() => {
+            setExcelPreviewOpen(false);
+            setExcelPreview(null);
+          }}
+          onImport={executeClaimsImport}
         />
       )}
     </div>

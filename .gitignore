@@ -1,0 +1,35 @@
+# --- أسرار وبيانات اتصال ---
+.env
+.env.*
+!.env.example
+release.token
+
+# --- الحزم ومخرجات البناء ---
+node_modules/
+dist/
+build/
+tmp/
+
+# --- أندرويد ---
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+
+# --- ملفات الإصدار والتثبيت ---
+release/
+release-fixed/
+release-publish/
+
+# --- نسخ احتياطية وبيانات شخصية (لا تُرفع للمستودع) ---
+scripts/backup/
+scripts/claims-replace/excel-raw.json
+scripts/claims-replace/import-plan.json
+scripts/claims-replace/import.sql
+
+# --- نظام التشغيل والمحرر ---
+.idea/
+.vscode/
+Thumbs.db
+*.bak
+cursor/
