@@ -45,7 +45,7 @@ import {
 import { normalizeArabicKey, formatArabicNumber, normalizeMemberCode, toDisplayName } from "../utils/arabicText";
 import { analyzeArchiveFile } from "../utils/facultyArchiveMatcher";
 import { autoLinkFacultySources } from "../services/facultyAutoLinkService";
-import { loadStudyLeaves } from "./studyLeaves";
+import { fetchStudyLeaves } from "../services/studyLeavesService";
 
 /* ------------------------------------------------------------------ */
 /* أدوات العرض                                                         */
@@ -1163,8 +1163,10 @@ export default function SmartFacultyArchivePage({ currentUser }) {
     setAutoLinkError("");
     setAutoLinkReport(null);
     try {
+      // نقرأ الإجازات من قاعدة البيانات مباشرة، لا من كاش المتصفح.
+      const studyLeaves = await fetchStudyLeaves();
       const report = await autoLinkFacultySources({
-        studyLeaves: loadStudyLeaves(),
+        studyLeaves,
       });
       setAutoLinkReport(report);
       await loadAll();

@@ -1,8 +1,9 @@
 import * as XLSX from "xlsx";
-import seedLeaves from "../data/studyLeavesSeed.json";
 import { normalizeDigits, normalizeMemberCode } from "../utils/arabicText";
 
-export const STUDY_LEAVES_STORAGE_KEY = "entitlements_study_leaves";
+// الإصدار v2: تغيير المفتاح يتجاهل أي نسخة قديمة محفوظة على الأجهزة (كانت
+// تعرض 71 صفًا بعد تفريغ قاعدة البيانات)، فتبقى قاعدة البيانات هي المصدر.
+export const STUDY_LEAVES_STORAGE_KEY = "entitlements_study_leaves_v2";
 
 /**
  * ملاحظة مهمة:
@@ -601,7 +602,7 @@ export function loadStudyLeaves() {
     const raw = localStorage.getItem(STUDY_LEAVES_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed.map((leave) => ({
           ...createEmptyLeave(),
           ...leave,
@@ -614,11 +615,8 @@ export function loadStudyLeaves() {
     console.error(error);
   }
 
-  return seedLeaves.map((leave) => ({
-    ...createEmptyLeave(),
-    ...leave,
-    employeeCode: normalizeMemberCode(leave.employeeCode || ""),
-  }));
+  // لا تُعاد أي بيانات وهمية عند غياب الكاش: قاعدة البيانات هي المصدر الوحيد.
+  return [];
 }
 
 export function saveStudyLeaves(leaves) {

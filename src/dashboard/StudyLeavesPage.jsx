@@ -73,6 +73,7 @@ export default function StudyLeavesPage({
   onDownloadPdf,
   onDeletePdf,
   onRestoreBackup,
+  onRefresh,
   backupInfo,
   pdfBusyId,
 }) {
@@ -274,6 +275,16 @@ export default function StudyLeavesPage({
             >
               📤 تصدير Excel
             </button>
+            {onRefresh && (
+              <button
+                style={styles.secondaryButton}
+                onClick={onRefresh}
+                disabled={loading}
+                title="إعادة قراءة البيانات من قاعدة البيانات"
+              >
+                {loading ? "… جارٍ التحديث" : "🔄 تحديث من قاعدة البيانات"}
+              </button>
+            )}
             {backupInfo?.count > 0 && (
               <>
                 <button

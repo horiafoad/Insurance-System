@@ -46,7 +46,6 @@ import {
   TaskFormModal,
 } from "./dashboard/DashboardModals";
 import {
-  loadStudyLeaves,
   saveStudyLeaves,
 } from "./dashboard/studyLeaves";
 import {
@@ -252,6 +251,15 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   }, []);
 
+  // إعادة قراءة الإجازات من قاعدة البيانات كل مرة تُفتح فيها الصفحة، حتى لا
+  // تظل الصفحة تعرض صفوفًا محذوفة من جلسة سابقة.
+  useEffect(() => {
+    if (activeMenu !== "study_leaves") return;
+    if (!hasPermission(currentUser, "entitlements")) return;
+    loadStudyLeavesFromDb();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMenu]);
+
   const loadStudyLeavesFromDb = async () => {
     setStudyLeaveLoading(true);
     setStudyLeaveError("");
@@ -262,18 +270,13 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       saveStudyLeaves(rows);
     } catch (error) {
       console.error("تعذر تحميل الإجازات الدراسية:", error);
-      // 42P01 = الجدول غير موجود (نسخة قديمة من قاعدة البيانات) → localStorage.
-      if (error?.code === "42P01") {
-        setStudyLeaves(loadStudyLeaves());
-        setStudyLeaveError(
-          "جدول الإجازات الدراسية غير موجود في قاعدة البيانات — يتم العرض من النسخة المحلية مؤقتًا."
-        );
-      } else {
-        setStudyLeaves(loadStudyLeaves());
-        setStudyLeaveError(
-          `تعذر تحميل الإجازات من قاعدة البيانات (${error?.message || "خطأ غير معروف"}). يتم العرض من النسخة المحلية.`
-        );
-      }
+      // لا نعرض أي نسخة محلية/وهمية: قد تكون قديمة وتُوهم بأن الحذف لم يحدث.
+      setStudyLeaves([]);
+      setStudyLeaveError(
+        error?.code === "42P01"
+          ? "جدول الإجازات الدراسية غير موجود في قاعدة البيانات."
+          : `تعذر تحميل الإجازات من قاعدة البيانات (${error?.message || "خطأ غير معروف"}).`
+      );
     } finally {
       setStudyLeaveLoading(false);
       setStudyLeaveBackup(loadStudyLeavesBackup());
@@ -2492,6 +2495,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               onDownloadPdf={downloadStudyLeavePdf}
               onDeletePdf={removePdfFromStudyLeave}
               onRestoreBackup={restoreStudyLeaves}
+              onRefresh={loadStudyLeavesFromDb}
               onDownloadBackup={downloadLatestStudyLeavesBackup}
               backupInfo={studyLeaveBackup}
             />
