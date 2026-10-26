@@ -1,0 +1,51 @@
+﻿=== SCANNER BRIDGE ===
+bridge.cjs not found
+
+=== UPLOAD CALLS ===
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:667: const merged = await uploadFile(CFG.bucket, path, mergedBytes, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:947: const stored = await uploadFile(CFG.bucket, path, merged, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\FacultySalariesPage.jsx:211: const stored = await uploadFile("faculty-salaries", filePath, item.file, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\FacultySalariesPage.jsx:343: const imageUpload = await uploadFile("faculty-salaries", imagePath, imageBlob, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\FacultySalaryArchivePage.jsx:171: return uploadFile(bucket, path, blob, { contentType, upsert: true });
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\IssuesManagementPage.jsx:399: const uploaded = await uploadFile("issues-files", fileName, excelFile, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\IssuesManagementPage.jsx:539: const uploaded = await uploadFile("issues-files", fileName, pdfFile, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\IssuesManagementPage.jsx:635: const uploaded = await uploadFile("issues-files", fileName, file, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\IssuesManagementPage.jsx:687: const uploaded = await uploadFile("issues-files", fileName, addDocFile, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\LetterImageUpload.jsx:39: const uploaded = await uploadFile("letter-images", path, file, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\LettersTrackingPage.jsx:377: const uploaded = await uploadFile("letter-images", path, file, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\OcrSplitPanel.jsx:1056: const original = await uploadFile(BUCKET, origPath, batch.file, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\OcrSplitPanel.jsx:1096: previewUpload = await uploadFile(BUCKET, pPath, dataUrlToBlob(g.dataUrls[j]), {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\SalaryImportReview.jsx:124: const stored = await uploadFile(BUCKET, storagePath, pdfFile);
+C:\Users\DELL\Desktop\Insurance-System\src\services\fileStorage.js:393: export async function uploadFile(bucket, path, body, options = {}) {
+
+=== STORAGE FIELDS ===
+C:\Users\DELL\Desktop\Insurance-System\src\components\FileLink.jsx:26: * بديل <a href={record.file_url}>.
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:299: "id, full_name, full_name_norm, file_path, file_url, storage_provider, storage_key, page_count, order_count, created_at, updated_at"
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:322: "id, file_path, file_url, storage_provider, storage_key, file_name, file_mime, file_size, status, scanned_at"
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:356: file_path: row.file_path,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:357: file_url: row.file_url,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:382: file_path: row.file_path,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:383: file_url: row.file_url,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:592: file_path: null,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:593: file_url: null,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:594: storage_provider: null,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:600: .select("id, full_name, full_name_norm, file_path, file_url, storage_provider, storage_key, page_count, order_count")
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:649: if (person.file_path) {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:651: const blob = await storageDownloadFile(person.file_url, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:653: path: person.file_path,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:675: file_path: path,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:676: file_url: merged.url,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:681: storage_provider: merged.provider,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:730: // file_url إما رابط http (مسحوبات قديمة على Supabase) أو مرجع ثابت
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:733: const blob = await storageDownloadFile(row.file_url, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:735: path: row.file_path,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:787: file_path: null,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:788: file_url: null,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:789: storage_provider: null,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:795: .select("id, full_name, full_name_norm, file_path, file_url, storage_provider, storage_key, page_count, order_count, updated_at")
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:919: if (!isNew && person.file_path) {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:922: const blob = await storageDownloadFile(person.file_url, {
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:924: path: person.file_path,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:955: file_path: path,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:956: file_url: stored.url,
+C:\Users\DELL\Desktop\Insurance-System\src\dashboard\ExecutiveOrdersPage.jsx:961: storage_provider: stored.provider,

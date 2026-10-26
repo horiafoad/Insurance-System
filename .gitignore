@@ -81,3 +81,4 @@ scanner-bridge/instance.lock
 # local migration progress ledger
 scripts/migration/.schema-progress.json
 scripts/migration/.import-progress.json
+n/release-fixed/n/release-publish/

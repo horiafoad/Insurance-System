@@ -1,0 +1,44 @@
+{
+  "build": "haa95532_0",
+  "build_number": 0,
+  "depends": [],
+  "license": "MPL-2.0",
+  "license_family": "Other",
+  "md5": "191051c743a2e546e17609a2b06e1d81",
+  "name": "ca-certificates",
+  "sha256": "8a6e32908dc8ce655529245e59264abdc85a4e3ff613490eae34b39fd3844c15",
+  "size": 115636,
+  "subdir": "win-64",
+  "timestamp": 1792524478742,
+  "version": "2026.10.20",
+  "fn": "ca-certificates-2026.10.20-haa95532_0.conda",
+  "url": "https://repo.anaconda.com/pkgs/main/win-64/ca-certificates-2026.10.20-haa95532_0.conda",
+  "channel": "https://repo.anaconda.com/pkgs/main/",
+  "extracted_package_dir": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\ca-certificates-2026.10.20-haa95532_0",
+  "requested_specs": [],
+  "files": [
+    "Library/ssl/cacert.pem",
+    "Library/ssl/cert.pem"
+  ],
+  "paths_data": {
+    "paths_version": 1,
+    "paths": [
+      {
+        "_path": "Library/ssl/cacert.pem",
+        "path_type": "hardlink",
+        "sha256": "796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe",
+        "size_in_bytes": 200116
+      },
+      {
+        "_path": "Library/ssl/cert.pem",
+        "path_type": "hardlink",
+        "sha256": "796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe",
+        "size_in_bytes": 200116
+      }
+    ]
+  },
+  "link": {
+    "source": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\ca-certificates-2026.10.20-haa95532_0",
+    "type": 1
+  }
+}

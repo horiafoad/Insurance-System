@@ -1,0 +1,120 @@
+=== scanner-bridge ===
+???? scanner-bridge ??? ?????
+
+=== fileStorage functions ===
+
+> src\services\fileStorage.js:393:export async function uploadFile(bucket, path, body, options = {}) {
+  src\services\fileStorage.js:394:  const {
+  src\services\fileStorage.js:395:    contentType = guessMimeType(path, body),
+  src\services\fileStorage.js:396:    upsert = true,
+  src\services\fileStorage.js:397:    provider = WRITE_PROVIDER,
+  src\services\fileStorage.js:398:  } = options;
+  src\services\fileStorage.js:399:
+  src\services\fileStorage.js:400:  if (provider === STORAGE_PROVIDER.LOCAL) {
+  src\services\fileStorage.js:401:    const native = nativeLocalFiles();
+> src\services\fileStorage.js:476:export async function getFileUrl(input, options = {}) {
+  src\services\fileStorage.js:477:  const ref = resolveRef(input, options);
+  src\services\fileStorage.js:478:  if (!ref) return "";
+  src\services\fileStorage.js:479:  if (ref.provider === STORAGE_PROVIDER.LOCAL) {
+  src\services\fileStorage.js:480:    return getLocalObjectUrl(ref.url, ref.path);
+  src\services\fileStorage.js:481:  }
+  src\services\fileStorage.js:482:  if (ref.provider !== STORAGE_PROVIDER.R2) return ref.url || "";
+  src\services\fileStorage.js:483:  if (!ref.path) return "";
+  src\services\fileStorage.js:484:
+> src\services\fileStorage.js:523:export async function downloadFile(input, options = {}) {
+  src\services\fileStorage.js:524:  const ref = resolveRef(input, options);
+  src\services\fileStorage.js:525:  if (!ref) throw new Error("?? ???? ???? ?????.");
+  src\services\fileStorage.js:526:
+  src\services\fileStorage.js:527:  if (ref.provider === STORAGE_PROVIDER.LOCAL) {
+  src\services\fileStorage.js:528:    const native = nativeLocalFiles();
+  src\services\fileStorage.js:529:    if (!native) throw new Error("??????? ?????? ???? ??? ???? ????? 
+?????????");
+  src\services\fileStorage.js:530:    const file = await native.read({ relPath: ref.path });
+  src\services\fileStorage.js:531:    if (!file || !file.ok || !file.base64) {
+> src\services\fileStorage.js:563:export async function deleteFile(input, options = {}) {
+  src\services\fileStorage.js:564:  const ref = resolveRef(input, options);
+  src\services\fileStorage.js:565:  if (!ref) return { ok: false, skipped: "no ref" };
+  src\services\fileStorage.js:566:
+  src\services\fileStorage.js:567:  if (ref.provider === STORAGE_PROVIDER.LOCAL) {
+  src\services\fileStorage.js:568:    const native = nativeLocalFiles();
+  src\services\fileStorage.js:569:    if (!native) return { ok: false, skipped: "no native" };
+  src\services\fileStorage.js:570:    const res = await native.remove({ relPath: ref.path });
+  src\services\fileStorage.js:571:    revokeLocalObjectUrl(ref.url);
+> src\services\fileStorage.js:591:export async function fileExists(input, options = {}) {
+  src\services\fileStorage.js:592:  const ref = resolveRef(input, options);
+  src\services\fileStorage.js:593:  if (!ref) return false;
+  src\services\fileStorage.js:594:
+  src\services\fileStorage.js:595:  if (ref.provider === STORAGE_PROVIDER.LOCAL) {
+  src\services\fileStorage.js:596:    const native = nativeLocalFiles();
+  src\services\fileStorage.js:597:    if (!native) return false;
+  src\services\fileStorage.js:598:    const res = await native.exists({ relPath: ref.path });
+  src\services\fileStorage.js:599:    return Boolean(res && res.exists);
+> src\services\fileStorage.js:656:export async function downloadFileToDisk(input, filename, options = {}) {
+  src\services\fileStorage.js:657:  const blob = await downloadFile(input, options);
+  src\services\fileStorage.js:658:  const objectUrl = URL.createObjectURL(blob);
+  src\services\fileStorage.js:659:  const link = document.createElement("a");
+  src\services\fileStorage.js:660:  link.href = objectUrl;
+  src\services\fileStorage.js:661:  link.download = filename || "file";
+  src\services\fileStorage.js:662:  document.body.appendChild(link);
+  src\services\fileStorage.js:663:  link.click();
+  src\services\fileStorage.js:664:  link.remove();
+
+
+
+
+=== session verification ===
+
+  src\App.jsx:10:import {
+  src\App.jsx:11:  getSessionToken,
+> src\App.jsx:12:  setSessionToken,
+  src\App.jsx:13:  clearSessionToken,
+  src\App.jsx:14:} from "./utils/authSession";
+  src\App.jsx:15:
+  src\App.jsx:16:const SAVED_LOGIN_KEY = "saved_admin_login";
+  src\App.jsx:17:
+  src\App.jsx:187:      }
+  src\App.jsx:188:      try {
+> src\App.jsx:189:        const { data, error } = await supabase.functions.invoke("auth-login", {
+  src\App.jsx:190:          headers: { "x-session-token": token },
+> src\App.jsx:191:          body: { action: "verify" },
+  src\App.jsx:192:        });
+  src\App.jsx:193:        if (cancelled) return;
+  src\App.jsx:194:        if (!error && data?.ok && data?.user) {
+> src\App.jsx:195:          if (data.token) setSessionToken(data.token);
+  src\App.jsx:196:          localStorage.setItem("isLoggedIn", "true");
+  src\App.jsx:197:          localStorage.setItem("currentUser", JSON.stringify(data.user));
+  src\App.jsx:198:          setCurrentUser(data.user);
+  src\App.jsx:199:          setIsLoggedIn(true);
+  src\App.jsx:200:        } else {
+  src\App.jsx:1398:      setLoginError("");
+  src\App.jsx:1399:
+> src\App.jsx:1400:      // ?????? ?? ???? ?????? ??? ??? ?????? (auth-login) ???? ?? ???????.
+  src\App.jsx:1401:      const { data, error } = await supabase.functions.invoke(
+> src\App.jsx:1402:        "auth-login",
+  src\App.jsx:1403:        {
+  src\App.jsx:1404:          body: {
+  src\App.jsx:1405:            action: "login",
+  src\App.jsx:1406:            username: loginForm.username,
+  src\App.jsx:1407:            password: loginForm.password,
+  src\App.jsx:1442:
+  src\App.jsx:1443:      if (data.token) {
+> src\App.jsx:1444:        setSessionToken(data.token);
+  src\App.jsx:1445:      }
+  src\App.jsx:1446:
+  src\App.jsx:1447:      setCurrentUser(data.user);
+  src\App.jsx:1448:
+  src\App.jsx:1449:      localStorage.setItem(
+
+
+
+
+=== project files ===
+
+Name         Length
+----         ------
+package.json   4162
+main.js       10466
+preload.cjs     834
+
+
+

@@ -1,0 +1,59 @@
+{
+  "build": "h48ca90d_0",
+  "build_number": 0,
+  "depends": [
+    "libbrotlicommon 1.2.1 h27f1b8e_0",
+    "ucrt >=10.0.20348.0",
+    "vc >=14.3,<15",
+    "vc14_runtime >=14.44.35208"
+  ],
+  "license": "MIT",
+  "license_family": "MIT",
+  "md5": "a752d103054f8ceb83ebab4c4db4c836",
+  "name": "libbrotlidec",
+  "sha256": "89e8245868da03786672d14f2facdab55def212bf8a729bb8b219bf25229906e",
+  "size": 40557,
+  "subdir": "win-64",
+  "timestamp": 1792765000859,
+  "version": "1.2.1",
+  "fn": "libbrotlidec-1.2.1-h48ca90d_0.conda",
+  "url": "https://repo.anaconda.com/pkgs/main/win-64/libbrotlidec-1.2.1-h48ca90d_0.conda",
+  "channel": "https://repo.anaconda.com/pkgs/main/",
+  "extracted_package_dir": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\libbrotlidec-1.2.1-h48ca90d_0",
+  "requested_specs": [],
+  "files": [
+    "Library/lib/brotlidec.lib",
+    "Library/bin/brotlidec.dll",
+    "Library/lib/pkgconfig/libbrotlidec.pc"
+  ],
+  "paths_data": {
+    "paths_version": 1,
+    "paths": [
+      {
+        "_path": "Library/lib/brotlidec.lib",
+        "path_type": "hardlink",
+        "sha256": "cdc16f10b34d8e6de15a31b449cd7c75b55465775aa935cda4e790b78015b1e2",
+        "size_in_bytes": 5110
+      },
+      {
+        "_path": "Library/bin/brotlidec.dll",
+        "path_type": "hardlink",
+        "sha256": "2dc212bd267f8b224b8f8fee2258c29a0c656fac052415474d1754258ab04aed",
+        "size_in_bytes": 64328
+      },
+      {
+        "_path": "Library/lib/pkgconfig/libbrotlidec.pc",
+        "path_type": "hardlink",
+        "sha256": "62d8fed99a65c447ac9e36c7c5ae691e5dad76aeb2d1ca8ec0e2c9d27b3a820a",
+        "sha256_in_prefix": "65ae10b049ea52b72afc22ef6c3c46b76cc04486d78cc9e7e5d01133a3504a3d",
+        "size_in_bytes": 415,
+        "file_mode": "text",
+        "prefix_placeholder": "C:/Users/task_179276479347786/croot/brotli-split_1792764876076/_h_env"
+      }
+    ]
+  },
+  "link": {
+    "source": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\libbrotlidec-1.2.1-h48ca90d_0",
+    "type": 1
+  }
+}

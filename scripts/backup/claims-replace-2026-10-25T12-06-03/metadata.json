@@ -1,0 +1,9 @@
+{
+  "createdAt": "2026-10-25T12:06:04.320Z",
+  "projectUrl": "https://epfppicdvkklzryworzu.supabase.co",
+  "claimsCount": 0,
+  "installmentsCount": 0,
+  "installmentsError": "claim_installments: Could not find the table 'public.claim_installments' in the schema cache",
+  "sourceFile": "C:/Users/DELL/Downloads/مطالبات (4).xlsx",
+  "note": "Backup taken before replacing claims with the new Excel file."
+}

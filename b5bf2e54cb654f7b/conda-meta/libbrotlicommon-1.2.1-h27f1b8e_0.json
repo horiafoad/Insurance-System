@@ -1,0 +1,93 @@
+{
+  "build": "h27f1b8e_0",
+  "build_number": 0,
+  "depends": [
+    "ucrt >=10.0.20348.0",
+    "vc >=14.3,<15",
+    "vc14_runtime >=14.44.35208"
+  ],
+  "license": "MIT",
+  "license_family": "MIT",
+  "md5": "b9a23de4ce2d808a123fb40535082bef",
+  "name": "libbrotlicommon",
+  "sha256": "2a4bc1829f883d92ec1ad5fa893e3cbecdd1b124aa48c8dbae477b437a739429",
+  "size": 88130,
+  "subdir": "win-64",
+  "timestamp": 1792764977131,
+  "version": "1.2.1",
+  "fn": "libbrotlicommon-1.2.1-h27f1b8e_0.conda",
+  "url": "https://repo.anaconda.com/pkgs/main/win-64/libbrotlicommon-1.2.1-h27f1b8e_0.conda",
+  "channel": "https://repo.anaconda.com/pkgs/main/",
+  "extracted_package_dir": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\libbrotlicommon-1.2.1-h27f1b8e_0",
+  "requested_specs": [],
+  "files": [
+    "Library/bin/brotlicommon.dll",
+    "Library/lib/brotlicommon.lib",
+    "Library/lib/pkgconfig/libbrotlicommon.pc",
+    "Library/share/man/man1/brotli.1",
+    "Library/share/man/man3/constants.h.3",
+    "Library/share/man/man3/decode.h.3",
+    "Library/share/man/man3/encode.h.3",
+    "Library/share/man/man3/types.h.3"
+  ],
+  "paths_data": {
+    "paths_version": 1,
+    "paths": [
+      {
+        "_path": "Library/bin/brotlicommon.dll",
+        "path_type": "hardlink",
+        "sha256": "807e33acb761008f4962580fad9c0e672ad8f76386121492a044162356472965",
+        "size_in_bytes": 149832
+      },
+      {
+        "_path": "Library/lib/brotlicommon.lib",
+        "path_type": "hardlink",
+        "sha256": "299e76498c543e14691cde12927f8937640ca46aea3832663bf39f68724eaaf1",
+        "size_in_bytes": 4410
+      },
+      {
+        "_path": "Library/lib/pkgconfig/libbrotlicommon.pc",
+        "path_type": "hardlink",
+        "sha256": "c77509954531e23abc7e5b3af82ebeba18d6756faf2d106977ece69aa0eb1386",
+        "sha256_in_prefix": "721654d18b9ae0e411e50fcb2171c3b66b8fc2b52cff4c95cf9bba736b9cdc67",
+        "size_in_bytes": 388,
+        "file_mode": "text",
+        "prefix_placeholder": "C:/Users/task_179276479347786/croot/brotli-split_1792764876076/_h_env"
+      },
+      {
+        "_path": "Library/share/man/man1/brotli.1",
+        "path_type": "hardlink",
+        "sha256": "5592e0207f942e1b7be075bacd948ad20b76792845626a21592f5b9742c7af93",
+        "size_in_bytes": 5130
+      },
+      {
+        "_path": "Library/share/man/man3/constants.h.3",
+        "path_type": "hardlink",
+        "sha256": "2ac99f4d97a57a170877fed3ff93251612850f43598ba4eaf234e246787c978d",
+        "size_in_bytes": 1767
+      },
+      {
+        "_path": "Library/share/man/man3/decode.h.3",
+        "path_type": "hardlink",
+        "sha256": "be0a93be98e80f00d075bf43dc6a0bb84cb4028ce0082211e958d1ef18112d8f",
+        "size_in_bytes": 17452
+      },
+      {
+        "_path": "Library/share/man/man3/encode.h.3",
+        "path_type": "hardlink",
+        "sha256": "893ebea4d0d29ff3f2b83004c6bcb4d3610ced41f7cb04f72c1710ff339f5a90",
+        "size_in_bytes": 24310
+      },
+      {
+        "_path": "Library/share/man/man3/types.h.3",
+        "path_type": "hardlink",
+        "sha256": "c9afc281d042e84df6ba5ef4ac4a39f7e1ad8cae4d98adc702055b99c38b2267",
+        "size_in_bytes": 3081
+      }
+    ]
+  },
+  "link": {
+    "source": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\libbrotlicommon-1.2.1-h27f1b8e_0",
+    "type": 1
+  }
+}

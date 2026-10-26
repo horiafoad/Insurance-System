@@ -1,0 +1,59 @@
+{
+  "build": "hb4df093_0",
+  "build_number": 0,
+  "depends": [
+    "libbrotlicommon 1.2.1 h27f1b8e_0",
+    "ucrt >=10.0.20348.0",
+    "vc >=14.3,<15",
+    "vc14_runtime >=14.44.35208"
+  ],
+  "license": "MIT",
+  "license_family": "MIT",
+  "md5": "bf84b1cf260289de381528ae5ad32793",
+  "name": "libbrotlienc",
+  "sha256": "ac8d50e00cccf349ed79836a8cd775d8b24644a98659cb8728b3ae8962e8be5d",
+  "size": 259486,
+  "subdir": "win-64",
+  "timestamp": 1792765024261,
+  "version": "1.2.1",
+  "fn": "libbrotlienc-1.2.1-hb4df093_0.conda",
+  "url": "https://repo.anaconda.com/pkgs/main/win-64/libbrotlienc-1.2.1-hb4df093_0.conda",
+  "channel": "https://repo.anaconda.com/pkgs/main/",
+  "extracted_package_dir": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\libbrotlienc-1.2.1-hb4df093_0",
+  "requested_specs": [],
+  "files": [
+    "Library/bin/brotlienc.dll",
+    "Library/lib/pkgconfig/libbrotlienc.pc",
+    "Library/lib/brotlienc.lib"
+  ],
+  "paths_data": {
+    "paths_version": 1,
+    "paths": [
+      {
+        "_path": "Library/bin/brotlienc.dll",
+        "path_type": "hardlink",
+        "sha256": "ec7d9bc81f21061cbfb978471b0c6c0d24607bc46ad6d59484cd2cc1bedb1c53",
+        "size_in_bytes": 691016
+      },
+      {
+        "_path": "Library/lib/pkgconfig/libbrotlienc.pc",
+        "path_type": "hardlink",
+        "sha256": "3ddc642ba0ddeccb59e4b59ff9cce0e6b934c5f196ba4df94d03dc82eb87b9b6",
+        "sha256_in_prefix": "f3a22310e7e6a9ca95da08048949465a29ac25cc717c212dd00dd7defecc2a0a",
+        "size_in_bytes": 415,
+        "file_mode": "text",
+        "prefix_placeholder": "C:/Users/task_179276479347786/croot/brotli-split_1792764876076/_h_env"
+      },
+      {
+        "_path": "Library/lib/brotlienc.lib",
+        "path_type": "hardlink",
+        "sha256": "7d624f40f69fa41fd1db455c2398f31c4365b6ceb34316c3577bf8a5c8ec8c83",
+        "size_in_bytes": 4990
+      }
+    ]
+  },
+  "link": {
+    "source": "C:\\Users\\DELL\\AppData\\Local\\rattler\\cache\\pkgs\\libbrotlienc-1.2.1-hb4df093_0",
+    "type": 1
+  }
+}

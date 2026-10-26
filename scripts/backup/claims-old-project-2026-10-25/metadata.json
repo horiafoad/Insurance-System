@@ -1,0 +1,20 @@
+{
+  "exportedAt": "2026-10-25T12:30:13.154Z",
+  "projectRef": "jpybzalxcezxhokzmwdx",
+  "source": "public.claims (live export via Supabase Management API, UTF-8)",
+  "rows": 367,
+  "minId": 1,
+  "maxId": 367,
+  "bySheet": {
+    "خالي الطرف": 110,
+    "جاري السداد": 112,
+    "لم يسدد": 53,
+    "بدون وجه حق": 92
+  },
+  "fileNames": [
+    "مطالبات.xlsx"
+  ],
+  "rowsWithPdf": 0,
+  "sha256Canonical": "ca29f1bfe0098d6239e2a88a67b336f7df44b5e07d13863f3e1791739764375d",
+  "fileSha256": "d7942ada2b05461dd2caa4c9efe2c79e7ce979972972dac60791f4e21601dfbd"
+}
