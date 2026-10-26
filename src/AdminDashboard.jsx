@@ -40,6 +40,7 @@ import {
 } from "./dashboard/notificationsConfig";
 import InstallAppButton from "./dashboard/InstallAppButton";
 import CheckForUpdatesButton from "./dashboard/CheckForUpdatesButton";
+import StorageTargetToggle from "./components/StorageTargetToggle";
 import SupportDrawerButton from "./dashboard/SupportDrawerButton";
 import MonthlyReportsPage from "./dashboard/MonthlyReportsPage";
 import {
@@ -2152,6 +2153,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             }}
           >
             <InstallAppButton />
+
+            <StorageTargetToggle compact={isMobile} />
 
             <CheckForUpdatesButton compact={isMobile} />
 

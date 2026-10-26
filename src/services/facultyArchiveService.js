@@ -17,7 +17,7 @@ import {
   downloadFileToDisk,
   openLocalFile,
   getLocalStorageDir,
-  isElectronNative,
+  canSaveOnDevice,
 } from "./fileStorage";
 import { normalizeArabicKey, toDisplayName, normalizeMemberCode } from "../utils/arabicText";
 
@@ -493,7 +493,7 @@ export async function localArchiveDir() {
   return getLocalStorageDir();
 }
 
-/** هل التطبيق يعمل على سطح المكتب (where local storage is available)? */
+/** هل يمكن حفظ الملفات على هذا الجهاز؟ (ديسكتوب أو متصفح حديث) */
 export function canStoreLocally() {
-  return isElectronNative();
+  return canSaveOnDevice();
 }

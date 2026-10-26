@@ -36,6 +36,14 @@
 import React from "react";
 import { supabase } from "../supabaseClient";
 import { sessionHeaders } from "../utils/authSession";
+import {
+  deviceFileExists,
+  deviceReadFile,
+  deviceRemoveFile,
+  deviceSaveFile,
+  deviceUsage,
+  isDeviceStoreAvailable,
+} from "./deviceFileStore";
 
 export const STORAGE_PROVIDER = {
   SUPABASE: "supabase",
@@ -57,22 +65,78 @@ export function isElectronNative() {
   return Boolean(nativeLocalFiles());
 }
 
-/* مزوّد الرفع الافتراضي:
-   • داخل الديسكتوب → local (ملفات تُحفظ على الجهاز)
-   • ويب/موبايل      → حسب VITE_FILE_STORAGE_PROVIDER (asu أو r2 أو supabase) */
-const WRITE_PROVIDER = (() => {
-  if (nativeLocalFiles()) return STORAGE_PROVIDER.LOCAL;
-  const raw = String(
-    import.meta.env.VITE_FILE_STORAGE_PROVIDER || ""
-  ).toLowerCase();
+/* مزوّد الرفع:
+   • داخل الديسكتوب (Electron) → local دائمًا: ملفات على القرص.
+   • المتصفح/الموبايل → «جهاز» افتراضيًا: الملفات تُحفظ على الجهاز نفسه
+     داخل مساحة المتصفح (IndexedDB) ولا تُرفع للسحابة.
+     يمكن التبديل إلى السحابة (asu/r2/supabase) من زر «مكان الحفظ» في
+     الواجهة، أو عبر VITE_FILE_STORAGE_PROVIDER عند ضبطه على مزوّد سحابي. */
+
+const STORAGE_TARGET_KEY = "file_storage_target"; // device | cloud
+const CLOUD_TARGET = "cloud";
+const DEVICE_TARGET = "device";
+
+/** المزوّد السحابي المضبوط في بيئة البناء (إن وُجد). */
+function envCloudProvider() {
+  const raw = String(import.meta.env.VITE_FILE_STORAGE_PROVIDER || "").toLowerCase();
   if (raw === STORAGE_PROVIDER.ASU) return STORAGE_PROVIDER.ASU;
   if (raw === STORAGE_PROVIDER.R2) return STORAGE_PROVIDER.R2;
   return STORAGE_PROVIDER.SUPABASE;
-})();
+}
+
+/** هل الوجهة الحالية هي «هذا الجهاز»؟ */
+export function isDeviceStorage() {
+  if (nativeLocalFiles()) return true;
+  try {
+    const saved = localStorage.getItem(STORAGE_TARGET_KEY);
+    if (saved === DEVICE_TARGET) return true;
+    if (saved === CLOUD_TARGET) return false;
+  } catch {
+    /* ignore */
+  }
+  // لا يوجد اختيار محفوظ: الجهاز هو الافتراضي في المتصفح.
+  return true;
+}
+
+/** الوجهة الحالية كما تُعرض في الواجهة: device | cloud. */
+export function getStorageTarget() {
+  return isDeviceStorage() ? DEVICE_TARGET : CLOUD_TARGET;
+}
+
+/** تبديل وجهة الحفظ (يُحفظ لكل متصفح/جهاز على حدة). */
+export function setStorageTarget(target) {
+  const value = target === CLOUD_TARGET ? CLOUD_TARGET : DEVICE_TARGET;
+  try {
+    localStorage.setItem(STORAGE_TARGET_KEY, value);
+  } catch {
+    /* ignore */
+  }
+  return value;
+}
+
+/** المزوّد الفعلي للكتابة الآن. */
+function currentWriteProvider() {
+  if (isDeviceStorage()) return STORAGE_PROVIDER.LOCAL;
+  return envCloudProvider();
+}
 
 /** هل الرفع الجديد يذهب إلى R2؟ */
 export function isR2WriteProvider() {
-  return WRITE_PROVIDER === STORAGE_PROVIDER.R2;
+  return currentWriteProvider() === STORAGE_PROVIDER.R2;
+}
+
+/** هل يمكن حفظ الملفات على هذا الجهاز؟ (ديسكتوب أو متصفح) */
+export function canSaveOnDevice() {
+  return Boolean(nativeLocalFiles()) || isDeviceStoreAvailable();
+}
+
+/** مساحة التخزين المحلي المستخدمة على الجهاز. */
+export async function getDeviceStorageUsage() {
+  if (nativeLocalFiles()) {
+    return { count: null, bytes: null, kind: "desktop" };
+  }
+  const usage = await deviceUsage();
+  return { ...usage, kind: "browser" };
 }
 
 /** البادئة الثابتة التي تُخزَّن في قاعدة البيانات لملفات R2. */
@@ -447,15 +511,24 @@ function contentTypeFromName(name) {
 
 /** يقرأ ملفًا محليًا ويعيد Object URL قابلًا للعرض (مُخزَّن في كاش). */
 async function getLocalObjectUrl(localRef, relPath) {
-  const native = nativeLocalFiles();
-  if (!native) return "";
   const cached = localObjectUrlCache.get(localRef);
   if (cached) return cached;
-  const file = await native.read({ relPath });
-  if (!file || !file.ok) return "";
-  const blob = new Blob([base64ToUint8(file.base64)], {
-    type: file.contentType || contentTypeFromName(relPath),
-  });
+
+  const native = nativeLocalFiles();
+  let blob = null;
+
+  if (native) {
+    const file = await native.read({ relPath });
+    if (!file || !file.ok || !file.base64) return "";
+    blob = new Blob([base64ToUint8(file.base64)], {
+      type: file.contentType || contentTypeFromName(relPath),
+    });
+  } else {
+    const record = await deviceReadFile(relPath);
+    if (!record || !record.blob) return "";
+    blob = record.blob;
+  }
+
   const url = URL.createObjectURL(blob);
   if (localObjectUrlCache.size >= 120) {
     const first = localObjectUrlCache.keys().next().value;
@@ -577,20 +650,39 @@ export async function uploadFile(bucket, path, body, options = {}) {
   const {
     contentType = guessMimeType(path, body),
     upsert = true,
-    provider = WRITE_PROVIDER,
+    provider = currentWriteProvider(),
   } = options;
 
   if (provider === STORAGE_PROVIDER.LOCAL) {
-    const native = nativeLocalFiles();
-    if (!native) {
-      throw new Error("التخزين المحلي متاح فقط داخل تطبيق الديسكتوب");
-    }
     const relPath = `${bucket}/${path}`;
-    const base64 = await fileToBase64(body);
-    const saved = await native.save({ relPath, base64, contentType });
-    if (!saved || !saved.ok) {
-      throw new Error((saved && saved.error) || "تعذر حفظ الملف على الجهاز");
+    const native = nativeLocalFiles();
+
+    if (native) {
+      const base64 = await fileToBase64(body);
+      const saved = await native.save({ relPath, base64, contentType });
+      if (!saved || !saved.ok) {
+        throw new Error((saved && saved.error) || "تعذر حفظ الملف على الجهاز");
+      }
+      return {
+        provider: STORAGE_PROVIDER.LOCAL,
+        bucket,
+        path,
+        key: relPath,
+        url: buildLocalRef(relPath),
+        size: body?.size ?? null,
+        mimeType: contentType,
+        dir: saved.dir,
+        absPath: saved.absPath,
+      };
     }
+
+    if (!isDeviceStoreAvailable()) {
+      throw new Error(
+        "التخزين على الجهاز غير متاح في هذا المتصفح. استخدمي متصفحًا حديثًا أو بدّلي مكان الحفظ إلى السحابة."
+      );
+    }
+
+    await deviceSaveFile(relPath, body, contentType);
     return {
       provider: STORAGE_PROVIDER.LOCAL,
       bucket,
@@ -599,8 +691,6 @@ export async function uploadFile(bucket, path, body, options = {}) {
       url: buildLocalRef(relPath),
       size: body?.size ?? null,
       mimeType: contentType,
-      dir: saved.dir,
-      absPath: saved.absPath,
     };
   }
 
@@ -714,14 +804,23 @@ export async function downloadFile(input, options = {}) {
 
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     const native = nativeLocalFiles();
-    if (!native) throw new Error("التخزين المحلي متاح فقط داخل تطبيق الديسكتوب");
-    const file = await native.read({ relPath: ref.path });
-    if (!file || !file.ok || !file.base64) {
-      throw new Error((file && file.error) || "تعذر قراءة الملف من الجهاز");
+    if (native) {
+      const file = await native.read({ relPath: ref.path });
+      if (!file || !file.ok || !file.base64) {
+        throw new Error((file && file.error) || "تعذر قراءة الملف من الجهاز");
+      }
+      return new Blob([base64ToUint8(file.base64)], {
+        type: file.contentType || "application/octet-stream",
+      });
     }
-    return new Blob([base64ToUint8(file.base64)], {
-      type: file.contentType || "application/octet-stream",
-    });
+
+    const record = await deviceReadFile(ref.path);
+    if (!record || !record.blob) {
+      throw new Error(
+        "هذا الملف محفوظ على جهاز آخر (تخزين محلي) — لا يمكن تنزيله من هنا."
+      );
+    }
+    return record.blob;
   }
 
   if (!isRemoteSignedRef(ref)) {
@@ -754,8 +853,15 @@ export async function deleteFile(input, options = {}) {
 
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     const native = nativeLocalFiles();
-    if (!native) return { ok: false, skipped: "no native" };
-    const res = await native.remove({ relPath: ref.path });
+    if (native) {
+      const res = await native.remove({ relPath: ref.path });
+      revokeLocalObjectUrl(ref.url);
+      return {
+        ok: Boolean(res && res.ok),
+        provider: STORAGE_PROVIDER.LOCAL,
+      };
+    }
+    const res = await deviceRemoveFile(ref.path);
     revokeLocalObjectUrl(ref.url);
     return {
       ok: Boolean(res && res.ok),
@@ -788,9 +894,11 @@ export async function fileExists(input, options = {}) {
 
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     const native = nativeLocalFiles();
-    if (!native) return false;
-    const res = await native.exists({ relPath: ref.path });
-    return Boolean(res && res.exists);
+    if (native) {
+      const res = await native.exists({ relPath: ref.path });
+      return Boolean(res && res.exists);
+    }
+    return await deviceFileExists(ref.path);
   }
 
   if (ref.provider === STORAGE_PROVIDER.ASU) {
@@ -877,13 +985,16 @@ export async function openLocalFile(input, options = {}) {
     return { ok: false, skipped: "not a local file" };
   }
   const native = nativeLocalFiles();
-  if (!native) return { ok: false, skipped: "no native" };
-  return native.open({ relPath: ref.path });
+  if (native) return native.open({ relPath: ref.path });
+
+  // في المتصفح: نفتح الملف من مخزن الجهاز في تبويب جديد.
+  return openFile(ref, options);
 }
 
 /**
  * يفتح أي ملف (محلي أو عبر مزوّد التخزين) في نافذة/تبويب جديد.
- * المحلي يُفتح بالتطبيق الأصلي، والبعيد برابط موقّع مؤقت.
+ * المحلي يُفتح بالتطبيق الأصلي في الديسكتوب، أو في تبويب جديد في المتصفح،
+ * والبعيد برابط موقّع مؤقت.
  */
 export async function openFile(input, options = {}) {
   const ref = resolveRef(input, options);
@@ -891,16 +1002,22 @@ export async function openFile(input, options = {}) {
 
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     const native = nativeLocalFiles();
-    if (!native) {
+    if (native) {
+      const result = await native.open({ relPath: ref.path });
+      if (result && result.ok === false && result.error) {
+        throw new Error(result.error);
+      }
+      return result;
+    }
+
+    const url = await getLocalObjectUrl(ref.url, ref.path);
+    if (!url) {
       throw new Error(
-        "هذا الملف محفوظ على جهاز آخر؛ نزّليه على جهازك ثم افتحيه منه."
+        "هذا الملف محفوظ على جهاز آخر (تخزين محلي) — لا يمكن فتحه من هنا."
       );
     }
-    const result = await native.open({ relPath: ref.path });
-    if (result && result.ok === false && result.error) {
-      throw new Error(result.error);
-    }
-    return result;
+    window.open(url, "_blank", "noopener,noreferrer");
+    return { ok: true, provider: ref.provider, url };
   }
 
   const url = await getFileUrl(ref, options);
@@ -918,7 +1035,9 @@ export async function openFile(input, options = {}) {
 /** المسار الكامل لمجلد تخزين الملفات على الجهاز (ديسكتوب فقط). */
 export async function getLocalStorageDir() {
   const native = nativeLocalFiles();
-  if (!native) return "";
+  if (!native) {
+    return isDeviceStoreAvailable() ? "مساحة المتصفح على هذا الجهاز" : "";
+  }
   const res = await native.dir({});
   return res && res.ok ? res.dir : "";
 }

@@ -46,6 +46,7 @@ import { normalizeArabicKey, formatArabicNumber, normalizeMemberCode, toDisplayN
 import { analyzeArchiveFile } from "../utils/facultyArchiveMatcher";
 import { autoLinkFacultySources } from "../services/facultyAutoLinkService";
 import { fetchStudyLeaves } from "../services/studyLeavesService";
+import StorageTargetToggle from "../components/StorageTargetToggle";
 
 /* ------------------------------------------------------------------ */
 /* أدوات العرض                                                         */
@@ -748,10 +749,15 @@ function MemberDetail({ member, onClose, onChanged, currentUser }) {
           {/* الوثائق */}
           {tab === "documents" && (
             <div>
-              {!canStoreLocally() && (
+              {!canStoreLocally() ? (
                 <div style={infoBoxStyle}>
-                  ℹ️ حفظ الملفات محليًا متاح فقط داخل تطبيق سطح المكتب
-                  (تطبيق الديسكتوب). المتصفح يعرض السجلات فقط.
+                  ⚠️ التخزين على الجهاز غير متاح في هذا المتصفح. حوّلي مكان
+                  الحفظ إلى السحابة من زر «الحفظ» أعلى الصفحة.
+                </div>
+              ) : (
+                <div style={infoBoxStyle}>
+                  📁 الملفات تُحفظ على هذا الجهاز ولا تُرفع إلى السحابة. المرجع
+                  المحفوظ في القاعدة هو <b>local://</b> فقط.
                 </div>
               )}
               {!documents.length && (
@@ -1528,6 +1534,7 @@ export default function SmartFacultyArchivePage({ currentUser }) {
             </div>
           ) : null}
         </div>
+        <StorageTargetToggle />
       </div>
 
       {/* التبويبات */}
