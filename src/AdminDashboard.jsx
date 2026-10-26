@@ -458,22 +458,24 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         new Date().toISOString()
       );
 
-      channel = supabase
-        .channel("admin-notifications")
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public" },
-          (payload) => {
-            const source = notificationSources.find(
-              (item) => item.table === payload.table
-            );
+      // اسم قناة فريد لكل تشغيل: إعادة استخدام نفس الاسم تعيد القناة المشتركة
+      // (subscribed) فلا يمكن إضافة bindings جديدة إليها، وهو ما كان يسبب
+      // الخطأ "cannot add postgres_changes callbacks after subscribe()".
+      const channelName = `admin-notifications-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
 
-            if (source) {
-              notify(source, payload.new.id);
-            }
-          }
-        )
-        .subscribe();
+      channel = supabase.channel(channelName);
+
+      notificationSources.forEach((source) => {
+        channel.on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: source.table },
+          (payload) => notify(source, payload.new.id)
+        );
+      });
+
+      channel.subscribe();
 
       pollingTimer = window.setInterval(async () => {
         const results = await Promise.all(

@@ -30,7 +30,13 @@ jobs:
 
       - run: npm ci
 
+      # إعدادات Supabase وقت البناء.
+      # لو لم تُضبط المتغيرات في المستودع، يستخدم التطبيق القيم الافتراضية
+      # العامة الموجودة في src/supabaseClient.js (مفتاح anon عام).
       - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
       - uses: actions/configure-pages@v5
 
