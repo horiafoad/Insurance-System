@@ -60,3 +60,5 @@ fcm-service-account.json
 scripts/export-old-data/
 scripts/migration/.import-progress.json
 scripts/migration/.schema-progress.json
+
+dist-deploy.zip
