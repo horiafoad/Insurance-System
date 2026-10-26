@@ -275,6 +275,24 @@ create policy "notification_attachments_delete_for_app"
   on public.notification_attachments for delete to anon, authenticated using (true);
 
 -- ---------------------------------------------------------------
+-- 6.1) الصلاحيات الأساسية (GRANT)
+--    سياسات RLS لا تعمل بدون منح الصلاحيات للدور anon، وهذا ما كان
+--    يسبب الخطأ: permission denied for table notification_* (42501).
+-- ---------------------------------------------------------------
+grant usage on schema public to anon, authenticated;
+
+grant select, insert, update, delete on public.notification_types
+  to anon, authenticated;
+grant select, insert, update, delete on public.notification_members
+  to anon, authenticated;
+grant select, insert, update, delete on public.notification_reports
+  to anon, authenticated;
+grant select, insert, update, delete on public.notification_reviews
+  to anon, authenticated;
+grant select, insert, update, delete on public.notification_attachments
+  to anon, authenticated;
+
+-- ---------------------------------------------------------------
 -- 7) Bucket مستقل للمرفقات
 -- ---------------------------------------------------------------
 insert into storage.buckets (id, name, public)
