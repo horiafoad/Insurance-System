@@ -175,6 +175,7 @@ export default function NotificationsPage({
 
   const [showForm, setShowForm] = useState(false);
   const [editingReport, setEditingReport] = useState(null);
+  const [newReportMember, setNewReportMember] = useState(null);
   const [selectedReport, setSelectedReport] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -386,12 +387,14 @@ export default function NotificationsPage({
     await Promise.all([refreshTypesAndMembers(), loadReports()]);
   };
 
-  const openCreate = () => {
+  const openCreate = (member = null) => {
     setEditingReport(null);
+    setNewReportMember(member || null);
     setShowForm(true);
   };
 
   const openEdit = (report) => {
+    setNewReportMember(null);
     setEditingReport(report);
     setShowForm(true);
   };
@@ -551,8 +554,12 @@ export default function NotificationsPage({
     if (!report || actionLoading) return;
     if (stage === "entry" && report.status !== "pending_entry") return;
     if (stage === "final" && report.status !== "entry_reviewed") return;
-    const notes = window.prompt("ملاحظات المراجعة (اختياري):", "");
-    if (notes === null) return;
+
+    const message =
+      stage === "entry"
+        ? `تأكيد إدخال البيرول للتبليغ «${report.type_name}» الخاص بـ «${report.member_name}»؟\n\nسيُسجَّل اسمك والتاريخ والوقت تلقائيًا.`
+        : `تأكيد اعتماد المراجعة النهائية للتبليغ «${report.type_name}» الخاص بـ «${report.member_name}»؟\n\nبعد التأكيد تصبح الحالة «مكتمل» ويُسجَّل اسمك والتاريخ والوقت تلقائيًا.`;
+    if (!window.confirm(message)) return;
 
     setActionLoading(true);
     setError("");
@@ -562,30 +569,36 @@ export default function NotificationsPage({
     const nowIso = new Date().toISOString();
 
     try {
+      /* نسجّل المراجعة أولًا (اسم المستخدم + التاريخ + الوقت تلقائيًا)،
+         ثم نحدّث حالة التبليغ. بهذا لا تتقدّم الحالة أبدًا دون سجل مراجعة. */
+      const { data: reviewRow, error: logError } = await supabase
+        .from("notification_reviews")
+        .insert({
+          notification_id: report.id,
+          stage,
+          status: "completed",
+          previous_stage: previousStage,
+          next_stage: nextStage,
+          user_id: currentUser?.id || null,
+          user_name: currentUser?.full_name || currentUser?.username || "غير معروف",
+          notes: null,
+          acted_at: nowIso,
+        })
+        .select()
+        .single();
+
+      if (logError) throw logError;
+
       const { error: updateError } = await supabase
         .from("notification_reports")
         .update({ status: nextStage, updated_at: nowIso })
         .eq("id", report.id);
-      if (updateError) throw updateError;
 
-      const { error: logError } = await supabase.from("notification_reviews").insert({
-        notification_id: report.id,
-        stage,
-        status: "completed",
-        previous_stage: previousStage,
-        next_stage: nextStage,
-        user_id: currentUser?.id || null,
-        user_name: currentUser?.full_name || currentUser?.username || "غير معروف",
-        notes: notes.trim() || null,
-        acted_at: nowIso,
-      });
-
-      if (logError) {
-        await supabase
-          .from("notification_reports")
-          .update({ status: previousStage, updated_at: nowIso })
-          .eq("id", report.id);
-        throw logError;
+      if (updateError) {
+        if (reviewRow?.id) {
+          await supabase.from("notification_reviews").delete().eq("id", reviewRow.id);
+        }
+        throw updateError;
       }
 
       setSelectedReport((current) =>
@@ -782,7 +795,7 @@ export default function NotificationsPage({
     setTimeout(() => printWindow.print(), 400);
   };
 
-  const printStatement = () => {
+  const printPayroll = () => {
     const printWindow = window.open("", "_blank", "width=1200,height=900");
     if (!printWindow) {
       window.alert("اسمح بالنوافذ المنبثقة للطباعة.");
@@ -799,17 +812,22 @@ export default function NotificationsPage({
           <td>${escapeHtml(report.member_number || "—")}</td>
           <td>${escapeHtml(report.type_name)}</td>
           <td>${monthName(report.month)} ${report.year}</td>
-          <td>${escapeHtml(statusMeta(report.status).label)}</td>
+          <td>${escapeHtml(report.created_by_name || "—")}<br/>${formatDateTime(report.created_at)}</td>
           <td>${entry ? `${escapeHtml(entry.user_name || "—")}<br/>${formatDateTime(entry.acted_at)}` : "—"}</td>
           <td>${final ? `${escapeHtml(final.user_name || "—")}<br/>${formatDateTime(final.acted_at)}` : "—"}</td>
+          <td>${report.status === "final_reviewed" ? "مكتمل" : escapeHtml(statusMeta(report.status).label)}</td>
         </tr>`;
       })
       .join("");
 
+    const periodLabel = filterMonth
+      ? `${monthName(filterMonth)} ${filterYear}`
+      : `كل شهور ${filterYear}`;
+
     printWindow.document.write(`
       <html dir="rtl" lang="ar">
         <head>
-          <title>كشف تبليغات ${monthName(filterMonth)} ${filterYear}</title>
+          <title>تبليغات البيرول — ${periodLabel}</title>
           <style>
             body { font-family: 'Cairo', 'Segoe UI', sans-serif; margin: 18px; color: #0F2942; }
             h1 { font-size: 19px; margin-bottom: 4px; }
@@ -820,14 +838,14 @@ export default function NotificationsPage({
           </style>
         </head>
         <body>
-          <h1>كشف ${escapeHtml(cfg.title)} — ${monthName(filterMonth)} ${filterYear}</h1>
+          <h1>💼 تبليغات البيرول — ${escapeHtml(cfg.title)} — ${periodLabel}</h1>
           <div class="sub">عدد التبليغات: ${reports.length} • ${cfg.emoji} ${escapeHtml(cfg.title)}</div>
           <table>
             <tr>
               <th>${escapeHtml(cfg.memberLabel)}</th><th>${escapeHtml(cfg.numberLabel)}</th><th>النوع</th><th>الشهر/السنة</th>
-              <th>حالة المراجعة</th><th>مدخل البيرول</th><th>مراجع البيرول</th>
+              <th>مَن أدخل التبليغ</th><th>مدخل البيرول</th><th>مراجع البيرول</th><th>الحالة</th>
             </tr>
-            ${rows || '<tr><td colspan="7">لا توجد تبليغات في هذا الشهر</td></tr>'}
+            ${rows || '<tr><td colspan="8">لا توجد تبليغات في هذه الفترة</td></tr>'}
           </table>
           <div style="margin-top:20px; font-size:11px; color:#94A3B8;">طُبع من نظام كلية الهندسة — ${formatDateTime(new Date().toISOString())}</div>
         </body>
@@ -929,6 +947,21 @@ export default function NotificationsPage({
     return summary;
   }, [profileReports]);
 
+  /* البحث بالاسم: نقترح الأعضاء المطابقين حتى يمكن بدء تبليغ لهم مباشرة
+     واختيار نوع التبليغ من قائمة الأنواع. */
+  const matchedMembers = useMemo(() => {
+    if (!canCreate) return [];
+    const q = search.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return (members || [])
+      .filter((member) =>
+        [member.full_name, member.external_id, member.job_title, member.department]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(q))
+      )
+      .slice(0, 8);
+  }, [members, search, canCreate]);
+
   if (!canView) {
     return (
       <div style={{ background: "#fff", border: "1px solid #FECACA", borderRadius: 14, padding: 24, color: "#991B1B", fontWeight: 800 }}>
@@ -939,7 +972,7 @@ export default function NotificationsPage({
 
   const tabs = [
     { id: "reports", label: "التبليغات", icon: "📣" },
-    { id: "statement", label: "كشف الشهر", icon: "📅" },
+    { id: "payroll", label: "تبليغات البيرول", icon: "💼" },
     ...(canTypes ? [{ id: "types", label: "أنواع التبليغات", icon: "🧩" }] : []),
     { id: "members", label: `فهرس ${cfg.membersLabel}`, icon: "📇" },
   ];
@@ -986,7 +1019,7 @@ export default function NotificationsPage({
           {canCreate && (
             <button
               type="button"
-              onClick={openCreate}
+              onClick={() => openCreate()}
               style={{
                 border: 0,
                 background: cfg.accent,
@@ -1078,6 +1111,49 @@ export default function NotificationsPage({
               عرض {reports.length} تبليغ{reports.length >= 1000 ? " (الحد الأقصى 1000 — استخدم البحث أو الفلاتر لتضييق النتائج)" : ""}.
             </div>
           </div>
+
+          {matchedMembers.length > 0 && (
+            <div
+              className="notif-card"
+              style={{
+                padding: 12,
+                marginBottom: 12,
+                border: `1px solid ${cfg.accent}44`,
+                background: cfg.accentSoft,
+              }}
+            >
+              <div style={{ fontSize: 12.5, fontWeight: 900, color: cfg.accent, marginBottom: 8 }}>
+                👤 أعضاء مطابقون لـ «{search.trim()}» — اضغط على العضو لبدء تبليغ واختيار نوعه
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {matchedMembers.map((member) => (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => openCreate(member)}
+                    style={{
+                      border: `1px solid ${cfg.accent}55`,
+                      background: "#fff",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      textAlign: "right",
+                      minWidth: 190,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 900, color: "#0F2942" }}>
+                      {member.full_name}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                      {cfg.numberLabel}: {member.external_id || "—"}
+                      {member.job_title ? ` • ${member.job_title}` : ""}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {loadingReports ? (
             <div className="notif-card" style={{ padding: 40, textAlign: "center", color: "#64748B" }}>⏳ جاري تحميل التبليغات...</div>
@@ -1184,21 +1260,37 @@ export default function NotificationsPage({
         </>
       )}
 
-      {tab === "statement" && (
+      {tab === "payroll" && (
         <>
           <div className="notif-card" style={{ padding: 14, marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ fontSize: 17, fontWeight: 900, color: "#0F2942" }}>
-                📅 كشف {monthName(filterMonth)} {filterYear}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 320px" }}>
+                <div style={{ fontSize: 17, fontWeight: 900, color: "#0F2942" }}>
+                  💼 تبليغات البيرول —{" "}
+                  {filterMonth ? `${monthName(filterMonth)} ${filterYear}` : `كل شهور ${filterYear}`}
+                </div>
+                <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 5, lineHeight: 1.9 }}>
+                  يُسجَّل تلقائيًا: مَن أدخل التبليغ ووقته، ومَن أكّد إدخال البيرول، ومَن أتمّ المراجعة النهائية.
+                  عند اكتمال المرحلتين تتحوّل الحالة إلى «مكتمل».
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <select value={filterYear} onChange={(event) => setFilterYear(event.target.value)} style={inputStyle}>
                   {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
                 </select>
                 <select value={filterMonth} onChange={(event) => setFilterMonth(event.target.value)} style={inputStyle}>
+                  <option value="">كل شهور السنة</option>
                   {MONTH_NAMES.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
                 </select>
-                <button type="button" onClick={printStatement} style={{ ...smallButtonStyle, background: "#EFF6FF", color: "#1D4ED8" }}>🖨️ طباعة الكشف</button>
+                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={inputStyle}>
+                  <option value="">كل الحالات</option>
+                  <option value="pending_entry">بانتظار مدخل البيرول</option>
+                  <option value="entry_reviewed">بانتظار المراجعة النهائية</option>
+                  <option value="final_reviewed">مكتمل</option>
+                  <option value="rejected">مرفوض</option>
+                  <option value="draft">مسودة</option>
+                </select>
+                <button type="button" onClick={printPayroll} style={{ ...smallButtonStyle, background: "#EFF6FF", color: "#1D4ED8" }}>🖨️ طباعة</button>
               </div>
             </div>
           </div>
@@ -1207,8 +1299,8 @@ export default function NotificationsPage({
             {[
               ["الإجمالي", statementSummary.total, "#0F2942", "#F1F5F9"],
               ["بانتظار المدخل", statementSummary.pending_entry, "#B45309", "#FEF3C7"],
-              ["تمت مراجعة المدخل", statementSummary.entry_reviewed, "#1D4ED8", "#DBEAFE"],
-              ["مكتمل نهائيًا", statementSummary.final_reviewed, "#047857", "#D1FAE5"],
+              ["تم إدخال البيرول", statementSummary.entry_reviewed, "#1D4ED8", "#DBEAFE"],
+              ["مكتمل", statementSummary.final_reviewed, "#047857", "#D1FAE5"],
               ["مرفوض", statementSummary.rejected, "#B91C1C", "#FEE2E2"],
             ].map(([label, value, color, bg]) => (
               <div key={label} style={{ background: bg, border: "1px solid #E7EBF0", borderRadius: 12, padding: "12px 14px" }}>
@@ -1219,20 +1311,23 @@ export default function NotificationsPage({
           </div>
 
           {loadingReports ? (
-            <div className="notif-card" style={{ padding: 40, textAlign: "center", color: "#64748B" }}>⏳ جاري تحميل كشف الشهر...</div>
+            <div className="notif-card" style={{ padding: 40, textAlign: "center", color: "#64748B" }}>⏳ جاري تحميل تبليغات البيرول...</div>
           ) : reports.length === 0 ? (
-            <div className="notif-card" style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>لا توجد تبليغات في هذا الشهر.</div>
+            <div className="notif-card" style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>
+              لا توجد تبليغات في {filterMonth ? `${monthName(filterMonth)} ${filterYear}` : `سنة ${filterYear}`}.
+            </div>
           ) : (
             <div className="notif-card notif-table-wrap">
-              <table className="notif-table">
+              <table className="notif-table" style={{ minWidth: 1040 }}>
                 <thead>
                   <tr>
                     <th>{cfg.memberLabel}</th>
                     <th>النوع</th>
-                    <th>الشهر/السنة</th>
-                    <th>حالة المراجعة</th>
+                    <th>مَن أدخل التبليغ</th>
                     <th>مدخل البيرول</th>
                     <th>مراجع البيرول</th>
+                    <th>الحالة</th>
+                    <th>إجراء</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1240,17 +1335,98 @@ export default function NotificationsPage({
                     const reviews = reviewsByReport[report.id] || [];
                     const entry = latestReview(reviews, "entry");
                     const final = latestReview(reviews, "final");
+                    const isComplete = report.status === "final_reviewed" && Boolean(final);
                     return (
-                      <tr key={report.id} onClick={() => openReport(report)} style={{ cursor: "pointer" }}>
+                      <tr
+                        key={report.id}
+                        onClick={() => openReport(report)}
+                        style={{
+                          cursor: "pointer",
+                          background: isComplete ? "#F0FDF4" : undefined,
+                        }}
+                      >
                         <td>
-                          <div style={{ fontWeight: 900 }}>{report.member_name}</div>
-                          <div style={{ fontSize: 11, color: "#64748B" }}>{report.member_number || "—"}</div>
+                          <div style={{ fontWeight: 900, color: "#0F2942" }}>{report.member_name}</div>
+                          <div style={{ fontSize: 11, color: "#64748B" }}>{cfg.numberLabel}: {report.member_number || "—"}</div>
                         </td>
-                        <td>{report.type_name}</td>
-                        <td>{monthName(report.month)} {report.year}</td>
-                        <td><StatusBadge status={report.status} /></td>
-                        <td>{entry ? `${entry.user_name || "—"} — ${formatDateTime(entry.acted_at)}` : "—"}</td>
-                        <td>{final ? `${final.user_name || "—"} — ${formatDateTime(final.acted_at)}` : "—"}</td>
+                        <td>
+                          <div style={{ fontWeight: 800 }}>{report.type_name}</div>
+                          <div style={{ fontSize: 11, color: "#94A3B8" }}>{monthName(report.month)} {report.year}</div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 800, color: "#334155" }}>{report.created_by_name || "—"}</div>
+                          <div style={{ fontSize: 10.5, color: "#94A3B8" }}>{formatDateTime(report.created_at)}</div>
+                        </td>
+                        <td>
+                          {entry ? (
+                            <div>
+                              <div style={{ fontWeight: 800, color: "#1D4ED8" }}>{entry.user_name || "—"}</div>
+                              <div style={{ fontSize: 10.5, color: "#94A3B8" }}>{formatDateTime(entry.acted_at)}</div>
+                            </div>
+                          ) : (
+                            <span style={{ color: "#B45309", fontWeight: 800, fontSize: 11.5 }}>⏳ لم يُسجَّل بعد</span>
+                          )}
+                        </td>
+                        <td>
+                          {final ? (
+                            <div>
+                              <div style={{ fontWeight: 800, color: "#047857" }}>{final.user_name || "—"}</div>
+                              <div style={{ fontSize: 10.5, color: "#94A3B8" }}>{formatDateTime(final.acted_at)}</div>
+                            </div>
+                          ) : (
+                            <span style={{ color: "#94A3B8", fontWeight: 800, fontSize: 11.5 }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          {isComplete ? (
+                            <span
+                              style={{
+                                display: "inline-block",
+                                background: "#D1FAE5",
+                                color: "#047857",
+                                borderRadius: 999,
+                                padding: "4px 12px",
+                                fontSize: 11.5,
+                                fontWeight: 900,
+                              }}
+                            >
+                              ✅ مكتمل
+                            </span>
+                          ) : (
+                            <StatusBadge status={report.status} />
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                            {canEntry && report.status === "pending_entry" && (
+                              <button
+                                type="button"
+                                disabled={actionLoading}
+                                onClick={(event) => { event.stopPropagation(); completeReview(report, "entry"); }}
+                                style={{ ...smallButtonStyle, padding: "5px 8px", color: "#B45309", borderColor: "#FCD34D" }}
+                              >
+                                ✅ تأكيد الإدخال
+                              </button>
+                            )}
+                            {canFinal && report.status === "entry_reviewed" && (
+                              <button
+                                type="button"
+                                disabled={actionLoading}
+                                onClick={(event) => { event.stopPropagation(); completeReview(report, "final"); }}
+                                style={{ ...smallButtonStyle, padding: "5px 8px", color: "#047857", borderColor: "#6EE7B7" }}
+                              >
+                                ✅ اعتماد نهائي
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(event) => { event.stopPropagation(); openReport(report); }}
+                              style={{ ...smallButtonStyle, padding: "5px 8px" }}
+                            >
+                              عرض
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -1288,13 +1464,16 @@ export default function NotificationsPage({
           types={types}
           members={members}
           report={editingReport}
+          initialMember={newReportMember}
           onClose={() => {
             setShowForm(false);
             setEditingReport(null);
+            setNewReportMember(null);
           }}
           onSaved={async () => {
             setShowForm(false);
             setEditingReport(null);
+            setNewReportMember(null);
             await refreshAll();
           }}
           onOpenArchive={onOpenArchive}
@@ -1374,6 +1553,15 @@ export default function NotificationsPage({
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px" }}>
+                  <div style={{ fontSize: 11.5, color: "#64748B", fontWeight: 800, marginBottom: 4 }}>مَن أدخل التبليغ</div>
+                  <div style={{ fontSize: 13, color: "#0F2942", fontWeight: 700 }}>
+                    {selectedReport.created_by_name || "—"}
+                    <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, marginTop: 2 }}>
+                      {formatDateTime(selectedReport.created_at)}
+                    </div>
+                  </div>
+                </div>
                 {displayFields(selectedReport, selectedType).map((field) => (
                   <div key={field.key} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px" }}>
                     <div style={{ fontSize: 11.5, color: "#64748B", fontWeight: 800, marginBottom: 4 }}>{field.label}</div>

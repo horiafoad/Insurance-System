@@ -80,6 +80,7 @@ export default function NotificationFormModal({
   types,
   members,
   report,
+  initialMember,
   onClose,
   onSaved,
   onOpenArchive,
@@ -88,20 +89,31 @@ export default function NotificationFormModal({
   const isEditing = Boolean(report?.id);
 
   const defaultYearMonth = currentYearMonth();
-  const initialTypeId =
-    report?.type_id ||
-    (types || []).find((type) => type.is_active)?.id ||
-    "";
+  /* عند الإنشاء لا نختار نوعًا تلقائيًا: يظهر للعضو قائمة الأنواع
+     ليختار منها بنفسه، بدلًا من فتح النموذج على نوع افتراضي. */
+  const initialTypeId = report?.type_id || "";
+
+  const preselectedMember = !isEditing && initialMember ? initialMember : null;
 
   const [typeId, setTypeId] = useState(initialTypeId);
   const [memberMode, setMemberMode] = useState(
-    report?.member_id ? "existing" : (members || []).length > 0 ? "existing" : "new"
+    (report?.member_id || preselectedMember)
+      ? "existing"
+      : (members || []).length > 0
+        ? "existing"
+        : "new"
   );
-  const [memberId, setMemberId] = useState(report?.member_id || "");
-  const [memberName, setMemberName] = useState(report?.member_name || "");
-  const [memberNumber, setMemberNumber] = useState(report?.member_number || "");
-  const [memberJobTitle, setMemberJobTitle] = useState("");
-  const [memberDepartment, setMemberDepartment] = useState("");
+  const [memberId, setMemberId] = useState(report?.member_id || preselectedMember?.id || "");
+  const [memberName, setMemberName] = useState(
+    report?.member_name || preselectedMember?.full_name || ""
+  );
+  const [memberNumber, setMemberNumber] = useState(
+    report?.member_number || preselectedMember?.external_id || ""
+  );
+  const [memberJobTitle, setMemberJobTitle] = useState(preselectedMember?.job_title || "");
+  const [memberDepartment, setMemberDepartment] = useState(
+    preselectedMember?.department || ""
+  );
   const [memberSearch, setMemberSearch] = useState("");
   const [year, setYear] = useState(report?.year || defaultYearMonth.year);
   const [month, setMonth] = useState(report?.month || defaultYearMonth.month);
@@ -539,29 +551,51 @@ export default function NotificationFormModal({
               1) بيانات التبليغ
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-              <div>
-                <label style={labelStyle}>نوع التبليغ *</label>
-                <select
-                  value={typeId}
-                  onChange={(event) => handleTypeChange(event.target.value)}
-                  style={inputStyle}
-                >
-                  <option value="">اختر النوع...</option>
-                  {availableTypes.map((type) => (
-                    <option key={type.id} value={type.id}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>نوع التبليغ *</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {availableTypes.map((type) => {
+                  const active = type.id === typeId;
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => handleTypeChange(type.id)}
+                      style={{
+                        border: active ? `2px solid ${cfg.accent}` : "1px solid #CBD5E1",
+                        background: active ? cfg.accentSoft : "#fff",
+                        color: active ? cfg.accent : "#334155",
+                        borderRadius: 999,
+                        padding: "8px 14px",
+                        fontSize: 12.5,
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
                       {type.name}
                       {type.is_active ? "" : " (موقوف)"}
-                    </option>
-                  ))}
-                </select>
-                {selectedType?.description && (
-                  <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 5, lineHeight: 1.7 }}>
-                    {selectedType.description}
+                    </button>
+                  );
+                })}
+                {availableTypes.length === 0 && (
+                  <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                    لا توجد أنواع متاحة — أضفها من تبويب «أنواع التبليغات».
                   </div>
                 )}
               </div>
+              {selectedType?.description && (
+                <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 6, lineHeight: 1.7 }}>
+                  {selectedType.description}
+                </div>
+              )}
+              {!selectedType && availableTypes.length > 0 && (
+                <div style={{ fontSize: 11.5, color: "#B45309", marginTop: 6, fontWeight: 800 }}>
+                  👆 اختر نوع التبليغ من القائمة أعلاه، ثم أكمل البيانات.
+                </div>
+              )}
+            </div>
 
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
               <div>
                 <label style={labelStyle}>السنة *</label>
                 <select value={year} onChange={(event) => setYear(event.target.value)} style={inputStyle}>
@@ -651,6 +685,31 @@ export default function NotificationFormModal({
                 </button>
               </div>
             </div>
+
+            {preselectedMember && (
+              <div
+                style={{
+                  background: cfg.accentSoft,
+                  border: `1px solid ${cfg.accent}44`,
+                  borderRadius: 10,
+                  padding: "9px 12px",
+                  marginBottom: 12,
+                  fontSize: 12.5,
+                  fontWeight: 800,
+                  color: "#0F2942",
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <span>👤 التبليغ لـ:</span>
+                <b>{preselectedMember.full_name}</b>
+                <span style={{ color: "#64748B", fontWeight: 700 }}>
+                  {cfg.numberLabel}: {preselectedMember.external_id || "—"}
+                </span>
+              </div>
+            )}
 
             {sheetSelection && (
               <div
@@ -762,6 +821,12 @@ export default function NotificationFormModal({
                       </option>
                     ))}
                   </select>
+                  {memberName && (
+                    <div style={{ fontSize: 11.5, color: "#047857", marginTop: 5, fontWeight: 800, lineHeight: 1.7 }}>
+                      ✅ {memberName} — {cfg.numberLabel}: {memberNumber || "—"}
+                      {memberJobTitle ? ` • ${memberJobTitle}` : ""}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={labelStyle}>{cfg.numberLabel} *</label>

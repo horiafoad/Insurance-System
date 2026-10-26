@@ -329,7 +329,7 @@ values
    '[{"key":"amount","label":"قيمة الصرف","type":"number","required":false},{"key":"payment_date","label":"تاريخ الصرف","type":"date","required":false},{"key":"payment_method","label":"طريقة الصرف","type":"select","required":false,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]}]'::jsonb),
 
   ('faculty', 'salary_stop', 'وقف المرتب', 'تبليغ بوقف مرتب عضو هيئة التدريس', 20,
-   '[{"key":"reason","label":"سبب الوقف","type":"select","required":true,"options":["الاستقالة","الوفاة","الإعارة الداخلية","الإعارة الخارجية","مهمة علمية بدون مرتب","إجازة دراسية بدون مرتب","رعاية طفل"]},{"key":"effective_date","label":"تاريخ سريان الوقف","type":"date","required":true},{"key":"payment_method","label":"طريقة الدفع الحالية","type":"select","required":false,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]}]'::jsonb),
+   '[{"key":"reason","label":"سبب الوقف","type":"select","required":true,"options":["استقالة","وفاة","إعارة داخلية","إعارة خارجية","مهمة علمية بدون مرتب","إجازة دراسية بدون مرتب","رعاية طفل"]},{"key":"effective_date","label":"تاريخ سريان الوقف","type":"date","required":true},{"key":"payment_method","label":"طريقة الدفع الحالية","type":"select","required":false,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]}]'::jsonb),
 
   ('faculty', 'payment_method_change', 'تغيير طريقة الدفع', 'تبليغ بتغيير طريقة دفع المرتب', 30,
    '[{"key":"payment_method","label":"طريقة الدفع الحالية","type":"select","required":false,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]},{"key":"new_payment_method","label":"طريقة الدفع الجديدة","type":"select","required":true,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]},{"key":"effective_date","label":"تاريخ السريان","type":"date","required":true}]'::jsonb),
@@ -353,7 +353,7 @@ values
    '[{"key":"amount","label":"قيمة الصرف","type":"number","required":false},{"key":"payment_date","label":"تاريخ الصرف","type":"date","required":false},{"key":"payment_method","label":"طريقة الصرف","type":"select","required":false,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]}]'::jsonb),
 
   ('employees', 'salary_stop', 'وقف المرتب', 'تبليغ بوقف مرتب الموظف', 20,
-   '[{"key":"reason","label":"سبب الوقف","type":"select","required":true,"options":["الاستقالة","الوفاة","الإعارة الداخلية","الإعارة الخارجية","مهمة علمية بدون مرتب","إجازة دراسية بدون مرتب","رعاية طفل"]},{"key":"effective_date","label":"تاريخ سريان الوقف","type":"date","required":true}]'::jsonb),
+   '[{"key":"reason","label":"سبب الوقف","type":"select","required":true,"options":["استقالة","وفاة","إعارة داخلية","إعارة خارجية","مهمة علمية بدون مرتب","إجازة دراسية بدون مرتب","رعاية طفل"]},{"key":"effective_date","label":"تاريخ سريان الوقف","type":"date","required":true}]'::jsonb),
 
   ('employees', 'payment_method_change', 'تغيير طريقة الدفع', 'تبليغ بتغيير طريقة دفع المرتب', 30,
    '[{"key":"payment_method","label":"طريقة الدفع الحالية","type":"select","required":false,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]},{"key":"new_payment_method","label":"طريقة الدفع الجديدة","type":"select","required":true,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]},{"key":"effective_date","label":"تاريخ السريان","type":"date","required":true}]'::jsonb),
@@ -377,7 +377,7 @@ values
    '[{"key":"amount","label":"قيمة الصرف","type":"number","required":false},{"key":"payment_date","label":"تاريخ الصرف","type":"date","required":false}]'::jsonb),
 
   ('contracts', 'salary_stop', 'وقف المرتب', 'تبليغ بوقف مستحقات المتعاقد', 20,
-   '[{"key":"reason","label":"سبب الوقف","type":"select","required":true,"options":["الاستقالة","الوفاة","الإعارة الداخلية","الإعارة الخارجية","مهمة علمية بدون مرتب","إجازة دراسية بدون مرتب","رعاية طفل"]},{"key":"effective_date","label":"تاريخ سريان الوقف","type":"date","required":true}]'::jsonb),
+   '[{"key":"reason","label":"سبب الوقف","type":"select","required":true,"options":["استقالة","وفاة","إعارة داخلية","إعارة خارجية","مهمة علمية بدون مرتب","إجازة دراسية بدون مرتب","رعاية طفل"]},{"key":"effective_date","label":"تاريخ سريان الوقف","type":"date","required":true}]'::jsonb),
 
   ('contracts', 'payment_method_change', 'تغيير طريقة الدفع', 'تبليغ بتغيير طريقة دفع المستحقات', 30,
    '[{"key":"payment_method","label":"طريقة الدفع الحالية","type":"select","required":false,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]},{"key":"new_payment_method","label":"طريقة الدفع الجديدة","type":"select","required":true,"options":["تحويل بنكي","نقدًا","شيك","محفظة إلكترونية"]},{"key":"effective_date","label":"تاريخ السريان","type":"date","required":true}]'::jsonb),
