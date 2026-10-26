@@ -1,9 +1,40 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { styles } from "./styles";
 import { supabase } from "../supabaseClient";
 import { PERMISSIONS } from "../utils/permissions";
+import {
+  NOTIFICATION_ROLES,
+  isNotificationRole,
+  recommendedNotificationPermissions,
+  normalizeNotificationPermissions,
+} from "../utils/notificationPermissions";
 import { useRealtimeSync, applyRowChange } from "../utils/realtimeSync";
-import { getSessionToken } from "../utils/authSession";
+
+const PERMISSION_GROUPS = PERMISSIONS.reduce((groups, permission) => {
+  const name = permission.group || "صلاحيات أخرى";
+  const existing = groups.find((group) => group.name === name);
+  if (existing) existing.items.push(permission);
+  else groups.push({ name, items: [permission] });
+  return groups;
+}, []);
+
+function roleDisplay(role) {
+  if (["creator", "super_admin"].includes(role)) {
+    return { label: "منشئ البرنامج", bg: "#FEE2E2", color: "#B91C1C" };
+  }
+  if (role === "admin") {
+    return { label: "👑 مدير", bg: "#DBEAFE", color: "#1E40AF" };
+  }
+  const notificationRole = NOTIFICATION_ROLES[role];
+  if (notificationRole) {
+    return {
+      label: `📣 ${notificationRole.label}`,
+      bg: "#EDE9FE",
+      color: "#6D28D9",
+    };
+  }
+  return { label: "👤 مستخدم", bg: "#E0F2FE", color: "#0369A1" };
+}
 
 export default function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -105,7 +136,8 @@ export default function UserManagement({ currentUser }) {
     apply: (payload) => {
       const clean = (row) => {
         if (!row || typeof row !== "object") return row;
-        const { password, ...rest } = row;
+        const rest = { ...row };
+        delete rest.password;
         return rest;
       };
       setUsers((prev) =>
@@ -201,6 +233,18 @@ export default function UserManagement({ currentUser }) {
     }));
   };
 
+  /* اختيار دور تبليغات يملأ الصلاحيات المقترحة فقط،
+     ويمكن للمسؤول تعديلها بعد ذلك. لا تُمنح أي صلاحية تلقائيًا وقت التشغيل. */
+  const handleRoleChange = (role) => {
+    setFormData((prev) => {
+      const next = { ...prev, role };
+      if (isNotificationRole(role)) {
+        next.permissions = recommendedNotificationPermissions(role);
+      }
+      return next;
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.username.trim() || !formData.fullName.trim()) {
@@ -222,7 +266,11 @@ export default function UserManagement({ currentUser }) {
             ? Number(formData.departmentId)
             : null,
           ...(permissionsEnabled
-            ? { permissions: formData.permissions }
+            ? {
+                permissions: normalizeNotificationPermissions(
+                  formData.permissions
+                ),
+              }
             : {}),
         };
         if (formData.password) {
@@ -262,7 +310,11 @@ export default function UserManagement({ currentUser }) {
               ? Number(formData.departmentId)
               : null,
             ...(permissionsEnabled
-              ? { permissions: formData.permissions }
+              ? {
+                  permissions: normalizeNotificationPermissions(
+                    formData.permissions
+                  ),
+                }
               : {}),
           })
           .select()
@@ -490,32 +542,23 @@ export default function UserManagement({ currentUser }) {
                       )}
                     </td>
                     <td style={styles.td}>
-                      <span
-                        style={{
-                          padding: "4px 12px",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "700",
-                          background:
-                            ["creator", "super_admin"].includes(user.role)
-                              ? "#FEE2E2"
-                              : user.role === "admin"
-                              ? "#DBEAFE"
-                              : "#E0F2FE",
-                          color:
-                            ["creator", "super_admin"].includes(user.role)
-                              ? "#B91C1C"
-                              : user.role === "admin"
-                              ? "#1E40AF"
-                              : "#0369A1",
-                        }}
-                      >
-                        {["creator", "super_admin"].includes(user.role)
-                          ? "منشئ البرنامج"
-                          : user.role === "admin"
-                          ? "👑 مدير"
-                          : "👤 مستخدم"}
-                      </span>
+                      {(() => {
+                        const role = roleDisplay(user.role);
+                        return (
+                          <span
+                            style={{
+                              padding: "4px 12px",
+                              borderRadius: "20px",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              background: role.bg,
+                              color: role.color,
+                            }}
+                          >
+                            {role.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={styles.td}>
                       {user.created_at
@@ -646,14 +689,20 @@ export default function UserManagement({ currentUser }) {
                 </label>
                 <select
                   value={formData.role}
-                  onChange={(e) =>
-                    setFormData({ ...formData, role: e.target.value })
-                  }
+                  onChange={(e) => handleRoleChange(e.target.value)}
                   style={styles.input}
                 >
                   <option value="admin">مدير (صلاحيات كاملة)</option>
                   <option value="user">مستخدم (عرض وتعديل محدود)</option>
                   <option value="super_admin">منشئ البرنامج (صلاحيات كاملة)</option>
+                  <option value="creator">منشئ (توافق رجعي)</option>
+                  <optgroup label="أدوار التبليغات المستقلة">
+                    {Object.entries(NOTIFICATION_ROLES).map(([role, definition]) => (
+                      <option key={role} value={role}>
+                        📣 {definition.label} — {definition.description}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
 
@@ -815,59 +864,71 @@ export default function UserManagement({ currentUser }) {
                   </button>
                 </div>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(180px, 1fr))",
-                    gap: "10px",
-                    marginTop: "8px",
-                  }}
-                >
-                  {PERMISSIONS.map((permission) => (
-                    <label
-                      key={permission.id}
+                {PERMISSION_GROUPS.map((group) => (
+                  <div key={group.name} style={{ marginTop: "10px" }}>
+                    <div
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "10px 12px",
-                        borderRadius: "12px",
-                        border:
-                          formData.permissions.includes(
-                            permission.id
-                          )
-                            ? "2px solid #3B82F6"
-                            : "1px solid #E2E8F0",
-                        background:
-                          formData.permissions.includes(
-                            permission.id
-                          )
-                            ? "#EFF6FF"
-                            : "#F8FAFC",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: "700",
-                        color: "#1E293B",
+                        fontSize: "12px",
+                        fontWeight: "900",
+                        color: "#475569",
+                        marginBottom: "6px",
+                        paddingRight: "2px",
                       }}
                     >
-                      <input
-                        type="checkbox"
-                        checked={formData.permissions.includes(
-                          permission.id
-                        )}
-                        onChange={() =>
-                          togglePermission(permission.id)
-                        }
-                        style={{
-                          accentColor: "#3B82F6",
-                          transform: "scale(1.25)",
-                        }}
-                      />
-                      {permission.icon} {permission.title}
-                    </label>
-                  ))}
-                </div>
+                      {group.name}
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: "10px",
+                      }}
+                    >
+                      {group.items.map((permission) => (
+                        <label
+                          key={permission.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            padding: "10px 12px",
+                            borderRadius: "12px",
+                            border: formData.permissions.includes(
+                              permission.id
+                            )
+                              ? "2px solid #3B82F6"
+                              : "1px solid #E2E8F0",
+                            background: formData.permissions.includes(
+                              permission.id
+                            )
+                              ? "#EFF6FF"
+                              : "#F8FAFC",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "700",
+                            color: "#1E293B",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.permissions.includes(
+                              permission.id
+                            )}
+                            onChange={() =>
+                              togglePermission(permission.id)
+                            }
+                            style={{
+                              accentColor: "#3B82F6",
+                              transform: "scale(1.25)",
+                            }}
+                          />
+                          {permission.icon} {permission.title}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
 
                 <div
                   style={{

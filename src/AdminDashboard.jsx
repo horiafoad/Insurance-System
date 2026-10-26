@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "./supabaseClient";
 import { styles } from "./dashboard/styles";
@@ -32,6 +32,8 @@ import ExecutiveOrdersPage from "./dashboard/ExecutiveOrdersPage";
 import OrgStructurePage from "./dashboard/OrgStructurePage";
 import PushNotificationsPanel from "./dashboard/PushNotificationsPanel";
 import AdminPushDevicesPanel from "./dashboard/AdminPushDevicesPanel";
+import NotificationsPage from "./dashboard/NotificationsPage";
+import { getSectionConfig, NOTIFICATION_SECTION_LIST } from "./dashboard/notificationsConfig";
 import InstallAppButton from "./dashboard/InstallAppButton";
 import CheckForUpdatesButton from "./dashboard/CheckForUpdatesButton";
 import SupportDrawerButton from "./dashboard/SupportDrawerButton";
@@ -59,7 +61,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   // الحسابات القديمة (permissions = null) بوصول كامل ترى لوحة التحكم.
   // المستخدم المقيّد (مثل: خطابات فقط) يُفتح مباشرة على صفحة الخطابات
   // ولا يرى لوحة التحكم الرئيسية (بيانات النظام كاملة).
-  const hasDashboardAccess =
+  const hasGeneralDashboardAccess =
     currentUser?.permissions == null ||
     (Array.isArray(currentUser.permissions) &&
       (currentUser.permissions.includes("entitlements") ||
@@ -67,6 +69,10 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         currentUser.permissions.includes("requests") ||
         currentUser.permissions.includes("user_management") ||
         currentUser.permissions.includes("org_structure")));
+
+  const firstNotificationSection = NOTIFICATION_SECTION_LIST.find((section) =>
+    canAccessMenu(currentUser, `notifications_${section.id}`)
+  );
 
   // وضع العرض الأعرض: يُطبَّق على حساب «عبد الله» فقط عند دخوله لوحة الإدارة،
   // لتقليل المسافات البيضاء الجانبية وجعل مساحة العمل أعرض وأكبر.
@@ -86,9 +92,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         ? "service_requests"
         : openLetterFromUrl
           ? "letters_tracking"
-          : hasDashboardAccess
+          : hasGeneralDashboardAccess
             ? "home"
-            : "letters_tracking"
+            : firstNotificationSection
+              ? `notifications_${firstNotificationSection.id}`
+              : "letters_tracking"
   );
 
   useEffect(() => {
@@ -99,6 +107,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
 
   const [focusRequestId, setFocusRequestId] = useState(openRequestFromUrl || propFocusId || null);
   const [openLetterId, setOpenLetterId] = useState(openLetterFromUrl || null);
+  const [notificationFocus, setNotificationFocus] = useState(null);
+  const [archiveFocus, setArchiveFocus] = useState(null);
 
   useEffect(() => {
     const nextId = propFocusId || openRequestFromUrl || null;
@@ -1201,6 +1211,33 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   };
 
+  /* ربط ثنائي الاتجاه بين فهرس التبليغات وأرشيف مفردات المرتب
+     دون نسخ أي ملفات أو بيانات — يفتح صفحة الطرف الآخر مع تركيز على العضو. */
+  const openMemberNotifications = (sectionId, member) => {
+    const menuId = `notifications_${sectionId}`;
+    if (!canAccessMenu(currentUser, menuId)) {
+      window.alert("⛔ لا تملك صلاحية عرض تبليغات هذا القسم.");
+      return;
+    }
+    setNotificationFocus({ section: sectionId, member });
+    setActiveMenu(menuId);
+    setSidebarOpen(false);
+  };
+
+  const openMemberArchive = (sectionId, member) => {
+    const cfg = getSectionConfig(sectionId);
+    if (!cfg.archiveMenu) return;
+    if (!canAccessMenu(currentUser, cfg.archiveMenu)) {
+      window.alert("⛔ لا تملك صلاحية عرض أرشيف مفردات المرتب لهذا القسم.");
+      return;
+    }
+    setArchiveFocus({ section: sectionId, member });
+    setActiveMenu(cfg.archiveMenu);
+    setSidebarOpen(false);
+  };
+
+  const isNotificationsPage = activeMenu.startsWith("notifications_");
+
   const currentTitle =
     activeMenu === "claims"
       ? "المطالبات"
@@ -1350,7 +1387,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       )}
 
       <main style={styles.main} className="admin-main">
-        {!isArchivePage && activeMenu !== "letters_tracking" && (
+        {!isArchivePage && activeMenu !== "letters_tracking" && !isNotificationsPage && (
           <header style={styles.header} className="admin-header">
             <div>
               {(isMobile || isWideLayout) && (
@@ -1796,14 +1833,59 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             />
           )}
 
+        {NOTIFICATION_SECTION_LIST.map((section) => {
+          const menuId = `notifications_${section.id}`;
+          if (activeMenu !== menuId) return null;
+          if (!canAccessMenu(currentUser, menuId)) return null;
+          const cfg = getSectionConfig(section.id);
+          const archiveAllowed =
+            Boolean(cfg.archiveMenu) && canAccessMenu(currentUser, cfg.archiveMenu);
+          return (
+            <NotificationsPage
+              key={menuId}
+              section={section.id}
+              currentUser={currentUser}
+              initialMember={
+                notificationFocus?.section === section.id
+                  ? notificationFocus.member
+                  : null
+              }
+              onConsumedInitialMember={() => setNotificationFocus(null)}
+              onOpenArchive={
+                archiveAllowed
+                  ? (member) => openMemberArchive(section.id, member)
+                  : undefined
+              }
+            />
+          );
+        })}
+
         {activeMenu === "faculty_salary_archive" &&
           canAccessMenu(currentUser, "faculty_salary_archive") && (
-            <FacultySalaryArchivePage currentUser={currentUser} />
+            <FacultySalaryArchivePage
+              currentUser={currentUser}
+              focusMember={
+                archiveFocus?.section === "faculty" ? archiveFocus.member : null
+              }
+              onConsumedFocus={() => setArchiveFocus(null)}
+              onOpenMemberNotifications={(member) =>
+                openMemberNotifications("faculty", member)
+              }
+            />
           )}
 
         {activeMenu === "employee_salary_archive" &&
           canAccessMenu(currentUser, "employee_salary_archive") && (
-            <EmployeeSalaryArchivePage currentUser={currentUser} />
+            <EmployeeSalaryArchivePage
+              currentUser={currentUser}
+              focusMember={
+                archiveFocus?.section === "employees" ? archiveFocus.member : null
+              }
+              onConsumedFocus={() => setArchiveFocus(null)}
+              onOpenMemberNotifications={(member) =>
+                openMemberNotifications("employees", member)
+              }
+            />
           )}
 
         {activeMenu === "executive_orders_add" &&

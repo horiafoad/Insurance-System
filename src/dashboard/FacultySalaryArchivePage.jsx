@@ -570,7 +570,13 @@ const navButtonStyle = {
 /* ------------------------------------------------------------------
    الصفحة الرئيسية للقسم
 ------------------------------------------------------------------ */
-export default function FacultySalaryArchivePage({ currentUser, config }) {
+export default function FacultySalaryArchivePage({
+  currentUser,
+  config,
+  focusMember,
+  onConsumedFocus,
+  onOpenMemberNotifications,
+}) {
   const cfg = config || FACULTY_SALARY_CONFIG;
   const ARCHIVE_TABLE = cfg.table;
   const IMPORTS_TABLE = cfg.importsTable;
@@ -611,6 +617,33 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
   const [ocrMode, setOcrMode] = useState(false);
 
   const pageRef = useRef(0);
+
+  /* التركيز على عضو قادم من صفحة التبليغات: يفتح الأرشيف
+     ويعبّئ البحث برقم العضو (أو اسمه عند غياب الرقم). */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!focusMember) return;
+    const number = String(
+      focusMember.computer_number ||
+        focusMember.external_id ||
+        focusMember.member_number ||
+        ""
+    ).trim();
+    const name = String(
+      focusMember[NAME_COL] ||
+        focusMember.full_name ||
+        focusMember.faculty_name ||
+        focusMember.employee_name ||
+        focusMember.member_name ||
+        ""
+    ).trim();
+    setViewMode("archive");
+    setSelectedYears([]);
+    setSelectedMonths([]);
+    setSearch(number || name);
+    if (onConsumedFocus) onConsumedFocus();
+  }, [focusMember]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   /* قوائم الخيارات مشتقة من البيانات الفعلية (تُعرَّف بعد كل الـ states) — لا قوائم ثابتة */
   const yearOptionsList = [...new Set(years.map((y) => Number(y)).filter(Number.isFinite))].sort((a, b) => b - a);
@@ -2023,6 +2056,15 @@ export default function FacultySalaryArchivePage({ currentUser, config }) {
                       <button onClick={() => handleDownload(member.latest)} style={downloadButtonStyle}>
                         📥 تحميل
                       </button>
+                      {onOpenMemberNotifications && (
+                        <button
+                          onClick={() => onOpenMemberNotifications(member)}
+                          style={notificationButtonStyle}
+                          title="فتح ملف التبليغات لهذا العضو"
+                        >
+                          📣 تبليغات العضو
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2218,6 +2260,17 @@ const downloadButtonStyle = {
   border: "1px solid #2B5FA8",
   background: "#2B5FA8",
   color: "#fff",
+  borderRadius: 9,
+  padding: "8px 14px",
+  fontWeight: 800,
+  fontSize: 13,
+  cursor: "pointer",
+};
+
+const notificationButtonStyle = {
+  border: "1px solid #C4B5FD",
+  background: "#F5F3FF",
+  color: "#6D28D9",
   borderRadius: 9,
   padding: "8px 14px",
   fontWeight: 800,

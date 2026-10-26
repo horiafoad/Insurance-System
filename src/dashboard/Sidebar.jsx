@@ -1,6 +1,8 @@
 import { styles } from "./styles";
 import { MENU_ITEMS, TASK_TYPES } from "./data";
 import { hasPermission } from "../utils/permissions";
+import { canViewSection } from "../utils/notificationPermissions";
+import { NOTIFICATION_SECTION_LIST } from "./notificationsConfig";
 
 const SERVICE_REQUEST_TYPES = {
   salary_statement: "مفردات مرتب",
@@ -58,6 +60,10 @@ export default function Sidebar({
   );
   const canArchive =
     canEntitlements || hasPermission(currentUser, "system_settings");
+
+  const notificationSections = NOTIFICATION_SECTION_LIST.filter((section) =>
+    canViewSection(currentUser, section.id)
+  );
 
   return (
     <aside
@@ -263,6 +269,37 @@ export default function Sidebar({
             <span>👨‍💼</span>
             <span>الموظفون</span>
           </button>
+        </>
+      )}
+
+      {/* =========================================
+          تبليغات هيئة التدريس / الموظفين / العقود
+          ========================================= */}
+
+      {notificationSections.length > 0 && (
+        <>
+          <div style={styles.sidebarDivider} />
+
+          <div style={{ padding: "6px 14px 2px", fontSize: 11, fontWeight: 800, color: "#94A3B8" }}>
+            📣 تبليغات الاستحقاقات
+          </div>
+
+          {notificationSections.map((section) => {
+            const menuId = `notifications_${section.id}`;
+            return (
+              <button
+                key={menuId}
+                onClick={() => navigate(menuId)}
+                style={{
+                  ...styles.smallMenuButton,
+                  ...(activeMenu === menuId ? styles.smallMenuButtonActive : {}),
+                }}
+              >
+                <span>{section.emoji}</span>
+                <span>{section.shortTitle}</span>
+              </button>
+            );
+          })}
         </>
       )}
 
