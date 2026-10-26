@@ -14,8 +14,8 @@
 //   • سجل مركزي واحد لكل عضو (مستورد من Excel) — لا تكرار.
 //   • ربط العضو بالمطالبات والطلبات والقضايا والخطابات والأوامر التنفيذية
 //     والمهام ومفردات المرتب، مع إظهار مصدر المطابقة (تلقائي / يدوي).
-//   • رفع ملفات PDF للعضو تُحفظ على جهاز المستخدم فقط (تخزين local://)
-//     ولا تُرفع إلى Supabase Storage ولا إلى R2.
+//   • رفع ملفات PDF للعضو إلى التخزين المشترك، فتُفتح لأي مستخدم من أي
+//     جهاز (وليست مرتبطة بجهاز من رفعها).
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,8 +37,6 @@ import {
   deleteMemberDocument,
   downloadMemberDocument,
   openMemberDocument,
-  localArchiveDir,
-  canStoreLocally,
   searchSourceRecords,
   createOrFindMember,
 } from "../services/facultyArchiveService";
@@ -46,7 +44,6 @@ import { normalizeArabicKey, formatArabicNumber, normalizeMemberCode, toDisplayN
 import { analyzeArchiveFile } from "../utils/facultyArchiveMatcher";
 import { autoLinkFacultySources } from "../services/facultyAutoLinkService";
 import { fetchStudyLeaves } from "../services/studyLeavesService";
-import StorageTargetToggle from "../components/StorageTargetToggle";
 
 /* ------------------------------------------------------------------ */
 /* أدوات العرض                                                         */
@@ -54,7 +51,7 @@ import StorageTargetToggle from "../components/StorageTargetToggle";
 
 const PAGE_TITLE = "الأرشيف الذكي لأعضاء هيئة التدريس";
 const PAGE_SUBTITLE =
-  "سجل مركزي واحد لكل عضو، يربطه بالمطالبات والطلبات والقضايا والخطابات والأوامر التنفيذية ومفردات المرتب، مع حفظ الملفات على جهازك.";
+  "سجل مركزي واحد لكل عضو، يربطه بالمطالبات والطلبات والقضايا والخطابات والأوامر التنفيذية ومفردات المرتب، مع حفظ الملفات وفتحها لأي مستخدم.";
 
 function formatDate(value) {
   if (!value) return "";
@@ -500,7 +497,7 @@ function MemberDetail({ member, onClose, onChanged, currentUser }) {
         month: uploadMeta.month ? Number(uploadMeta.month) : null,
         createdBy: currentUser?.full_name || currentUser?.username || null,
       });
-      setNotice("✅ تم حفظ الملف على جهازك وتسجيله في الأرشيف.");
+      setNotice("✅ تم رفع الملف وتسجيله في الأرشيف — يُفتح لأي مستخدم.");
       setUploadMeta({ docType: "salary", title: "", year: "", month: "" });
       const docs = await fetchMemberDocuments(member.id);
       setDocuments(docs);
@@ -659,9 +656,9 @@ function MemberDetail({ member, onClose, onChanged, currentUser }) {
             onClick={() => fileRef.current?.click()}
             disabled={busy}
             style={primarySmallStyle}
-            title="حفظ الملف على جهازك فقط"
+            title="إضافة ملف PDF يُفتح لأي مستخدم"
           >
-            📎 إضافة ملف PDF (محلي)
+            📎 إضافة ملف PDF
           </button>
           <button type="button" onClick={() => setPicker(true)} style={secondarySmallStyle}>
             🔗 ربط سجل
@@ -749,21 +746,13 @@ function MemberDetail({ member, onClose, onChanged, currentUser }) {
           {/* الوثائق */}
           {tab === "documents" && (
             <div>
-              {!canStoreLocally() ? (
-                <div style={infoBoxStyle}>
-                  ⚠️ التخزين على الجهاز غير متاح في هذا المتصفح. حوّلي مكان
-                  الحفظ إلى السحابة من زر «الحفظ» أعلى الصفحة.
-                </div>
-              ) : (
-                <div style={infoBoxStyle}>
-                  📁 الملفات تُحفظ على هذا الجهاز ولا تُرفع إلى السحابة. المرجع
-                  المحفوظ في القاعدة هو <b>local://</b> فقط.
-                </div>
-              )}
+              <div style={infoBoxStyle}>
+                📁 الملفات تُحفظ في التخزين المشترك وتُفتح لأي مستخدم من أي
+                جهاز — وليست مرتبطة بجهاز من رفعها.
+              </div>
               {!documents.length && (
                 <div style={emptyStyle}>
-                  لا توجد وثائق. استخدم زر «إضافة ملف PDF (محلي)» لحفظ مستند على
-                  جهازك.
+                  لا توجد وثائق. افتح أي عضو ثم أضف ملف PDF.
                 </div>
               )}
               {documents.map((doc) => (
@@ -1104,7 +1093,6 @@ export default function SmartFacultyArchivePage({ currentUser }) {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
   const [notifyOpen, setNotifyOpen] = useState(false);
-  const [storageDir, setStorageDir] = useState("");
 
   const smartUploadRef = useRef(null);
   const [smartBusy, setSmartBusy] = useState(false);
@@ -1289,7 +1277,6 @@ export default function SmartFacultyArchivePage({ currentUser }) {
 
   useEffect(() => {
     loadAll();
-    localArchiveDir().then(setStorageDir).catch(() => setStorageDir(""));
   }, [loadAll]);
 
   /* فهارس مساعدة */
@@ -1528,13 +1515,11 @@ export default function SmartFacultyArchivePage({ currentUser }) {
           <div style={{ fontSize: 14.5, fontWeight: 900, color: "#102A43" }}>
             {PAGE_TITLE}
           </div>
-          {storageDir ? (
-            <div style={{ fontSize: 12.5, lineHeight: 1.7, color: "#66788F", marginTop: 3 }}>
-              📁 ملفات الأرشيف تُحفظ على جهازك في: <b>{storageDir}</b>
-            </div>
-          ) : null}
+          <div style={{ fontSize: 12.5, lineHeight: 1.7, color: "#66788F", marginTop: 3 }}>
+            📁 ملفات الأرشيف تُحفظ في التخزين المشترك وتُفتح لأي مستخدم من أي
+            جهاز.
+          </div>
         </div>
-        <StorageTargetToggle />
       </div>
 
       {/* التبويبات */}
@@ -1934,15 +1919,8 @@ export default function SmartFacultyArchivePage({ currentUser }) {
               lineHeight: 1.9,
             }}
           >
-            📎 كل وثائق الأرشيف الذكي. الملفات محفوظة على جهاز المستخدم فقط
-            (مرجع <b>local://</b> في القاعدة) — لا يوجد أي ملف على Supabase
-            Storage ولا على R2.
-            {storageDir ? (
-              <>
-                <br />
-                📁 مجلد الحفظ: <b>{storageDir}</b>
-              </>
-            ) : null}
+            📎 كل وثائق الأرشيف الذكي. الملفات محفوظة في التخزين المشترك
+            وتُفتح لأي مستخدم من أي جهاز.
           </div>
 
           {!documents.length && (

@@ -15,9 +15,7 @@ import {
   uploadFile,
   deleteFile as storageDeleteFile,
   downloadFileToDisk,
-  openLocalFile,
-  getLocalStorageDir,
-  canSaveOnDevice,
+  openFile,
 } from "./fileStorage";
 import { normalizeArabicKey, toDisplayName, normalizeMemberCode } from "../utils/arabicText";
 
@@ -26,8 +24,10 @@ export const FACULTY_ALIASES_TABLE = "faculty_member_aliases";
 export const FACULTY_DOCUMENTS_TABLE = "faculty_member_documents";
 export const FACULTY_LINKS_TABLE = "faculty_member_links";
 
-/** البِكِت المنطقي داخل مجلد التخزين المحلي على جهاز المستخدم. */
-export const FACULTY_ARCHIVE_BUCKET = "faculty-archive";
+/* وثائق الأرشيف تُحفظ في التخزين المشترك (نفس بِكِت الأوامر التنفيذية)
+   تحت مسار faculty-archive/ حتى يفتحها أي مستخدم من أي جهاز. */
+export const FACULTY_ARCHIVE_BUCKET = "executive-orders";
+export const FACULTY_ARCHIVE_PREFIX = "faculty-archive";
 
 /* ------------------------------------------------------------------ */
 /* سجل الأقسام التي يمكن الربط بها                                     */
@@ -402,10 +402,10 @@ export async function deleteLink(linkId) {
 }
 
 /* ------------------------------------------------------------------ */
-/* الوثائق — تُحفظ على جهاز المستخدم                                    */
+/* الوثائق — تُحفظ في التخزين المشترك وتُفتح لأي مستخدم                 */
 /* ------------------------------------------------------------------ */
 
-/** يبني مسارًا منظّمًا داخل البِكِت المحلي. */
+/** يبني مسارًا منظّمًا داخل بِكِت الأرشيف. */
 export function buildDocumentPath(member, file, { year, month } = {}) {
   const code = String(member?.member_code || "unknown").replace(/[^\d\-]/g, "");
   const yearPart = year ? String(year) : "unspecified";
@@ -413,12 +413,12 @@ export function buildDocumentPath(member, file, { year, month } = {}) {
   const original = String(file?.name || "document.pdf")
     .replace(/[\\/:*?"<>|]/g, "_")
     .slice(0, 80);
-  return `${code}/${yearPart}/${monthPart}/${Date.now()}-${original}`;
+  return `${FACULTY_ARCHIVE_PREFIX}/${code}/${yearPart}/${monthPart}/${Date.now()}-${original}`;
 }
 
 /**
- * يرفع ملفًا محليًا إلى مجلد الأرشيف على جهاز المستخدم ويسجّله.
- * لا يُرفع أي بايت إلى Supabase Storage أو R2.
+ * يرفع ملفًا إلى التخزين المشترك ويسجّله في الأرشيف.
+ * المرجع المحفوظ في القاعدة (asu:// أو r2:// أو http) يُفتح لأي مستخدم.
  */
 export async function uploadMemberDocument(member, file, options = {}) {
   if (!member?.id) throw new Error("العضو غير محدد.");
@@ -430,7 +430,6 @@ export async function uploadMemberDocument(member, file, options = {}) {
   const saved = await uploadFile(FACULTY_ARCHIVE_BUCKET, path, file, {
     contentType,
     upsert: true,
-    provider: "local",
   });
 
   const { data, error } = await supabase
@@ -457,11 +456,14 @@ export async function uploadMemberDocument(member, file, options = {}) {
   return data;
 }
 
-/** يحذف الوثيقة من القاعدة ومن مجلد الجهاز. */
+/** يحذف الوثيقة من القاعدة ومن التخزين. */
 export async function deleteMemberDocument(doc) {
   if (doc?.file_url) {
     try {
-      await storageDeleteFile(doc.file_url, { path: doc.file_path });
+      await storageDeleteFile(doc.file_url, {
+        bucket: FACULTY_ARCHIVE_BUCKET,
+        path: doc.file_path,
+      });
     } catch {
       /* الملف قد يكون محذوفًا أصلًا — نكمل حذف السجل */
     }
@@ -479,21 +481,17 @@ export async function downloadMemberDocument(doc) {
   const name =
     doc.original_filename ||
     `${doc.title || "document"}${doc.year ? `_${doc.year}` : ""}.pdf`;
-  await downloadFileToDisk(doc.file_url, name, { path: doc.file_path });
+  await downloadFileToDisk(doc.file_url, name, {
+    bucket: FACULTY_ARCHIVE_BUCKET,
+    path: doc.file_path,
+  });
 }
 
-/** فتح وثيقة بالبرنامج الافتراضي. */
+/** فتح وثيقة في تبويب جديد (رابط موقّع يعمل لأي مستخدم). */
 export async function openMemberDocument(doc) {
   if (!doc?.file_url) throw new Error("لا يوجد ملف لهذه الوثيقة.");
-  return openLocalFile(doc.file_url, { path: doc.file_path });
-}
-
-/** مجلد التخزين المحلي على الجهاز (لعرضه للمستخدم). */
-export async function localArchiveDir() {
-  return getLocalStorageDir();
-}
-
-/** هل يمكن حفظ الملفات على هذا الجهاز؟ (ديسكتوب أو متصفح حديث) */
-export function canStoreLocally() {
-  return canSaveOnDevice();
+  return openFile(doc.file_url, {
+    bucket: FACULTY_ARCHIVE_BUCKET,
+    path: doc.file_path,
+  });
 }

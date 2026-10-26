@@ -1,5 +1,9 @@
 {
   "appId": "com.horiafoad.insurance",
   "appName": "البوابة الإلكترونية الذكية",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "url": "https://insurance-system-9et.pages.dev",
+    "cleartext": false
+  }
 }

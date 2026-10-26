@@ -41,7 +41,6 @@ import {
   deviceReadFile,
   deviceRemoveFile,
   deviceSaveFile,
-  deviceUsage,
   isDeviceStoreAvailable,
 } from "./deviceFileStore";
 
@@ -66,17 +65,11 @@ export function isElectronNative() {
 }
 
 /* مزوّد الرفع:
-   • داخل الديسكتوب (Electron) → local دائمًا: ملفات على القرص.
-   • المتصفح/الموبايل → «جهاز» افتراضيًا: الملفات تُحفظ على الجهاز نفسه
-     داخل مساحة المتصفح (IndexedDB) ولا تُرفع للسحابة.
-     يمكن التبديل إلى السحابة (asu/r2/supabase) من زر «مكان الحفظ» في
-     الواجهة، أو عبر VITE_FILE_STORAGE_PROVIDER عند ضبطه على مزوّد سحابي. */
+   الملفات تُحفظ في التخزين المشترك (بوابة خادم القسم asu أو R2 أو Supabase)
+   حتى يستطيع أي مستخدم فتحها من أي جهاز — وليس على جهاز من رفعها.
+   يُضبط المزوّد عبر VITE_FILE_STORAGE_PROVIDER، والافتراضي Supabase. */
 
-const STORAGE_TARGET_KEY = "file_storage_target"; // device | cloud
-const CLOUD_TARGET = "cloud";
-const DEVICE_TARGET = "device";
-
-/** المزوّد السحابي المضبوط في بيئة البناء (إن وُجد). */
+/** المزوّد المشترك المضبوط في بيئة البناء (إن وُجد). */
 function envCloudProvider() {
   const raw = String(import.meta.env.VITE_FILE_STORAGE_PROVIDER || "").toLowerCase();
   if (raw === STORAGE_PROVIDER.ASU) return STORAGE_PROVIDER.ASU;
@@ -84,59 +77,14 @@ function envCloudProvider() {
   return STORAGE_PROVIDER.SUPABASE;
 }
 
-/** هل الوجهة الحالية هي «هذا الجهاز»؟ */
-export function isDeviceStorage() {
-  if (nativeLocalFiles()) return true;
-  try {
-    const saved = localStorage.getItem(STORAGE_TARGET_KEY);
-    if (saved === DEVICE_TARGET) return true;
-    if (saved === CLOUD_TARGET) return false;
-  } catch {
-    /* ignore */
-  }
-  // لا يوجد اختيار محفوظ: الجهاز هو الافتراضي في المتصفح.
-  return true;
-}
-
-/** الوجهة الحالية كما تُعرض في الواجهة: device | cloud. */
-export function getStorageTarget() {
-  return isDeviceStorage() ? DEVICE_TARGET : CLOUD_TARGET;
-}
-
-/** تبديل وجهة الحفظ (يُحفظ لكل متصفح/جهاز على حدة). */
-export function setStorageTarget(target) {
-  const value = target === CLOUD_TARGET ? CLOUD_TARGET : DEVICE_TARGET;
-  try {
-    localStorage.setItem(STORAGE_TARGET_KEY, value);
-  } catch {
-    /* ignore */
-  }
-  return value;
-}
-
-/** المزوّد الفعلي للكتابة الآن. */
+/** المزوّد الفعلي للكتابة الآن (مشترك دائمًا). */
 function currentWriteProvider() {
-  if (isDeviceStorage()) return STORAGE_PROVIDER.LOCAL;
   return envCloudProvider();
 }
 
 /** هل الرفع الجديد يذهب إلى R2؟ */
 export function isR2WriteProvider() {
   return currentWriteProvider() === STORAGE_PROVIDER.R2;
-}
-
-/** هل يمكن حفظ الملفات على هذا الجهاز؟ (ديسكتوب أو متصفح) */
-export function canSaveOnDevice() {
-  return Boolean(nativeLocalFiles()) || isDeviceStoreAvailable();
-}
-
-/** مساحة التخزين المحلي المستخدمة على الجهاز. */
-export async function getDeviceStorageUsage() {
-  if (nativeLocalFiles()) {
-    return { count: null, bytes: null, kind: "desktop" };
-  }
-  const usage = await deviceUsage();
-  return { ...usage, kind: "browser" };
 }
 
 /** البادئة الثابتة التي تُخزَّن في قاعدة البيانات لملفات R2. */
@@ -678,7 +626,7 @@ export async function uploadFile(bucket, path, body, options = {}) {
 
     if (!isDeviceStoreAvailable()) {
       throw new Error(
-        "التخزين على الجهاز غير متاح في هذا المتصفح. استخدمي متصفحًا حديثًا أو بدّلي مكان الحفظ إلى السحابة."
+        "التخزين على الجهاز غير متاح في هذا المتصفح. استخدمي متصفحًا حديثًا."
       );
     }
 

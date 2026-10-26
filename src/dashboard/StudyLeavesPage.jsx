@@ -685,8 +685,7 @@ export default function StudyLeavesPage({
             <div style={styles.infoBox}>
               كود الموظف: <strong>{pdfLeave.employeeCode || "—"}</strong>
               <div style={smallNote}>
-                الملف يُحفظ على هذا الجهاز افتراضيًا (ولا يُرفع للسحابة)، ويمكن
-                تحويل مكان الحفظ من زر «الحفظ» أعلى الصفحة.
+                الملف يُحفظ في التخزين المشترك ويُفتح لأي مستخدم من أي جهاز.
               </div>
             </div>
 
