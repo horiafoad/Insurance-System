@@ -43,6 +43,20 @@ function emptyField() {
   };
 }
 
+/* خيارات القائمة قد تكون مخزّنة كمصفوفة أو كنص مفصول بفواصل
+   (توافق مع الأنواع القديمة)، فنوحّدها دائمًا إلى مصفوفة. */
+function fieldOptions(field) {
+  const raw = field?.options;
+  if (Array.isArray(raw)) return raw.map((option) => String(option ?? ""));
+  if (typeof raw === "string") {
+    return raw
+      .split(",")
+      .map((option) => option.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 export default function NotificationTypesManager({
   section,
   types,
@@ -104,7 +118,7 @@ export default function NotificationTypesManager({
         label: field.label,
         type: field.type,
         required: field.required,
-        options: field.options || [],
+        options: fieldOptions(field),
       })),
     });
     setError("");
@@ -116,6 +130,45 @@ export default function NotificationTypesManager({
       ...current,
       extra_fields: current.extra_fields.map((field, i) =>
         i === index ? { ...field, ...patch } : field
+      ),
+    }));
+  };
+
+  /* إدارة خيارات القائمة المنسدلة: إضافة / تعديل / حذف خيار. */
+  const updateOption = (fieldIndex, optionIndex, value) => {
+    setForm((current) => ({
+      ...current,
+      extra_fields: current.extra_fields.map((field, i) => {
+        if (i !== fieldIndex) return field;
+        const options = fieldOptions(field).map((option, oi) =>
+          oi === optionIndex ? value : option
+        );
+        return { ...field, options };
+      }),
+    }));
+  };
+
+  const addOption = (fieldIndex) => {
+    setForm((current) => ({
+      ...current,
+      extra_fields: current.extra_fields.map((field, i) =>
+        i === fieldIndex
+          ? { ...field, options: [...fieldOptions(field), ""] }
+          : field
+      ),
+    }));
+  };
+
+  const removeOption = (fieldIndex, optionIndex) => {
+    setForm((current) => ({
+      ...current,
+      extra_fields: current.extra_fields.map((field, i) =>
+        i === fieldIndex
+          ? {
+              ...field,
+              options: fieldOptions(field).filter((_, oi) => oi !== optionIndex),
+            }
+          : field
       ),
     }));
   };
@@ -159,6 +212,15 @@ export default function NotificationTypesManager({
       setError("توجد حقول بمفاتيح مكررة. أعد إضافة الحقل.");
       return;
     }
+    const emptySelect = form.extra_fields.find(
+      (field) =>
+        field.type === "select" &&
+        fieldOptions(field).map((option) => option.trim()).filter(Boolean).length === 0
+    );
+    if (emptySelect) {
+      setError(`أضف خيارًا واحدًا على الأقل للحقل «${emptySelect.label.trim() || "القائمة"}».`);
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -170,19 +232,26 @@ export default function NotificationTypesManager({
         description: form.description.trim() || null,
         is_active: Boolean(form.is_active),
         sort_order: Number(form.sort_order) || 0,
-        extra_fields: form.extra_fields.map((field) => ({
-          key: field.key,
-          label: field.label.trim(),
-          type: field.type || "text",
-          required: Boolean(field.required),
-          options:
+        extra_fields: form.extra_fields.map((field) => {
+          /* ننظّف الخيارات ونحذف المكرر مع الحفاظ على الترتيب. */
+          const options =
             field.type === "select"
-              ? String(field.options || "")
-                  .split(",")
-                  .map((option) => option.trim())
-                  .filter(Boolean)
-              : [],
-        })),
+              ? [
+                  ...new Set(
+                    fieldOptions(field)
+                      .map((option) => option.trim())
+                      .filter(Boolean)
+                  ),
+                ]
+              : [];
+          return {
+            key: field.key,
+            label: field.label.trim(),
+            type: field.type || "text",
+            required: Boolean(field.required),
+            options,
+          };
+        }),
         updated_at: new Date().toISOString(),
       };
 
@@ -539,14 +608,84 @@ export default function NotificationTypesManager({
                           </select>
                         </div>
                         {field.type === "select" && (
-                          <div>
-                            <label style={labelStyle}>الخيارات (مفصولة بفاصلة)</label>
-                            <input
-                              value={Array.isArray(field.options) ? field.options.join(", ") : field.options || ""}
-                              onChange={(event) => updateField(index, { options: event.target.value })}
-                              placeholder="خيار 1, خيار 2"
-                              style={inputStyle}
-                            />
+                          <div
+                            style={{
+                              gridColumn: "1 / -1",
+                              background: "#fff",
+                              border: "1px dashed #CBD5E1",
+                              borderRadius: 10,
+                              padding: 10,
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: 8,
+                                marginBottom: 8,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <div>
+                                <div style={{ ...labelStyle, marginBottom: 2 }}>
+                                  خيارات القائمة المنسدلة
+                                </div>
+                                <div style={{ fontSize: 11, color: "#64748B", lineHeight: 1.7 }}>
+                                  كل خيار تكتبه هنا سيظهر للمستخدم في القائمة المنسدلة داخل نموذج التبليغ.
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => addOption(index)}
+                                style={{ ...smallButtonStyle, background: "#EFF6FF", color: "#1D4ED8" }}
+                              >
+                                ＋ إضافة خيار
+                              </button>
+                            </div>
+
+                            {fieldOptions(field).length === 0 ? (
+                              <div style={{ fontSize: 12, color: "#B45309", fontWeight: 800 }}>
+                                لا توجد خيارات بعد — أضف خيارًا واحدًا على الأقل.
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {fieldOptions(field).map((option, optionIndex) => (
+                                  <div
+                                    key={optionIndex}
+                                    style={{ display: "flex", gap: 6, alignItems: "center" }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: 11.5,
+                                        color: "#94A3B8",
+                                        minWidth: 18,
+                                        textAlign: "center",
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {optionIndex + 1}
+                                    </span>
+                                    <input
+                                      value={option}
+                                      onChange={(event) =>
+                                        updateOption(index, optionIndex, event.target.value)
+                                      }
+                                      placeholder="اكتب الخيار..."
+                                      style={{ ...inputStyle, padding: "8px 10px" }}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => removeOption(index, optionIndex)}
+                                      title="حذف الخيار"
+                                      style={{ ...smallButtonStyle, color: "#B91C1C", padding: "6px 9px" }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 8 }}>
