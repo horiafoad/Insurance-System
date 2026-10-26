@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import { styles } from "./styles";
 import { STATUS, TASK_TYPES, getType } from "./data";
 import { Detail, Field, Modal, StatusBadge } from "./ui";
@@ -358,6 +359,252 @@ export function TaskDetailsModal({ task, onClose, onUpdate, onDelete }) {
         </button>
         <button style={styles.primaryButton} onClick={onClose}>
           إغلاق
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+export function InstallmentModal({
+  claim,
+  installmentNumber,
+  amount,
+  saving = false,
+  onClose,
+  onSave,
+}) {
+  const [form, setForm] = useState({
+    amount: amount || "",
+    receiptNumber: "",
+    paidAt: "",
+    notes: "",
+  });
+
+  return (
+    <Modal title={` تسديد القسط ${installmentNumber}`} onClose={onClose}>
+      <div style={styles.formGrid}>
+        <Field label="مبلغ القسط">
+          <input
+            type="number"
+            value={form.amount}
+            onChange={(e) =>
+              setForm({ ...form, amount: e.target.value })
+            }
+            style={styles.input}
+          />
+        </Field>
+
+        <Field label="رقم الإيصال">
+          <input
+            value={form.receiptNumber}
+            onChange={(e) =>
+              setForm({ ...form, receiptNumber: e.target.value })
+            }
+            style={styles.input}
+          />
+        </Field>
+
+        <Field label="تاريخ السداد">
+          <input
+            type="date"
+            value={form.paidAt}
+            onChange={(e) =>
+              setForm({ ...form, paidAt: e.target.value })
+            }
+            style={styles.input}
+          />
+        </Field>
+
+        <Field label="ملاحظات" full>
+          <textarea
+            value={form.notes}
+            onChange={(e) =>
+              setForm({ ...form, notes: e.target.value })
+            }
+            style={{ ...styles.input, minHeight: 80, resize: "vertical" }}
+          />
+        </Field>
+      </div>
+
+      <div style={styles.modalActions}>
+        <button style={styles.secondaryButton} onClick={onClose} disabled={saving}>
+          إلغاء
+        </button>
+        <button
+          style={styles.primaryButton}
+          disabled={saving}
+          onClick={() =>
+            onSave(claim.id, installmentNumber, form.amount, form.receiptNumber, form.paidAt, form.notes)
+          }
+        >
+          {saving ? "جاري الحفظ..." : "💾 تأكيد السداد"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+export function SettleClaimModal({ claim, saving = false, onClose, onSave }) {
+  const [reason, setReason] = useState("سداد كامل");
+  const [notes, setNotes] = useState("");
+  const remaining = Number(claim?.remaining_amount || 0);
+  const fmt = (value) =>
+    Number(value || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  return (
+    <Modal title="تسوية المطالبة" onClose={onClose}>
+      <div style={{ ...styles.infoBox, marginBottom: 12, lineHeight: 1.9 }}>
+        <div><strong>الاسم:</strong> {claim?.claimant_name || "—"}</div>
+        <div><strong>الإجمالي:</strong> {fmt(claim?.total_amount)}</div>
+        <div><strong>المدفوع:</strong> {fmt(claim?.paid_amount)}</div>
+        <div><strong>المتبقي:</strong> {fmt(remaining)}</div>
+      </div>
+
+      <div style={styles.formGrid}>
+        <Field label="سبب التسوية">
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            style={styles.input}
+          >
+            <option value="سداد كامل">سداد كامل</option>
+            <option value="تنازل">تنازل</option>
+            <option value="تسوية ودية">تسوية ودية</option>
+            <option value="شطب إداري">شطب إداري</option>
+            <option value="أخرى">أخرى</option>
+          </select>
+        </Field>
+
+        <Field label="ملاحظات" full>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            style={{ ...styles.input, minHeight: 80, resize: "vertical" }}
+          />
+        </Field>
+      </div>
+
+      {remaining > 0 && (
+        <div style={{ ...styles.infoBox, background: "#FEF3C7", marginBottom: 12 }}>
+          المتبقي {fmt(remaining)} سيُغلق إداريًا مع الاحتفاظ بالمبالغ المسجلة.
+        </div>
+      )}
+
+      <div style={styles.modalActions}>
+        <button style={styles.secondaryButton} onClick={onClose} disabled={saving}>
+          إلغاء
+        </button>
+        <button
+          style={styles.primaryButton}
+          onClick={() => onSave(claim.id, reason, notes)}
+          disabled={saving}
+        >
+          {saving ? "جاري الحفظ..." : "✅ تأكيد التسوية"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+export function ExcelPreviewModal({ preview, importing, onClose, onImport }) {
+  const [onlyNew, setOnlyNew] = useState(true);
+
+  return (
+    <Modal title="معاينة الملف قبل الاستيراد" onClose={onClose}>
+      <div style={{ marginBottom: 12, lineHeight: 1.8 }}>
+        <div><strong>اسم الملف:</strong> {preview.fileName}</div>
+        <div><strong>عدد الملفات (Sheets):</strong> {preview.sheets.join("، ")}</div>
+        <div><strong>عدد الأعمدة:</strong> {preview.columns.length}</div>
+        <div><strong>إجمالي السجلات:</strong> {preview.totalRows}</div>
+        <div style={{ color: "#16A34A" }}><strong>جديد:</strong> {preview.newRows}</div>
+        <div style={{ color: "#DC2626" }}><strong>موجود مسبقًا:</strong> {preview.duplicateRows}</div>
+      </div>
+
+      {preview.issues?.length > 0 && (
+        <div style={{ ...styles.infoBox, background: "#FEF3C7", marginBottom: 12 }}>
+          <strong>تنبيهات ({preview.issues.length}):</strong>
+          <ul style={{ margin: "6px 0 0", paddingInlineStart: 18 }}>
+            {preview.issues.slice(0, 5).map((issue, idx) => (
+              <li key={idx}>
+                {issue.sheet_name} - صف {issue.row_number} ({issue.claimant_name}):{" "}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+          {preview.issues.length > 5 && (
+            <div>و{preview.issues.length - 5} تنبيهات أخرى.</div>
+          )}
+        </div>
+      )}
+
+      <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          style={{ ...styles.secondaryButton, flex: 1 }}
+          onClick={() => setOnlyNew(true)}
+        >
+          استيراد جديد فقط
+        </button>
+        <button
+          style={{ ...styles.secondaryButton, flex: 1 }}
+          onClick={() => setOnlyNew(false)}
+        >
+          استيراد الكل مع تحديث الموجود
+        </button>
+      </div>
+
+      <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 12 }}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>الشيت</th>
+              <th style={styles.th}>الصف</th>
+              <th style={styles.th}>الاسم</th>
+              <th style={styles.th}>رقم المطالبة</th>
+              <th style={styles.th}>المبلغ</th>
+              <th style={styles.th}>حالة السداد</th>
+              <th style={styles.th}>الأقساط</th>
+              <th style={styles.th}>حالة الاستيراد</th>
+            </tr>
+          </thead>
+          <tbody>
+            {preview.rows.slice(0, 100).map((row, idx) => (
+              <tr key={idx} style={row.isDuplicate ? { background: "#FEF2F2" } : styles.tr}>
+                <td style={styles.td}>{row.sheet_name}</td>
+                <td style={styles.td}>{row.row_number}</td>
+                <td style={styles.td}>{row.claimant_name || ""}</td>
+                <td style={styles.td}>{row.claim_number || ""}</td>
+                <td style={styles.td}>{row.total_amount}</td>
+                <td style={styles.td}>{row.payment_status || ""}</td>
+                <td style={styles.td}>{row.installments.length}</td>
+                <td style={styles.td}>
+                  {row.isDuplicate ? (
+                    <span style={{ color: "#DC2626", fontWeight: 700 }}>مكرر</span>
+                  ) : (
+                    <span style={{ color: "#16A34A", fontWeight: 700 }}>جديد</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {preview.rows.length > 100 && (
+          <div style={styles.infoBox}>يُعرض أول 100 سجل للمعاينة فقط.</div>
+        )}
+      </div>
+
+      <div style={styles.modalActions}>
+        <button style={styles.secondaryButton} onClick={onClose}>
+          إغلاق
+        </button>
+        <button
+          style={{ ...styles.primaryButton, background: importing ? "#94A3B8" : "#2563EB" }}
+          onClick={() => onImport(onlyNew)}
+          disabled={importing}
+        >
+          {importing ? "جاري الاستيراد..." : "✅ تأكيد الاستيراد"}
         </button>
       </div>
     </Modal>

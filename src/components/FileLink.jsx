@@ -10,20 +10,50 @@
    • رابط http (Supabase) → يمر كما هو، سلوك المتصفح نفسه
    • مرجع r2://           → bucket خاص، فنوقّع رابطًا قصيرًا عند العرض،
                             و«تنزيل» يُنفَّذ بجلب المحتوى ثم حفظه محليًا
+   • مرجع local://        → ملف محفوظ على جهاز العميل (ديسكتوب فقط)،
+                            نفتحه ببرنامج العارض الافتراضي مباشرة
 ------------------------------------------------------------------ */
 
 import {
   isR2Ref,
+  isAsuRef,
+  isLocalRef,
   useFileUrl,
   downloadFileToDisk,
+  openLocalFile,
 } from "../services/fileStorage";
+
+/** رابط خاص (r2 أو asu) يحتاج توقيعًا عند الفتح وتنزيلًا عبر المحتوى. */
+const isPrivateRef = (ref) => isR2Ref(ref) || isAsuRef(ref);
 
 /**
  * بديل <a href={record.file_url}>.
  * القيم القديمة (http) تمر كما هي بلا أي تأخير في العرض.
  */
 export function FileAnchor({ fileRef, children, ...anchorProps }) {
+  const local = isLocalRef(fileRef);
   const url = useFileUrl(fileRef);
+
+  async function handleClick(event) {
+    if (local) {
+      event.preventDefault();
+      try {
+        await openLocalFile(fileRef);
+      } catch (err) {
+        console.error("تعذر فتح الملف:", err);
+      }
+      return;
+    }
+    if (!isPrivateRef(fileRef)) return; // روابط http سلوك المتصفح نفسه
+  }
+
+  if (local) {
+    return (
+      <a {...anchorProps} href="#local" onClick={handleClick}>
+        {children}
+      </a>
+    );
+  }
 
   if (!url) {
     const { className, style, title } = anchorProps;
@@ -40,7 +70,7 @@ export function FileAnchor({ fileRef, children, ...anchorProps }) {
   }
 
   return (
-    <a {...anchorProps} href={url}>
+    <a {...anchorProps} href={url} onClick={handleClick}>
       {children}
     </a>
   );
@@ -59,15 +89,31 @@ export function FileDownloadLink({
   ...anchorProps
 }) {
   const url = useFileUrl(fileRef);
-  const remoteR2 = isR2Ref(fileRef);
+  const remoteR2 = isPrivateRef(fileRef);
+  const local = isLocalRef(fileRef);
 
   const handleClick = (event) => {
+    if (local) {
+      event.preventDefault();
+      openLocalFile(fileRef, fileName || "file").catch((err) => {
+        console.error("تعذر فتح الملف:", err);
+      });
+      return;
+    }
     if (!remoteR2) return; // نترك المتصفح يتصرّف كالمعتاد
     event.preventDefault();
     downloadFileToDisk(fileRef, fileName || "file").catch((err) => {
       console.error("تعذر تنزيل الملف:", err);
     });
   };
+
+  if (local) {
+    return (
+      <a {...anchorProps} href="#local" onClick={handleClick}>
+        {children}
+      </a>
+    );
+  }
 
   if (!url) {
     const { className, style, title } = anchorProps;

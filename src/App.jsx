@@ -12,6 +12,12 @@ import {
   setSessionToken,
   clearSessionToken,
 } from "./utils/authSession";
+import {
+  validateServiceRequestFields,
+  requiresDirectedTo,
+  requiresRequestedDetails,
+  formatEgyptDateTime,
+} from "./utils/serviceRequestRules";
 
 const SAVED_LOGIN_KEY = "saved_admin_login";
 
@@ -19,6 +25,7 @@ const REQUEST_STATUS_META = [
   { value: "جديدة", icon: "🟡", color: "#B45309", bg: "#FEF3C7" },
   { value: "قيد التنفيذ", icon: "🔵", color: "#2563EB", bg: "#DBEAFE" },
   { value: "تم التنفيذ", icon: "🟢", color: "#047857", bg: "#D1FAE5" },
+  { value: "تم الاستلام من قبل مقدم الطلب", icon: "🟣", color: "#7C3AED", bg: "#EDE9FE" },
   { value: "مرفوضة", icon: "🔴", color: "#DC2626", bg: "#FEE2E2" },
 ];
 
@@ -838,6 +845,9 @@ const updatedMovements = qrLetter.movements.map((movement) =>
     phone: "",
     requestedMonth: "",
     requestedYear: new Date().getFullYear(),
+    directedTo: "",
+    requestedDetails: "",
+    applicantNotes: "",
   });
 
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
@@ -914,7 +924,7 @@ const updatedMovements = qrLetter.movements.map((movement) =>
     try {
       const { data, error } = await supabase
         .from("service_requests")
-        .select("id, service_type, name, status, notes, created_at, updated_at")
+        .select("id, service_type, name, status, notes, arrival_at, created_at, updated_at")
         .eq("id", targetId)
         .maybeSingle();
 
@@ -978,7 +988,7 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       try {
         const { data, error } = await supabase
           .from("service_requests")
-          .select("id, service_type, name, status, notes, created_at, updated_at")
+          .select("id, service_type, name, status, notes, arrival_at, created_at, updated_at")
           .eq("id", trackedRequest.id)
           .maybeSingle();
         if (!error && data) setTrackedRequest(data);
@@ -1107,6 +1117,9 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       phone: "",
       requestedMonth: "",
       requestedYear: new Date().getFullYear(),
+      directedTo: "",
+      requestedDetails: "",
+      applicantNotes: "",
     });
 
     setShowServiceForm(true);
@@ -1138,6 +1151,20 @@ const updatedMovements = qrLetter.movements.map((movement) =>
       return;
     }
 
+    // تحقق من الحقول الإجبارية الخاصة بنوع الطلب داخل مسار الحفظ نفسه
+    // (نفس القواعد مفروضة أيضًا على مستوى قاعدة البيانات بمحفّز التحقق).
+    const fieldError = validateServiceRequestFields(
+      selectedService?.title,
+      {
+        directedTo: serviceForm.directedTo,
+        requestedDetails: serviceForm.requestedDetails,
+      }
+    );
+    if (fieldError) {
+      alert(fieldError);
+      return;
+    }
+
     try {
       setServiceLoading(true);
 
@@ -1152,22 +1179,28 @@ const updatedMovements = qrLetter.movements.map((movement) =>
           phone:
             serviceForm.phone.trim() || null,
           request_month: {
-            "\u064a\u0646\u0627\u064a\u0631": 1,
-            "\u0641\u0628\u0631\u0627\u064a\u0631": 2,
-            "\u0645\u0627\u0631\u0633": 3,
-            "\u0623\u0628\u0631\u064a\u0644": 4,
-            "\u0645\u0627\u064a\u0648": 5,
-            "\u064a\u0648\u0646\u064a\u0648": 6,
-            "\u064a\u0648\u0644\u064a\u0648": 7,
-            "\u0623\u063a\u0633\u0637\u0633": 8,
-            "\u0633\u0628\u062a\u0645\u0628\u0631": 9,
-            "\u0623\u0643\u062a\u0648\u0628\u0631": 10,
-            "\u0646\u0648\u0641\u0645\u0628\u0631": 11,
-            "\u062f\u064a\u0633\u0645\u0628\u0631": 12,
+            "يناير": 1,
+            "فبراير": 2,
+            "مارس": 3,
+            "أبريل": 4,
+            "مايو": 5,
+            "يونيو": 6,
+            "يوليو": 7,
+            "أغسطس": 8,
+            "سبتمبر": 9,
+            "أكتوبر": 10,
+            "نوفمبر": 11,
+            "ديسمبر": 12,
           }[serviceForm.requestedMonth],
           request_year:
             Number(serviceForm.requestedYear),
           status: "جديد",
+          directed_to:
+            serviceForm.directedTo.trim() || null,
+          requested_details:
+            serviceForm.requestedDetails.trim() || null,
+          applicant_notes:
+            serviceForm.applicantNotes.trim() || null,
         })
         .select()
         .single();
@@ -1192,6 +1225,9 @@ const updatedMovements = qrLetter.movements.map((movement) =>
         phone: "",
         requestedMonth: "",
         requestedYear: new Date().getFullYear(),
+        directedTo: "",
+        requestedDetails: "",
+        applicantNotes: "",
       });
 
       notifyPushEvent("new_request", {
@@ -4138,6 +4174,51 @@ const updatedMovements = qrLetter.movements.map((movement) =>
               style={styles.input}
             />
 
+            {requiresDirectedTo(selectedService?.title) && (
+              <input
+                type="text"
+                placeholder="موجّه إلى (مطلوب)"
+                value={serviceForm.directedTo}
+                onChange={(e) =>
+                  setServiceForm((prev) => ({
+                    ...prev,
+                    directedTo: e.target.value,
+                  }))
+                }
+                style={styles.input}
+              />
+            )}
+
+            {requiresRequestedDetails(selectedService?.title) && (
+              <textarea
+                rows={3}
+                placeholder="المطلوب (مطلوب)"
+                value={serviceForm.requestedDetails}
+                onChange={(e) =>
+                  setServiceForm((prev) => ({
+                    ...prev,
+                    requestedDetails: e.target.value,
+                  }))
+                }
+                style={{ ...styles.input, minHeight: "80px", resize: "vertical" }}
+              />
+            )}
+
+            {requiresDirectedTo(selectedService?.title) && (
+              <textarea
+                rows={2}
+                placeholder="ملاحظات (اختياري)"
+                value={serviceForm.applicantNotes}
+                onChange={(e) =>
+                  setServiceForm((prev) => ({
+                    ...prev,
+                    applicantNotes: e.target.value,
+                  }))
+                }
+                style={{ ...styles.input, minHeight: "60px", resize: "vertical" }}
+              />
+            )}
+
             <select
               value={
                 serviceForm.requestedMonth
@@ -4730,6 +4811,32 @@ const updatedMovements = qrLetter.movements.map((movement) =>
                         {trackedRequest.status || "جديدة"}
                       </span>
                     </div>
+                  </div>
+
+                  <div>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "#64748B",
+                        fontWeight: "700",
+                      }}
+                    >
+                      تاريخ ووقت وصول الطلب
+                    </span>
+                    <strong
+                      style={{
+                        display: "block",
+                        color: "#123B5D",
+                        fontSize: "13px",
+                        marginTop: "4px",
+                        fontWeight: "600",
+                      }}
+                    >
+                      {formatEgyptDateTime(
+                        trackedRequest.arrival_at ||
+                          trackedRequest.created_at
+                      ) || "—"}
+                    </strong>
                   </div>
 
                   <div>

@@ -1,19 +1,60 @@
-import { supabase } from "../../supabaseClient";
+// ============================================================================
+// facultyNotificationsService.js
+// ---------------------------------------------------------------------------
+// طبقة الوصول للبيانات الخاصة بـ«تبليغات هيئة التدريس».
+// كل استعلامات Supabase الخاصة بهذه الصفحة في هذا الملف.
+//
+// أنواع التبليغات:
+//   • salary_payment        - صرف مرتب
+//   • salary_stop           - وقف مرتب
+//   • payment_method_change - تغيير طريقة الدفع
+//   • study_leave_with_salary - إجازة دراسية بمرتب
+//   • deduction             - خصومات
+//   • promotion             - ترقية
+//
+// حالات سير العمل:
+//   • new                   - جديد
+//   • awaiting_input        - بانتظار مدخل البيرول
+//   • input_completed       - تم الإدخال والمراجعة
+//   • awaiting_review       - بانتظار المراجع النهائي
+//   • review_completed      - تمت المراجعة النهائية
+//   • returned_for_correction - معاد للتصحيح
+// ============================================================================
 
-/**
- * خدمة إدارة تبليغات هيئة التدريس
- * تتعامل مع رفع ملفات Excel، المطابقة مع الأرشيف، وإدارة التبليغات
- */
+import { supabase } from "../supabaseClient";
+import {
+  uploadFile,
+  deleteFile as storageDeleteFile,
+  openFile,
+  downloadFileToDisk,
+} from "./fileStorage";
+import { fetchMembers } from "./facultyArchiveService";
 
+export const FACULTY_NOTIFICATIONS_TABLE = "faculty_notifications";
+export const FACULTY_MEMBERS_TABLE = "faculty_members";
+
+// ----------------------------------------------------------------------------
+// أنواع التبليغات
+// ----------------------------------------------------------------------------
 export const NOTIFICATION_TYPES = {
-  SALARY_PAYMENT: "صرف مرتب",
-  SALARY_STOP: "وقف مرتب",
-  PAYMENT_METHOD_CHANGE: "تغيير طريقة الدفع",
-  STUDY_LEAVE_WITH_SALARY: "إجازة دراسية بمرتب",
-  DEDUCTION: "خصومات",
-  PROMOTION: "ترقية",
+  SALARY_PAYMENT: "salary_payment",
+  SALARY_STOP: "salary_stop",
+  PAYMENT_METHOD_CHANGE: "payment_method_change",
+  STUDY_LEAVE_WITH_SALARY: "study_leave_with_salary",
+  DEDUCTION: "deduction",
+  PROMOTION: "promotion",
 };
 
+export const NOTIFICATION_TYPES_LABELS = {
+  [NOTIFICATION_TYPES.SALARY_PAYMENT]: "صرف مرتب",
+  [NOTIFICATION_TYPES.SALARY_STOP]: "وقف مرتب",
+  [NOTIFICATION_TYPES.PAYMENT_METHOD_CHANGE]: "تغيير طريقة الدفع",
+  [NOTIFICATION_TYPES.STUDY_LEAVE_WITH_SALARY]: "إجازة دراسية بمرتب",
+  [NOTIFICATION_TYPES.DEDUCTION]: "الخصومات",
+  [NOTIFICATION_TYPES.PROMOTION]: "الترقية",
+};
+
+// أسباب وقف المرتب
 export const SALARY_STOP_REASONS = [
   "استقالة",
   "وفاة",
@@ -24,12 +65,14 @@ export const SALARY_STOP_REASONS = [
   "رعاية طفل",
 ];
 
+// أنواع الخصومات
 export const DEDUCTION_TYPES = [
   "خصم رعاية طبية",
   "خصم صندوق زمالة",
   "خصم ضرائب",
 ];
 
+// الدرجات العلمية للترقية
 export const ACADEMIC_GRADES = [
   "معيد",
   "مدرس مساعد",
@@ -38,233 +81,400 @@ export const ACADEMIC_GRADES = [
   "أستاذ",
 ];
 
+// حالات سير العمل
 export const WORKFLOW_STATUS = {
-  NEW: "جديد",
-  SENT_TO_INPUT: "مرسل للمراجعة",
-  PENDING_INPUT: "بانتظار مدخل البيرول",
-  INPUT_COMPLETED: "تم الإدخال والمراجعة",
-  PENDING_REVIEW: "بانتظار المراجع النهائي",
-  REVIEW_COMPLETED: "تمت المراجعة النهائية",
-  RETURNED_FOR_CORRECTION: "معاد للتصحيح",
+  NEW: "new",
+  AWAITING_INPUT: "awaiting_input",
+  INPUT_COMPLETED: "input_completed",
+  AWAITING_REVIEW: "awaiting_review",
+  REVIEW_COMPLETED: "review_completed",
+  RETURNED_FOR_CORRECTION: "returned_for_correction",
 };
 
 export const WORKFLOW_STATUS_LABELS = {
   [WORKFLOW_STATUS.NEW]: "جديد",
-  [WORKFLOW_STATUS.SENT_TO_INPUT]: "مرسل للمراجعة",
-  [WORKFLOW_STATUS.PENDING_INPUT]: "بانتظار مدخل البيرول",
+  [WORKFLOW_STATUS.AWAITING_INPUT]: "بانتظار مدخل البيرول",
   [WORKFLOW_STATUS.INPUT_COMPLETED]: "تم الإدخال والمراجعة",
-  [WORKFLOW_STATUS.PENDING_REVIEW]: "بانتظار المراجع النهائي",
+  [WORKFLOW_STATUS.AWAITING_REVIEW]: "بانتظار المراجع النهائي",
   [WORKFLOW_STATUS.REVIEW_COMPLETED]: "تمت المراجعة النهائية",
   [WORKFLOW_STATUS.RETURNED_FOR_CORRECTION]: "معاد للتصحيح",
 };
 
-export function getNextAcademicGrade(currentGrade) {
-  const index = ACADEMIC_GRADES.indexOf(currentGrade);
-  if (index !== -1 && index < ACADEMIC_GRADES.length - 1) {
-    return ACADEMIC_GRADES[index + 1];
+// ----------------------------------------------------------------------------
+// تحويل الصفوف
+// ----------------------------------------------------------------------------
+export function mapNotificationRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    facultyMemberId: row.faculty_member_id,
+    notificationType: row.notification_type,
+    payrollMonth: row.payroll_month,
+    payrollYear: row.payroll_year,
+    notificationData: row.notification_data || {},
+    decisionNumber: row.decision_number,
+    decisionDate: row.decision_date,
+    effectiveDate: row.effective_date,
+    notes: row.notes,
+    pdfUrl: row.pdf_url,
+    pdfFileName: row.pdf_file_name,
+    pdfStorageProvider: row.pdf_storage_provider,
+    pdfStorageKey: row.pdf_storage_key,
+    pdfUploadedAt: row.pdf_uploaded_at,
+    pdfUploadedBy: row.pdf_uploaded_by,
+    hasPdf: Boolean(row.pdf_url),
+    workflowStatus: row.workflow_status,
+    inputBy: row.input_by,
+    inputAt: row.input_at,
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at,
+    returnReason: row.return_reason,
+    returnReasonDetail: row.return_reason_detail,
+    createdById: row.created_by_id,
+    createdByName: row.created_by_name,
+    createdAt: row.created_at,
+    updatedById: row.updated_by_id,
+    updatedByName: row.updated_by_name,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function mapNotificationToRow(notification) {
+  return {
+    faculty_member_id: notification.facultyMemberId || null,
+    notification_type: notification.notificationType,
+    payroll_month: notification.payrollMonth,
+    payroll_year: notification.payrollYear,
+    notification_data: notification.notificationData || {},
+    decision_number: notification.decisionNumber || null,
+    decision_date: notification.decisionDate || null,
+    effective_date: notification.effectiveDate || null,
+    notes: notification.notes || null,
+    pdf_url: notification.pdfUrl || null,
+    pdf_file_name: notification.pdfFileName || null,
+    pdf_storage_provider: notification.pdfStorageProvider || null,
+    pdf_storage_key: notification.pdfStorageKey || null,
+    pdf_uploaded_at: notification.pdfUploadedAt || null,
+    pdf_uploaded_by: notification.pdfUploadedBy || null,
+    workflow_status: notification.workflowStatus || WORKFLOW_STATUS.NEW,
+    input_by: notification.inputBy || null,
+    input_at: notification.inputAt || null,
+    reviewed_by: notification.reviewedBy || null,
+    reviewed_at: notification.reviewedAt || null,
+    return_reason: notification.returnReason || null,
+    return_reason_detail: notification.returnReasonDetail || null,
+    created_by_id: notification.createdById || null,
+    created_by_name: notification.createdByName,
+    updated_by_id: notification.updatedById || null,
+    updated_by_name: notification.updatedByName,
+  };
+}
+
+// ----------------------------------------------------------------------------
+// قراءة البيانات
+// ----------------------------------------------------------------------------
+export async function fetchNotifications(filters = {}) {
+  let query = supabase.from(FACULTY_NOTIFICATIONS_TABLE).select("*");
+
+  if (filters.year && filters.month) {
+    query = query.eq("payroll_year", filters.year).eq("payroll_month", filters.month);
   }
-  return null;
-}
 
-/**
- * جلب قائمة أعضاء هيئة التدريس من الأرشيف الذكي (الفهرس الأساسي)
- * للمطابقة مع ملفات Excel
- */
-export async function fetchFacultyFromArchive() {
-  const { data, error } = await supabase
-    .from("faculty_members")
-    .select("id, full_name, academic_grade, department");
-
-  if (error) {
-    console.error("Error fetching faculty:", error);
-    throw error;
+  if (filters.facultyMemberId) {
+    query = query.eq("faculty_member_id", filters.facultyMemberId);
   }
-  return data;
-}
 
-/**
- * مطابقة الأسماء من ملف Excel مع الفهرس
- * @param {Array} excelData - البيانات المستخرجة من Excel
- * @param {Array} archiveData - البيانات من الأرشيف (faculty_members)
- * @returns {Array} قائمة الأسماء المرفقة بالمعرفات الصحيحة
- */
-export function matchExcelFacultyWithArchive(excelData, archiveData) {
-  // تحويل الأرشيف إلى Map للبحث السريع (الاسم كـ key)
-  // سنستخدم الاسم الكامل للبحث
-  const archiveMap = new Map();
-  archiveData.forEach((member) => {
-    const name = member.full_name?.trim().toLowerCase();
-    if (name) archiveMap.set(name, member);
-  });
-
-  const matchedList = [];
-  const unmatchedList = [];
-
-  excelData.forEach((row) => {
-    // نفترض أن العمود في الإكسيل اسمه 'الاسم' أو 'Name'
-    const excelName = (row["الاسم"] || row["Name"] || row["full_name"] || "").toString().trim();
-    
-    if (!excelName) return;
-
-    const normalizedExcelName = excelName.toLowerCase();
-    const match = archiveMap.get(normalizedExcelName);
-
-    if (match) {
-      matchedList.push({
-        excelName: excelName,
-        memberId: match.id,
-        fullName: match.full_name,
-        academicGrade: match.academic_grade,
-        department: match.department,
-        sourceRow: row
-      });
-    } else {
-      unmatchedList.push({
-        excelName: excelName,
-        sourceRow: row
-      });
-    }
-  });
-
-  return { matchedList, unmatchedList };
-}
-
-/**
- * جلب التبليغات بناءً على الشهر والسنة
- */
-export async function fetchNotifications(month, year) {
-  const startOfMonth = new Date(year, month - 1, 1);
-  const endOfMonth = new Date(year, month, 0, 23, 59, 59);
-
-  const { data, error } = await supabase
-    .from("faculty_notifications")
-    .select(`
-      *,
-      faculty_members (
-        id,
-        full_name,
-        academic_grade,
-        department
-      )
-    `)
-    .gte("payroll_month_date", startOfMonth.toISOString())
-    .lte("payroll_month_date", endOfMonth.toISOString())
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("Error fetching notifications:", error);
-    throw error;
+  if (filters.type) {
+    query = query.eq("notification_type", filters.type);
   }
-  return data;
+
+  if (filters.status) {
+    query = query.eq("workflow_status", filters.status);
+  }
+
+  if (filters.createdById) {
+    query = query.eq("created_by_id", filters.createdById);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(mapNotificationRow);
 }
 
-/**
- * جلب إحصائيات التبليغات لشهر معين
- */
-export async function fetchNotificationStats(month, year) {
-  const startOfMonth = new Date(year, month - 1, 1);
-  const endOfMonth = new Date(year, month, 0, 23, 59, 59);
-
+export async function fetchNotificationById(id) {
   const { data, error } = await supabase
-    .from("faculty_notifications")
-    .select("status", { count: 'exact', head: true })
-    .gte("payroll_month_date", startOfMonth.toISOString())
-    .lte("payroll_month_date", endOfMonth.toISOString());
+    .from(FACULTY_NOTIFICATIONS_TABLE)
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return mapNotificationRow(data);
+}
+
+export async function fetchNotificationStats(year, month) {
+  const { data, error } = await supabase
+    .from(FACULTY_NOTIFICATIONS_TABLE)
+    .select("workflow_status")
+    .eq("payroll_year", year)
+    .eq("payroll_month", month);
 
   if (error) throw error;
 
-  // ملاحظة: Supabase count يعيد إجمالي السجلات. 
-  // للحصول على توزيع الحالات، نحتاج لجلب البيانات أو عمل استعلامات متعددة.
-  // سنقوم بجلب البيانات الفعلية لتسهيل الحساب في الواجهة الأمامية
-  const { data: allData, error: dataError } = await supabase
-    .from("faculty_notifications")
-    .select("status")
-    .gte("payroll_month_date", startOfMonth.toISOString())
-    .lte("payroll_month_date", endOfMonth.toISOString());
-
-  if (dataError) throw dataError;
-
   const stats = {
-    total: allData.length,
+    total: 0,
     new: 0,
-    pending_input: 0,
-    completed_input: 0,
-    pending_review: 0,
-    completed_review: 0,
-    returned: 0
+    awaitingInput: 0,
+    inputCompleted: 0,
+    awaitingReview: 0,
+    reviewCompleted: 0,
+    returnedForCorrection: 0,
   };
 
-  allData.forEach(n => {
-    if (n.status === WORKFLOW_STATUS.NEW) stats.new++;
-    else if (n.status === WORKFLOW_STATUS.PENDING_INPUT) stats.pending_input++;
-    else if (n.status === WORKFLOW_STATUS.INPUT_COMPLETED) stats.completed_input++;
-    else if (n.status === WORKFLOW_STATUS.PENDING_REVIEW) stats.pending_review++;
-    else if (n.status === WORKFLOW_STATUS.REVIEW_COMPLETED) stats.completed_review++;
-    else if (n.status === WORKFLOW_STATUS.RETURNED_FOR_CORRECTION) stats.returned++;
+  (data || []).forEach((row) => {
+    stats.total++;
+    if (row.workflow_status === WORKFLOW_STATUS.NEW) stats.new++;
+    else if (row.workflow_status === WORKFLOW_STATUS.AWAITING_INPUT) stats.awaitingInput++;
+    else if (row.workflow_status === WORKFLOW_STATUS.INPUT_COMPLETED) stats.inputCompleted++;
+    else if (row.workflow_status === WORKFLOW_STATUS.AWAITING_REVIEW) stats.awaitingReview++;
+    else if (row.workflow_status === WORKFLOW_STATUS.REVIEW_COMPLETED) stats.reviewCompleted++;
+    else if (row.workflow_status === WORKFLOW_STATUS.RETURNED_FOR_CORRECTION) stats.returnedForCorrection++;
   });
 
   return stats;
 }
 
-/**
- * إنشاء تبليغ جديد
- */
-export async function createNotification(notificationData) {
+// ----------------------------------------------------------------------------
+// إنشاء التبليغات
+// ----------------------------------------------------------------------------
+export async function createNotification(notification, { user = null } = {}) {
+  if (!notification.notificationType) {
+    throw new Error("نوع التبليغ مطلوب.");
+  }
+
+  if (!notification.payrollMonth || !notification.payrollYear) {
+    throw new Error("شهر البيرول والسنة مطلوبان.");
+  }
+
+  const row = {
+    ...mapNotificationToRow(notification),
+    created_by_id: user?.id || null,
+    created_by_name: user?.full_name || user?.username || "مستخدم",
+    workflow_status: WORKFLOW_STATUS.NEW,
+  };
+
   const { data, error } = await supabase
-    .from("faculty_notifications")
-    .insert([notificationData])
-    .select();
+    .from(FACULTY_NOTIFICATIONS_TABLE)
+    .insert(row)
+    .select()
+    .single();
 
   if (error) throw error;
-  return data[0];
+  return mapNotificationRow(data);
 }
 
-/**
- * تحديث حالة التبليغ وتوثيق العملية (Audit Log)
- */
-export async function updateNotificationStatus(id, newStatus, userId, notes = "") {
-  // 1. تحديث حالة التبليغ
-  const { error: updateError } = await supabase
-    .from("faculty_notifications")
-    .update({ 
-      status: newStatus,
-      updated_at: new Date().toISOString()
-    })
+// ----------------------------------------------------------------------------
+// تحديث التبليغات
+// ----------------------------------------------------------------------------
+export async function updateNotification(id, updates, { user = null } = {}) {
+  const row = {
+    ...mapNotificationToRow(updates),
+    updated_by_id: user?.id || null,
+    updated_by_name: user?.full_name || user?.username || null,
+  };
+
+  const { data, error } = await supabase
+    .from(FACULTY_NOTIFICATIONS_TABLE)
+    .update(row)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapNotificationRow(data);
+}
+
+export async function deleteNotification(id) {
+  const { error } = await supabase
+    .from(FACULTY_NOTIFICATIONS_TABLE)
+    .delete()
     .eq("id", id);
 
-  if (updateError) throw updateError;
-
-  // 2. إضافة سجل في جدول سجل التدقيق (Audit Log)
-  const { error: logError } = await supabase
-    .from("notification_audit_logs")
-    .insert([{
-      notification_id: id,
-      user_id: userId,
-      old_status: null, // يمكن تطويره لجلب الحالة القديمة أولاً
-      new_status: newStatus,
-      notes: notes
-    }]);
-
-  if (logError) console.warn("Failed to log notification change:", logError);
-
-  return true;
+  if (error) throw error;
 }
 
-/**
- * جلب سجل التدقيق لتبليغ معين
- */
-export async function fetchNotificationLogs(notificationId) {
+// ----------------------------------------------------------------------------
+// سير العمل الصلاحيات
+// ----------------------------------------------------------------------------
+export async function submitForInput(id, { user = null } = {}) {
+  return updateNotification(
+    id,
+    {
+      workflowStatus: WORKFLOW_STATUS.AWAITING_INPUT,
+    },
+    { user }
+  );
+}
+
+export async function completeInput(id, { user = null } = {}) {
+  return updateNotification(
+    id,
+    {
+      workflowStatus: WORKFLOW_STATUS.INPUT_COMPLETED,
+      inputBy: user?.full_name || user?.username || null,
+      inputAt: new Date().toISOString(),
+    },
+    { user }
+  );
+}
+
+export async function completeReview(id, { user = null } = {}) {
+  return updateNotification(
+    id,
+    {
+      workflowStatus: WORKFLOW_STATUS.REVIEW_COMPLETED,
+      reviewedBy: user?.full_name || user?.username || null,
+      reviewedAt: new Date().toISOString(),
+    },
+    { user }
+  );
+}
+
+export async function returnForCorrection(id, reason, detail = "", { user = null } = {}) {
+  return updateNotification(
+    id,
+    {
+      workflowStatus: WORKFLOW_STATUS.RETURNED_FOR_CORRECTION,
+      returnReason: reason,
+      returnReasonDetail: detail,
+    },
+    { user }
+  );
+}
+
+// ----------------------------------------------------------------------------
+// مرفقات PDF
+// ----------------------------------------------------------------------------
+const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
+
+export function validatePdfFile(file) {
+  if (!file) return "لم يتم اختيار ملف.";
+  const isPdf =
+    file.type === "application/pdf" || /\.pdf$/i.test(String(file.name || ""));
+  if (!isPdf) return "الملف يجب أن يكون PDF فقط.";
+  if (file.size > MAX_PDF_BYTES) {
+    return `حجم الملف أكبر من الحد المسموح (${Math.round(
+      MAX_PDF_BYTES / (1024 * 1024)
+    )} ميجابايت).`;
+  }
+  if (!file.size) return "الملف فارغ.";
+  return "";
+}
+
+export async function attachNotificationPdf(notification, file, { user = null } = {}) {
+  if (!notification?.id) throw new Error("احفظ التبليغ أولًا ثم أرفق الملف.");
+  const invalid = validatePdfFile(file);
+  if (invalid) throw new Error(invalid);
+
+  const oldUrl = notification.pdfUrl;
+  const oldKey = notification.pdfStorageKey;
+
+  const safeName = String(file.name || "file.pdf")
+    .replace(/[^\p{L}\p{N}._-]+/gu, "_")
+    .slice(-80);
+  const path = `faculty-notifications/${notification.id}/${Date.now()}-${safeName}`;
+
+  const saved = await uploadFile("executive-orders", path, file, {
+    contentType: "application/pdf",
+    upsert: true,
+  });
+
   const { data, error } = await supabase
-    .from("notification_audit_logs")
-    .select(`
-      *,
-      profiles (
-        full_name
-      )
-    `)
-    .eq("notification_id", notificationId)
-    .order("created_at", { ascending: false });
+    .from(FACULTY_NOTIFICATIONS_TABLE)
+    .update({
+      pdf_url: saved.url,
+      pdf_file_name: file.name || safeName,
+      pdf_storage_provider: saved.provider,
+      pdf_storage_key: saved.key,
+      pdf_uploaded_at: new Date().toISOString(),
+      pdf_uploaded_by: user?.full_name || user?.username || null,
+    })
+    .eq("id", notification.id)
+    .select()
+    .single();
+
+  if (error) {
+    // لا نترك ملفًا يتيمًا لو فشل تحديث القاعدة
+    try {
+      await storageDeleteFile(saved.url, { path: saved.key });
+    } catch {
+      /* تجاهل */
+    }
+    throw error;
+  }
+
+  if (oldUrl && oldUrl !== saved.url) {
+    try {
+      await storageDeleteFile(oldUrl, { path: oldKey });
+    } catch {
+      /* الملف القديم قد يكون محذوفًا */
+    }
+  }
+
+  return mapNotificationRow(data);
+}
+
+export async function openNotificationPdf(notification) {
+  if (!notification?.pdfUrl) throw new Error("لا يوجد ملف PDF لهذا التبليغ.");
+  return openFile(notification.pdfUrl, { path: notification.pdfStorageKey });
+}
+
+export async function downloadNotificationPdf(notification) {
+  if (!notification?.pdfUrl) throw new Error("لا يوجد ملف PDF لهذا التبليغ.");
+  const name =
+    notification.pdfFileName ||
+    `notification-${notification.facultyMemberId || notification.id}.pdf`;
+  await downloadFileToDisk(notification.pdfUrl, name, {
+    path: notification.pdfStorageKey,
+  });
+}
+
+export async function deleteNotificationPdf(notification) {
+  if (!notification?.id) throw new Error("معرّف التبليغ غير موجود.");
+  if (notification.pdfUrl) {
+    try {
+      await storageDeleteFile(notification.pdfUrl, {
+        path: notification.pdfStorageKey,
+      });
+    } catch (error) {
+      console.warn("تعذر حذف ملف PDF:", error);
+    }
+  }
+  const { data, error } = await supabase
+    .from(FACULTY_NOTIFICATIONS_TABLE)
+    .update({
+      pdf_url: null,
+      pdf_file_name: null,
+      pdf_storage_provider: null,
+      pdf_storage_key: null,
+      pdf_uploaded_at: null,
+      pdf_uploaded_by: null,
+    })
+    .eq("id", notification.id)
+    .select()
+    .single();
 
   if (error) throw error;
-  return data;
+  return mapNotificationRow(data);
+}
+
+// ----------------------------------------------------------------------------
+// دوال مساعدة للترقية
+// ----------------------------------------------------------------------------
+export function getNextAcademicGrade(currentGrade) {
+  const index = ACADEMIC_GRADES.indexOf(currentGrade);
+  if (index === -1) return null;
+  if (index >= ACADEMIC_GRADES.length - 1) return null; // أستاذ لا يوجد درجة أعلى
+  return ACADEMIC_GRADES[index + 1];
 }

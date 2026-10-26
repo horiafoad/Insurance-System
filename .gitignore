@@ -1,84 +1,62 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Environment variables
+# --- أسرار وبيانات اتصال ---
 .env
-.env.production
-.env.development
-# أي ملف بيئة آخر (env.local, .env.staging, ...) يُتجاهل.
-# نُبقي القالب فقط لأنه لا يحتوي أسرارًا.
 .env.*
 !.env.example
-
-# تقارير وفحوصات الترحيل (تحتوي أسماء ملفات ومسارات)
-.storage-r2-migration-report-*.json
-storage-migration-report*.json
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-cursor/
-
-# Build output (electron-builder)
-release/
-release2/
-*.blockmap
-*.exe
-*.msi
-
-# Temp build files
-build/*.tmp
-build/*.bak
-build/icons/
-
-# Generated icon temp files
-_tmp_icon.png
-
-# GitHub token file (used by scripts/release.cjs)
 release.token
 
-# Supabase CLI temp
-supabase/.temp
+# --- الحزم ومخرجات البناء ---
+node_modules/
+dist/
+build/
+tmp/
 
-# Old-database READ-ONLY export (scripts/export-old-data)
-# raw/ and ndjson/ contain real production data incl. users.password
-scripts/export-old-data/raw/
-scripts/export-old-data/ndjson/
-scripts/export-old-data/run-plan/
-
-# Storage compression reports (scripts/compress-storage.mjs)
-.storage-compress-*.json
-storage-compress-cache/
-
-# جسر السكانر: قفل مثيل واحد وقت التشغيل (يحتوي PID)
-# state.json مُتعمَّد: هو سجل الجسر ولا بد أن يبقى مع المشروع.
-scanner-bridge/instance.lock
-
-# Built APK artifacts
+# --- أندرويد ---
+android/.gradle/
+android/build/
+android/app/build/
 *.apk
 
-# local-only R2 credentials for the NEW Supabase project (never commit)
-.r2-secrets.local
+# --- ملفات الإصدار والتثبيت ---
+release/
+release-fixed/
+release-publish/
 
-# local migration progress ledger
-scripts/migration/.schema-progress.json
+# --- نسخ احتياطية وبيانات شخصية (لا تُرفع للمستودع) ---
+scripts/backup/
+scripts/claims-replace/excel-raw.json
+scripts/claims-replace/import-plan.json
+scripts/claims-replace/import.sql
+# مخرجات تحليل تحتوي أسماء وأكواد موظفين — تُولَّد محليًا فقط
+scripts/claims-replace/preview-compare.json
+scripts/study-leaves/new-file-analysis.json
+
+# --- نظام التشغيل والمحرر ---
+.idea/
+.vscode/
+Thumbs.db
+*.bak
+cursor/
+
+# --- بيئات ومشاريع محلية ضخمة (لا تُرفع للمستودع) ---
+# بيئة Python/conda محلية ينشئها Jupyter — مجلدها باسم عشوائي
+/b5bf2e54cb654f7b/
+.conda/
+environment.yml
+# مشروع منفصل تمامًا عن نظام التأمين
+wedding-invitation/
+# مشروع أندرويد المولّد محليًا (Capacitor) — يُبنى على الجهاز فقط
+android/
+# ملفات تشخيص مؤقتة
+storage-diagnostic.txt
+storage-next-check.txt
+
+# --- أسرار ومفاتيح لا تُرفع أبدًا ---
+# supabase/.temp/ يحتوي fcm-service-account.json (مفتاح حساب خدمة)
+supabase/.temp/
+*service-account*.json
+fcm-service-account.json
+
+# --- نسخ بيانات خام وحالة سكربتات الترحيل ---
+scripts/export-old-data/
 scripts/migration/.import-progress.json
-n/release-fixed/n/release-publish/
+scripts/migration/.schema-progress.json

@@ -4,6 +4,17 @@ import { supabase } from "../supabaseClient";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
 import { notifyPushEvent, getAppBase } from "../utils/pushNotifications";
+import { hasPermission } from "../utils/permissions";
+import {
+  RECEIVED_STATUS,
+  COMPLETED_STATUS,
+  INTERNAL_STAGES,
+  NO_INTERNAL_STAGE,
+  internalStageLabel,
+  validateServiceRequestFields,
+  canTransitionToStatus,
+  formatEgyptDateTime,
+} from "../utils/serviceRequestRules";
 
 /* =========================================================================
    DEMO WHATSAPP — معاينة إشعار عند إتمام الطلب
@@ -415,6 +426,7 @@ const REQUEST_STATUSES = [
   { value: "جديدة", icon: "🟡", color: "#B45309", bg: "#FEF3C7" },
   { value: "قيد التنفيذ", icon: "🔵", color: "#2563EB", bg: "#DBEAFE" },
   { value: "تم التنفيذ", icon: "🟢", color: "#047857", bg: "#D1FAE5" },
+  { value: RECEIVED_STATUS, icon: "🟣", color: "#7C3AED", bg: "#EDE9FE" },
   { value: "مرفوضة", icon: "🔴", color: "#DC2626", bg: "#FEE2E2" },
 ];
 
@@ -457,12 +469,20 @@ function formatRequestDate(row) {
   if (Number.isNaN(date.getTime())) return String(value);
 
   return date.toLocaleString("ar-EG", {
+    weekday: "long",
     year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// تاريخ ووقت وصول الطلب بتوقيت مصر الموحّد (يظهر في تفاصيل الطلبات الواردة).
+function formatArrivalDate(row) {
+  const value = row?.arrival_at ?? row?.created_at;
+  if (!value) return "—";
+  return formatEgyptDateTime(value) || "—";
 }
 
 function statusMeta(status) {
@@ -682,7 +702,19 @@ export function ServiceRequestsView({
   selectedService = "all",
   onServiceFilterChange,
   focusRequestId,
+  currentUser = null,
+  view = "incoming",
 }) {
+  // وضع العرض: incoming = الطلبات الواردة (جديدة + قيد التنفيذ + مرفوضة)
+  // archive = الطلبات المنفذة/المستلمة التي انتقلت لبند الخدمة الخاص بها.
+  const isArchiveView = view === "archive";
+  const isDoneStatus = (status) => {
+    const normalized = STATUS_ALIASES[status] || status;
+    return normalized === COMPLETED_STATUS || normalized === RECEIVED_STATUS;
+  };
+  // صلاحية «الطلبات» تُفحص داخل مسار الحفظ نفسه، وليس بإخفاء الأزرار فقط.
+  const canManageRequests = hasPermission(currentUser, "requests");
+
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -756,14 +788,25 @@ export function ServiceRequestsView({
   }, [requests]);
 
   const statusOptions = useMemo(() => {
-    const existing = requests.map((item) => item.status).filter(Boolean);
-    return [...new Set([...REQUEST_STATUSES.map((item) => item.value), ...existing])];
-  }, [requests]);
+    // في الوارد نخفي خيارات المنفّذ/المستلَم، وفي الأرشيف نعرضهما فقط.
+    const allowed = REQUEST_STATUSES.filter((item) =>
+      isArchiveView
+        ? item.value === COMPLETED_STATUS || item.value === RECEIVED_STATUS
+        : item.value !== COMPLETED_STATUS && item.value !== RECEIVED_STATUS
+    ).map((item) => item.value);
+    const existing = requests
+      .map((item) => item.status)
+      .filter((status) => status && allowed.includes(status));
+    return [...new Set([...allowed, ...existing])];
+  }, [requests, isArchiveView]);
 
   const filteredRequests = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return requests.filter((request) => {
+      // فلتر الوضع: الوارد يستبعد المنفّذ والمستلَم، والأرشيف يعرضهما فقط.
+      if (isArchiveView !== isDoneStatus(request.status)) return false;
+
       const statusMatch =
         statusFilter === "all" || request.status === statusFilter;
       const aliases = SERVICE_FILTER_ALIASES[activeServiceFilter] || [activeServiceFilter];
@@ -834,6 +877,11 @@ export function ServiceRequestsView({
   };
 
   const saveRequestUpdate = async (id, overrideStatus, overrideNotes) => {
+    if (!canManageRequests) {
+      setError("لا تملك صلاحية تعديل الطلبات.");
+      return;
+    }
+
     const previous = requests.find((item) => item.id === id);
     if (!previous) return;
 
@@ -845,6 +893,18 @@ export function ServiceRequestsView({
         : draft.notes !== undefined
           ? draft.notes
           : previous.notes;
+
+    // قاعدة الانتقال: «تم الاستلام من قبل مقدم الطلب» فقط من «تم التنفيذ».
+    if (!canTransitionToStatus(previous.status, newStatus)) {
+      setError(
+        "لا يمكن انتقال الحالة إلى «" +
+          RECEIVED_STATUS +
+          "» إلا من «" +
+          COMPLETED_STATUS +
+          "» بعد تسليم المعاملة فعليًا."
+      );
+      return;
+    }
 
     if (newStatus === previous.status && newNotes === (previous.notes || "")) {
       showToast("لا يوجد تغيير في الحالة أو الملاحظات.");
@@ -919,6 +979,100 @@ export function ServiceRequestsView({
     }
   };
 
+  /* =====================================================================
+     المراحل الداخلية للطلب (طباعة + توقيع مدير القسم + توقيع أمين الكلية)
+     منفصلة تمامًا عن الحالة العامة الظاهرة لمقدم الطلب، وتُحدَّث من هنا
+     فقط بصلاحية «الطلبات» مع تسجيل وقت التغيير واسم الموظف.
+     ===================================================================== */
+  const saveInternalStage = async (id, stageValue) => {
+    if (!canManageRequests) {
+      setError("لا تملك صلاحية تحديث المراحل الداخلية.");
+      return;
+    }
+
+    const previous = requests.find((item) => item.id === id);
+    if (!previous) return;
+
+    const stage = Number(stageValue);
+    const stageNumber = Number.isFinite(stage) ? stage : NO_INTERNAL_STAGE;
+    if (stageNumber < NO_INTERNAL_STAGE || stageNumber > INTERNAL_STAGES.length) {
+      setError("قيمة مرحلة داخلية غير صحيحة.");
+      return;
+    }
+
+    const updatedBy =
+      [currentUser?.full_name, currentUser?.username]
+        .filter(Boolean)
+        .join(" — ") || "غير معروف";
+    const updatedAt = new Date().toISOString();
+
+    setUpdatingId(id);
+    setError("");
+
+    // تحديث متفائل في الواجهة ثم التأكيد من قاعدة البيانات.
+    setRequests((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              internal_stage: stageNumber,
+              internal_stage_updated_at: updatedAt,
+              internal_stage_updated_by: updatedBy,
+            }
+          : item
+      )
+    );
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next["stage-" + id];
+      return next;
+    });
+
+    try {
+      const { data: savedRow, error: stageError } = await supabase
+        .from("service_requests")
+        .update({
+          internal_stage: stageNumber,
+          internal_stage_updated_at: updatedAt,
+          internal_stage_updated_by: updatedBy,
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (stageError) {
+        console.error(stageError);
+        setRequests((current) =>
+          current.map((item) => (item.id === id ? previous : item))
+        );
+        setError("حدث خطأ أثناء تحديث المرحلة الداخلية: " + stageError.message);
+        return;
+      }
+
+      if (savedRow) {
+        setRequests((current) =>
+          current.map((item) => (item.id === id ? savedRow : item))
+        );
+      }
+
+      showToast(
+        stageNumber === NO_INTERNAL_STAGE
+          ? "تمت إعادة تعيين المرحلة الداخلية."
+          : `تم تسجيل المرحلة: ${internalStageLabel(stageNumber)}`
+      );
+      return savedRow || null;
+    } catch (stageException) {
+      console.error(stageException);
+      setRequests((current) =>
+        current.map((item) => (item.id === id ? previous : item))
+      );
+      setError("تعذر تحديث المرحلة الداخلية في قاعدة البيانات.");
+      return null;
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const handleSaveClick = (id) => {
     const previous = requests.find((item) => item.id === id);
     if (!previous) return;
@@ -962,12 +1116,44 @@ export function ServiceRequestsView({
     e.preventDefault();
     if (!editingRequest) return;
 
+    if (!canManageRequests) {
+      setError("لا تملك صلاحية تعديل الطلبات.");
+      return;
+    }
+
     const prevRequest = requests.find(
       (r) => r.id === editingRequest.id
     );
 
     if (!prevRequest) {
       setError("تعذر العثور على الطلب المطلوب تعديله.");
+      return;
+    }
+
+    // تحقق من الحقول الإجبارية حسب نوع الطلب داخل مسار الحفظ نفسه.
+    const fieldError = validateServiceRequestFields(
+      editingRequest.service_type,
+      {
+        directedTo: editingRequest.directed_to,
+        requestedDetails: editingRequest.requested_details,
+      }
+    );
+    if (fieldError) {
+      setError(fieldError);
+      return;
+    }
+
+    // قاعدة انتقال «تم الاستلام من قبل مقدم الطلب»: فقط من «تم التنفيذ».
+    if (
+      !canTransitionToStatus(prevRequest.status, editingRequest.status)
+    ) {
+      setError(
+        "لا يمكن انتقال الحالة إلى «" +
+          RECEIVED_STATUS +
+          "» إلا من «" +
+          COMPLETED_STATUS +
+          "»."
+      );
       return;
     }
 
@@ -987,6 +1173,9 @@ export function ServiceRequestsView({
           request_year: Number(editingRequest.request_year),
           notes: editingRequest.notes || null,
           status: editingRequest.status,
+          directed_to: editingRequest.directed_to?.trim() || null,
+          requested_details: editingRequest.requested_details?.trim() || null,
+          applicant_notes: editingRequest.applicant_notes?.trim() || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", editingRequest.id)
@@ -1068,8 +1257,13 @@ export function ServiceRequestsView({
       "نوع الخدمة": r.service_type || "—",
       "الشهر المطلوب": formatMonth(r.request_month),
       "السنة المطلوبة": r.request_year || "—",
+      "موجّه إلى": r.directed_to || "—",
+      "المطلوب": r.requested_details || "—",
+      "ملاحظات مقدم الطلب": r.applicant_notes || "—",
       "حالة الطلب": r.status || "جديدة",
+      "المراحل الداخلية": internalStageLabel(r.internal_stage),
       "تاريخ التقديم": formatRequestDate(r),
+      "وقت الوصول": formatArrivalDate(r),
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1079,29 +1273,44 @@ export function ServiceRequestsView({
   };
 
   const counts = useMemo(() => {
+    // الإحصائيات تعكس الوضع الحالي: الوارد أو الأرشيف.
+    const base = requests.filter(
+      (item) => isArchiveView === isDoneStatus(item.status)
+    );
     return {
-      total: requests.length,
-      newCount: requests.filter(
+      total: base.length,
+      newCount: base.filter(
         (item) => ["جديدة", "جديد"].includes(item.status)
       ).length,
-      inProgress: requests.filter((item) =>
+      inProgress: base.filter((item) =>
         ["قيد التنفيذ", "قيد المراجعة", "جاري التنفيذ", "قيد المعالجة", "معلق"].includes(
           item.status
         )
       ).length,
-      completed: requests.filter((item) =>
-        ["تم التنفيذ", "مقبولة", "مكتمل", "منتهي", "تم الصرف"].includes(item.status)
-      ).length,
-      rejected: requests.filter((item) => item.status === "مرفوضة").length,
+      completed: base.filter((item) => {
+        const normalized = STATUS_ALIASES[item.status] || item.status;
+        return normalized === COMPLETED_STATUS;
+      }).length,
+      received: base.filter((item) => {
+        const normalized = STATUS_ALIASES[item.status] || item.status;
+        return normalized === RECEIVED_STATUS;
+      }).length,
+      rejected: base.filter((item) => item.status === "مرفوضة").length,
     };
-  }, [requests]);
+  }, [requests, isArchiveView]);
 
   return (
     <div style={styles.card}>
       <div style={styles.cardHeader}>
         <div>
-          <h2 style={styles.cardTitle}>📥 الطلبات الواردة</h2>
-          <p style={styles.cardSub}>طلبات الخدمات الإلكترونية الواردة مع إمكانية التعديل والحذف والمتابعة</p>
+          <h2 style={styles.cardTitle}>
+            {isArchiveView ? "📤 الطلبات المنفذة والمستلمة" : "📥 الطلبات الواردة"}
+          </h2>
+          <p style={styles.cardSub}>
+            {isArchiveView
+              ? "الطلبات التي تم تنفيذها وانتقلت إلى بند الخدمة الخاص بها — يمكن تسجيل الاستلام من مقدم الطلب"
+              : "طلبات الخدمات الإلكترونية الجديدة وقيد التنفيذ — عند التنفيذ تنتقل تلقائيًا إلى بند الخدمة الخاص بها"}
+          </p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
           <button style={styles.secondaryButton} onClick={loadRequests}>
@@ -1127,11 +1336,20 @@ export function ServiceRequestsView({
       )}
 
       <div style={styles.claimStats}>
-        <ClaimStat title="إجمالي الطلبات" value={counts.total} icon="📥" />
-        <ClaimStat title="جديدة" value={counts.newCount} icon="🟡" />
-        <ClaimStat title="قيد التنفيذ" value={counts.inProgress} icon="🔵" />
-        <ClaimStat title="تم التنفيذ" value={counts.completed} icon="🟢" />
-        <ClaimStat title="مرفوضة" value={counts.rejected} icon="🔴" />
+        {isArchiveView ? (
+          <>
+            <ClaimStat title="إجمالي المنفّذ والمستلَم" value={counts.total} icon="📤" />
+            <ClaimStat title="تم التنفيذ" value={counts.completed} icon="🟢" />
+            <ClaimStat title="تم الاستلام" value={counts.received} icon="🟣" />
+          </>
+        ) : (
+          <>
+            <ClaimStat title="إجمالي الطلبات" value={counts.total} icon="📥" />
+            <ClaimStat title="جديدة" value={counts.newCount} icon="🟡" />
+            <ClaimStat title="قيد التنفيذ" value={counts.inProgress} icon="🔵" />
+            <ClaimStat title="مرفوضة" value={counts.rejected} icon="🔴" />
+          </>
+        )}
       </div>
 
       <div className="service-filter-bar" style={styles.filterRow}>
@@ -1182,7 +1400,10 @@ export function ServiceRequestsView({
       </div>
 
       {!loading && filteredRequests.length > 0 && (
-        <div className="service-table-wrap mobile-hscroll" style={styles.claimTableWrapper}>
+        <div
+          className="service-table-wrap mobile-hscroll"
+          style={{ ...styles.claimTableWrapper, maxHeight: "none" }}
+        >
           <table style={styles.table}>
             <thead>
               <tr>
@@ -1193,20 +1414,26 @@ export function ServiceRequestsView({
                 <th style={styles.th}>نوع الإفادة</th>
                 <th style={styles.th}>الشهر المطلوب</th>
                 <th style={styles.th}>السنة المطلوبة</th>
+                <th style={styles.th}>موجّه إلى / المطلوب</th>
                 <th style={styles.th}>ملاحظات</th>
+                <th style={styles.th}>المراحل الداخلية</th>
                 <th style={styles.th}>حالة الطلب</th>
                 <th style={styles.th}>تاريخ التقديم</th>
+                <th style={styles.th}>وقت الوصول</th>
                 <th style={styles.th}>إجراءات المدير</th>
               </tr>
             </thead>
             <tbody>
               {filteredRequests.map((request) => {
                 const currentStatus = request.status || "جديدة";
+                // في الوارد يمكن تعيين «تم التنفيذ» (ينقل للأرشيف)، بـ«تم الاستلام» للأرشيف فقط.
+                const allowedRowStatuses = isArchiveView
+                  ? [COMPLETED_STATUS, RECEIVED_STATUS]
+                  : REQUEST_STATUSES.filter(
+                      (item) => item.value !== RECEIVED_STATUS
+                    ).map((item) => item.value);
                 const selectOptions = [
-                  ...new Set([
-                    currentStatus,
-                    ...REQUEST_STATUSES.map((item) => item.value),
-                  ]),
+                  ...new Set([currentStatus, ...allowedRowStatuses]),
                 ];
 
                 return (
@@ -1232,7 +1459,116 @@ export function ServiceRequestsView({
                     <td style={styles.td}>{request.certificate_type || "—"}</td>
                     <td style={styles.td}>{formatMonth(request.request_month)}</td>
                     <td style={styles.td}>{request.request_year || "—"}</td>
-                    <td style={styles.td}>{request.notes || "—"}</td>
+                    <td style={styles.td}>
+                      {request.directed_to && (
+                        <div style={{ marginBottom: request.requested_details ? 6 : 0 }}>
+                          <span style={{ fontSize: 11, color: "#64748B", fontWeight: 700 }}>
+                            موجّه إلى:
+                          </span>{" "}
+                          {request.directed_to}
+                        </div>
+                      )}
+                      {request.requested_details && (
+                        <div>
+                          <span style={{ fontSize: 11, color: "#64748B", fontWeight: 700 }}>
+                            المطلوب:
+                          </span>{" "}
+                          {request.requested_details}
+                        </div>
+                      )}
+                      {!request.directed_to && !request.requested_details && "—"}
+                    </td>
+                    <td style={styles.td}>
+                      {request.applicant_notes && (
+                        <div style={{ marginBottom: request.notes ? 6 : 0 }}>
+                          <span style={{ fontSize: 11, color: "#64748B", fontWeight: 700 }}>
+                            من مقدم الطلب:
+                          </span>{" "}
+                          {request.applicant_notes}
+                        </div>
+                      )}
+                      {request.notes || (!request.applicant_notes ? "—" : "")}
+                    </td>
+                    <td style={styles.td}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 190 }}>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color:
+                              Number(request.internal_stage) >= INTERNAL_STAGES.length
+                                ? "#047857"
+                                : Number(request.internal_stage) > 0
+                                  ? "#2563EB"
+                                  : "#64748B",
+                          }}
+                        >
+                          {Number(request.internal_stage) > 0
+                            ? `${Number(request.internal_stage)}/${INTERNAL_STAGES.length} `
+                            : ""}
+                          {internalStageLabel(request.internal_stage)}
+                        </span>
+                        {request.internal_stage_updated_at && (
+                          <span style={{ fontSize: 11, color: "#94A3B8" }}>
+                            آخر تحديث: {formatEgyptDateTime(request.internal_stage_updated_at)}
+                            {request.internal_stage_updated_by
+                              ? ` — ${request.internal_stage_updated_by}`
+                              : ""}
+                          </span>
+                        )}
+                        <select
+                          value={String(
+                            drafts["stage-" + request.id]?.internal_stage ??
+                              Number(request.internal_stage) ??
+                              NO_INTERNAL_STAGE
+                          )}
+                          disabled={updatingId === request.id || !canManageRequests}
+                          onChange={(e) =>
+                            setDrafts((prev) => ({
+                              ...prev,
+                              ["stage-" + request.id]: {
+                                ...(prev["stage-" + request.id] || {}),
+                                internal_stage: e.target.value,
+                              },
+                            }))
+                          }
+                          style={{ ...styles.claimSelect, padding: "5px 8px", fontSize: "12px" }}
+                        >
+                          <option value={String(NO_INTERNAL_STAGE)}>
+                            — اختر المرحلة الداخلية —
+                          </option>
+                          {INTERNAL_STAGES.map((stage) => (
+                            <option key={stage.value} value={String(stage.value)}>
+                              {stage.value}. {stage.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          disabled={
+                            updatingId === request.id ||
+                            !canManageRequests ||
+                            (drafts["stage-" + request.id]?.internal_stage ?? undefined) ===
+                              undefined
+                          }
+                          onClick={() =>
+                            saveInternalStage(
+                              request.id,
+                              drafts["stage-" + request.id]?.internal_stage
+                            )
+                          }
+                          style={{
+                            ...styles.primaryButton,
+                            padding: "6px 10px",
+                            fontSize: "12px",
+                          }}
+                          title="تسجيل المرحلة الداخلية (للإدارة فقط)"
+                        >
+                          {updatingId === request.id
+                            ? "⏳ جاري الحفظ..."
+                            : "📌 تسجيل المرحلة"}
+                        </button>
+                      </div>
+                    </td>
                     <td style={styles.td}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 190 }}>
                         <span style={getStatusStyle(currentStatus)}>
@@ -1299,6 +1635,7 @@ export function ServiceRequestsView({
                       </div>
                     </td>
                     <td style={styles.td}>{formatRequestDate(request)}</td>
+                    <td style={styles.td}>{formatArrivalDate(request)}</td>
                     <td style={styles.td}>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         {currentStatus === "تم التنفيذ" && (
@@ -1362,11 +1699,23 @@ export function ServiceRequestsView({
       )}
 
       {!loading && requests.length === 0 && !error && (
-        <EmptyState text="لا توجد طلبات واردة حتى الآن." />
+        <EmptyState
+          text={
+            isArchiveView
+              ? "لا توجد طلبات منفّذة أو مستلَمة في هذا البند بعد."
+              : "لا توجد طلبات واردة حتى الآن."
+          }
+        />
       )}
 
       {!loading && requests.length > 0 && filteredRequests.length === 0 && (
-        <EmptyState text="لا توجد طلبات مطابقة للبحث أو التصفية." />
+        <EmptyState
+          text={
+            isArchiveView
+              ? "لا توجد طلبات منفّذة مطابقة للبحث أو التصفية."
+              : "لا توجد طلبات واردة مطابقة للبحث أو التصفية."
+          }
+        />
       )}
 
       {/* Modal تعديل الطلب */}
@@ -1458,6 +1807,145 @@ export function ServiceRequestsView({
                   style={styles.input}
                   required
                 />
+              </div>
+
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  موجّه إلى (لطلبات مفردات المرتب والإفادات)
+                </label>
+                <input
+                  type="text"
+                  value={editingRequest.directed_to || ""}
+                  onChange={(e) =>
+                    setEditingRequest((prev) => ({ ...prev, directed_to: e.target.value }))
+                  }
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  المطلوب (لطلبات الرعاية والزمالة)
+                </label>
+                <textarea
+                  value={editingRequest.requested_details || ""}
+                  onChange={(e) =>
+                    setEditingRequest((prev) => ({ ...prev, requested_details: e.target.value }))
+                  }
+                  style={{ ...styles.input, minHeight: "70px", resize: "vertical" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  ملاحظات مقدم الطلب (اختياري)
+                </label>
+                <textarea
+                  value={editingRequest.applicant_notes || ""}
+                  onChange={(e) =>
+                    setEditingRequest((prev) => ({ ...prev, applicant_notes: e.target.value }))
+                  }
+                  style={{ ...styles.input, minHeight: "70px", resize: "vertical" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "10px", textAlign: "right" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", display: "block" }}>
+                  تاريخ ووقت وصول الطلب (بتوقيت مصر)
+                </label>
+                <div style={{ ...styles.input, background: "#F8FAFC", color: "#123B5D" }}>
+                  {formatArrivalDate(editingRequest)}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginBottom: "10px",
+                  textAlign: "right",
+                  background: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: "10px",
+                  padding: "10px 12px",
+                }}
+              >
+                <label style={{ fontSize: "12px", fontWeight: "700", marginBottom: "6px", display: "block" }}>
+                  المراحل الداخلية (للإدارة فقط — لا تظهر لمقدم الطلب)
+                </label>
+                <ul style={{ margin: "0 0 8px", padding: "0 18px 0 0", fontSize: 12, lineHeight: 1.9 }}>
+                  {INTERNAL_STAGES.map((stage) => {
+                    const done = Number(editingRequest.internal_stage || 0) >= stage.value;
+                    return (
+                      <li
+                        key={stage.value}
+                        style={{
+                          color: done ? "#047857" : "#64748B",
+                          fontWeight: done ? 700 : 500,
+                        }}
+                      >
+                        {done ? "✅" : "⬜"} {stage.label}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {editingRequest.internal_stage_updated_at && (
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 6 }}>
+                    آخر تحديث للمراحل:{" "}
+                    {formatEgyptDateTime(editingRequest.internal_stage_updated_at)}
+                    {editingRequest.internal_stage_updated_by
+                      ? ` — بواسطة ${editingRequest.internal_stage_updated_by}`
+                      : ""}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <select
+                    value={String(
+                      Number(editingRequest.internal_stage) || NO_INTERNAL_STAGE
+                    )}
+                    onChange={(e) =>
+                      setEditingRequest((prev) => ({
+                        ...prev,
+                        internal_stage: Number(e.target.value),
+                      }))
+                    }
+                    style={{ ...styles.input, marginBottom: 0, flex: 1 }}
+                  >
+                    <option value={String(NO_INTERNAL_STAGE)}>
+                      — اختر المرحلة الداخلية —
+                    </option>
+                    {INTERNAL_STAGES.map((stage) => (
+                      <option key={stage.value} value={String(stage.value)}>
+                        {stage.value}. {stage.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={
+                      updatingId === editingRequest.id || !canManageRequests
+                    }
+                    onClick={async () => {
+                      const saved = await saveInternalStage(
+                        editingRequest.id,
+                        editingRequest.internal_stage
+                      );
+                      if (saved) {
+                        setEditingRequest((prev) =>
+                          prev ? { ...prev, ...saved } : prev
+                        );
+                      }
+                    }}
+                    style={{
+                      ...styles.primaryButton,
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {updatingId === editingRequest.id
+                      ? "⏳ جاري الحفظ..."
+                      : "📌 حفظ المرحلة"}
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>

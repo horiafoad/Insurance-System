@@ -21,6 +21,7 @@ const MENU_ITEMS_PERMISSION = {
   user_management: "user_management",
   org_structure: "org_structure",
   connection_test: "system_settings",
+  monthly_reports: "monthly_reports",
 };
 
 function taskActionType(typeId) {
@@ -34,6 +35,8 @@ export default function Sidebar({
   setActiveMenu,
   setFilterType,
   setServiceRequestFilter,
+  setServiceRequestsView,
+  serviceRequestsView = "incoming",
   currentUser,
   isMobile = false,
   sidebarOpen = false,
@@ -42,6 +45,12 @@ export default function Sidebar({
   const navigate = (nextMenu) => {
     setActiveMenu(nextMenu);
     if (onCloseSidebar) onCloseSidebar();
+  };
+
+  // فتح طلبات الخدمة: الوارد من زر القائمة، والأرشيف من أقسام الخدمات.
+  const openServiceRequests = (viewMode) => {
+    if (setServiceRequestsView) setServiceRequestsView(viewMode);
+    setActiveMenu("service_requests");
   };
   const controlItems = MENU_ITEMS.filter((item) =>
     item.id === "push_settings"
@@ -106,10 +115,17 @@ export default function Sidebar({
           {controlItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveMenu(item.id)}
+              onClick={() => {
+                if (item.id === "service_requests") {
+                  openServiceRequests("incoming");
+                  return;
+                }
+                setActiveMenu(item.id);
+              }}
               style={{
                 ...styles.menuButton,
-                ...(activeMenu === item.id
+                ...(activeMenu === item.id &&
+                !(item.id === "service_requests" && serviceRequestsView === "archive")
                   ? styles.menuButtonActive
                   : {}),
               }}
@@ -150,11 +166,14 @@ export default function Sidebar({
                     return;
                   }
 
-                  // طلبات الخدمات
+                  // طلبات الخدمات — تفتح بند الخدمة (المنفّذ والمستلَم)
                   if (SERVICE_REQUEST_TYPES[type.id]) {
                     setServiceRequestFilter(
                       SERVICE_REQUEST_TYPES[type.id]
                     );
+                    if (setServiceRequestsView) {
+                      setServiceRequestsView("archive");
+                    }
                     setActiveMenu("service_requests");
                     return;
                   }
@@ -188,7 +207,8 @@ export default function Sidebar({
                     : {}),
 
                   ...(SERVICE_REQUEST_TYPES[type.id] &&
-                  activeMenu === "service_requests"
+                  activeMenu === "service_requests" &&
+                  serviceRequestsView === "archive"
                     ? styles.smallMenuButtonActive
                     : {}),
 
@@ -273,7 +293,55 @@ export default function Sidebar({
       )}
 
       {/* =========================================
-          تبليغات هيئة التدريس / الموظفين / العقود
+          الأرشيف الذكي لأعضاء هيئة التدريس - قسم مستقل
+          ========================================= */}
+
+      {canArchive && (
+        <>
+          <div style={styles.sidebarDivider} />
+
+          <button
+            onClick={() => setActiveMenu("faculty_smart_archive")}
+            style={{
+              ...styles.smallMenuButton,
+
+              ...(activeMenu === "faculty_smart_archive"
+                ? styles.smallMenuButtonActive
+                : {}),
+            }}
+          >
+            <span>🧠</span>
+            <span>الأرشيف الذكي (أعضاء هيئة التدريس)</span>
+          </button>
+        </>
+      )}
+
+      {/* =========================================
+          التبليغات الشهرية - قسم مستقل
+          ========================================= */}
+
+      {hasPermission(currentUser, "monthly_reports") && (
+        <>
+          <div style={styles.sidebarDivider} />
+
+          <button
+            onClick={() => setActiveMenu("monthly_reports")}
+            style={{
+              ...styles.smallMenuButton,
+
+              ...(activeMenu === "monthly_reports"
+                ? styles.smallMenuButtonActive
+                : {}),
+            }}
+          >
+            <span>📝</span>
+            <span>التبليغات الشهرية</span>
+          </button>
+        </>
+      )}
+
+      {/* =========================================
+          تبليغات الاستحقاقات: هيئة التدريس / الموظفون / العقود
           ========================================= */}
 
       {notificationSections.length > 0 && (
@@ -300,48 +368,6 @@ export default function Sidebar({
               </button>
             );
           })}
-        </>
-      )}
-
-      {/* =========================================
-          أرشيف الأوامر التنفيذية - قسم مستقل
-          ========================================= */}
-
-      {canEntitlements && (
-        <>
-          <div style={styles.sidebarDivider} />
-
-          <div style={{ padding: "6px 14px 2px", fontSize: 11, fontWeight: 800, color: "#94A3B8" }}>
-            📜 أرشيف الأوامر التنفيذية
-          </div>
-
-          <button
-            onClick={() => setActiveMenu("executive_orders_add")}
-            style={{
-              ...styles.smallMenuButton,
-
-              ...(activeMenu === "executive_orders_add"
-                ? styles.smallMenuButtonActive
-                : {}),
-            }}
-          >
-            <span>➕</span>
-            <span>إضافة أمر تنفيذي</span>
-          </button>
-
-          <button
-            onClick={() => setActiveMenu("executive_orders_archive")}
-            style={{
-              ...styles.smallMenuButton,
-
-              ...(activeMenu === "executive_orders_archive"
-                ? styles.smallMenuButtonActive
-                : {}),
-            }}
-          >
-            <span>🗂️</span>
-            <span>أرشيف الأوامر التنفيذية</span>
-          </button>
         </>
       )}
     </aside>

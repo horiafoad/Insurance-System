@@ -2,6 +2,32 @@ import React, { useMemo, useState } from "react";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
 
+const formatAmount = (value) =>
+  Number(value || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+/**
+ * حالات المطالبات ثلاث فقط (باستخدام الحالات الموجودة في قاعدة البيانات):
+ * «لم يسدد» / «جاري السداد» / «خالي الطرف».
+ * أي قيمة قديمة أخرى أو فارغة تُعرض كـ«لم يسدد» ولا تُحذف من قاعدة البيانات.
+ */
+export function normalizeClaimPaymentStatus(claim) {
+  const raw = String(claim?.payment_status || "").trim();
+  if (raw === "جاري السداد") return "جاري السداد";
+  if (["خالي الطرف", "مكتمل", "تم السداد"].includes(raw)) {
+    return "خالي الطرف";
+  }
+  return "لم يسدد";
+}
+
+const actionButtonStyle = {
+  padding: "4px 8px",
+  fontSize: "12px",
+  whiteSpace: "nowrap",
+};
+
 export default function ClaimsPage({
   claims,
   allClaims,
@@ -16,13 +42,21 @@ export default function ClaimsPage({
   onAddManual,
   onDeleteClaim,
   onUpdateClaim,
+  onDeleteAllClaims,
+  onStartPayment,
+  onPayInstallment,
+  onSettleClaim,
+  onOpenDetails,
   canManage = false,
 }) {
   const [editingClaim, setEditingClaim] = useState(null);
+  const [activeTab, setActiveTab] = useState("all");
   const [editFormData, setEditFormData] = useState({
     sheet_name: "",
     data: {},
   });
+  const [showClearAll, setShowClearAll] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const columns = useMemo(() => {
     const result = [];
@@ -40,16 +74,14 @@ export default function ClaimsPage({
 
   const total = allClaims.length;
   const stats = useMemo(() => {
-    const pending = allClaims.filter((claim) =>
-      ["قيد المراجعة", "جديد", "معلق"].includes(String(claim.data?.الحالة || claim.status || ""))
+    const pending = allClaims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === "لم يسدد"
     ).length;
-    const inProgress = allClaims.filter((claim) =>
-      ["جاري التنفيذ", "قيد التنفيذ", "قيد المعالجة"].includes(
-        String(claim.data?.الحالة || claim.status || "")
-      )
+    const inProgress = allClaims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === "جاري السداد"
     ).length;
-    const completed = allClaims.filter((claim) =>
-      ["مكتمل", "تم الصرف", "منتهي"].includes(String(claim.data?.الحالة || claim.status || ""))
+    const completed = allClaims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === "خالي الطرف"
     ).length;
 
     return {
@@ -64,6 +96,31 @@ export default function ClaimsPage({
     sheetFilter === "all"
       ? total
       : allClaims.filter((item) => item.sheet_name === sheetFilter).length;
+
+  const tabs = useMemo(() => {
+    const count = (status) =>
+      claims.filter((claim) => normalizeClaimPaymentStatus(claim) === status)
+        .length;
+    return [
+      { id: "all", label: "كل المطالبات", count: claims.length },
+      { id: "unpaid", label: "لم يسدد", count: count("لم يسدد") },
+      { id: "in_progress", label: "جاري السداد", count: count("جاري السداد") },
+      { id: "settled", label: "خالي الطرف", count: count("خالي الطرف") },
+    ];
+  }, [claims]);
+
+  const visibleClaims = useMemo(() => {
+    if (activeTab === "all") return claims;
+    const status =
+      activeTab === "in_progress"
+        ? "جاري السداد"
+        : activeTab === "settled"
+          ? "خالي الطرف"
+          : "لم يسدد";
+    return claims.filter(
+      (claim) => normalizeClaimPaymentStatus(claim) === status
+    );
+  }, [claims, activeTab]);
 
   const handleOpenEdit = (claim) => {
     setEditingClaim(claim);
@@ -82,6 +139,16 @@ export default function ClaimsPage({
     setEditingClaim(null);
   };
 
+  const handleClearAll = async () => {
+    setClearing(true);
+    try {
+      await onDeleteAllClaims?.();
+      setShowClearAll(false);
+    } finally {
+      setClearing(false);
+    }
+  };
+
   return (
     <div>
       <div style={styles.card}>
@@ -92,6 +159,16 @@ export default function ClaimsPage({
           </div>
 
           <div style={styles.claimHeaderButtons}>
+            {canManage && total > 0 && (
+              <button
+                style={styles.clearAllClaimsButton}
+                onClick={() => setShowClearAll(true)}
+                title="حذف كل المطالبات من قاعدة البيانات"
+              >
+                🗑️ حذف كل المطالبات
+              </button>
+            )}
+
             <button style={styles.manualClaimButton} onClick={onAddManual}>
               ＋ إضافة مطالبة
             </button>
@@ -115,7 +192,7 @@ export default function ClaimsPage({
         {error && <div style={styles.errorBox}>{error}</div>}
 
         <div style={styles.claimStats}>
-          <ClaimStat title="إجمالي السجلات" value={stats.total} icon="📋" />
+          <ClaimStat title="إجمالي السجلات" value={total} icon="📋" />
           <ClaimStat title="قيد المراجعة" value={stats.pending} icon="⏳" />
           <ClaimStat title="جاري التنفيذ" value={stats.inProgress} icon="🔄" />
           <ClaimStat title="مكتمل" value={stats.completed} icon="✅" />
@@ -133,6 +210,37 @@ export default function ClaimsPage({
 
         {sheets.length > 0 && (
           <>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 12,
+              }}
+            >
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    border:
+                      activeTab === tab.id
+                        ? "1px solid #2563EB"
+                        : "1px solid #E2E8F0",
+                    background: activeTab === tab.id ? "#EFF6FF" : "#fff",
+                    color: activeTab === tab.id ? "#1D4ED8" : "#475569",
+                    borderRadius: 9,
+                    padding: "7px 13px",
+                    fontWeight: 800,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </div>
+
             <div className="service-filter-bar" style={styles.filterRow}>
               <input
                 type="text"
@@ -157,17 +265,19 @@ export default function ClaimsPage({
             </div>
 
             <div style={styles.resultText}>
-              عدد النتائج الحالية: <strong>{claims.length}</strong> من{" "}
+              عدد النتائج الحالية: <strong>{visibleClaims.length}</strong> من{" "}
               <strong>{currentSheetCount}</strong>
             </div>
 
-            {claims.length > 0 && (
+            {visibleClaims.length > 0 && (
               <div className="mobile-hscroll" style={styles.claimTableWrapper}>
                 <table style={styles.table}>
                   <thead>
                     <tr>
-                      <th style={styles.th}>التصنيف</th>
+                      {canManage && <th style={styles.th}>التصنيف</th>}
+                      {canManage && <th style={styles.th}>حالة السداد</th>}
                       <th style={styles.th}>رقم الصف</th>
+                      {canManage && <th style={styles.th}>المتبقي</th>}
                       {columns.map((column) => (
                         <th key={column} style={styles.th}>
                           {column}
@@ -177,7 +287,7 @@ export default function ClaimsPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {claims.slice(0, 300).map((claim) => (
+                    {visibleClaims.slice(0, 300).map((claim) => (
                       <tr key={claim.id} style={styles.tr}>
                         {canManage && <td style={styles.td}>
                           <span
@@ -193,51 +303,161 @@ export default function ClaimsPage({
                             {claim.sheet_name}
                           </span>
                         </td>}
+                        {canManage && (
+                          <td style={styles.td}>
+                            <span
+                              style={{
+                                background:
+                                  normalizeClaimPaymentStatus(claim) ===
+                                  "خالي الطرف"
+                                    ? "#DCFCE7"
+                                    : normalizeClaimPaymentStatus(claim) ===
+                                        "جاري السداد"
+                                      ? "#FEF3C7"
+                                      : "#F1F5F9",
+                                color:
+                                  normalizeClaimPaymentStatus(claim) ===
+                                  "خالي الطرف"
+                                    ? "#166534"
+                                    : normalizeClaimPaymentStatus(claim) ===
+                                        "جاري السداد"
+                                      ? "#92400E"
+                                      : "#334155",
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: "700",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {normalizeClaimPaymentStatus(claim)}
+                            </span>
+                          </td>
+                        )}
                         <td style={styles.td}>
                           {claim.row_number === 0 ? "يدوي" : claim.row_number}
                         </td>
+                        {canManage && (
+                          <td style={styles.td}>
+                            {formatAmount(claim.remaining_amount)}
+                          </td>
+                        )}
                         {columns.map((column) => (
                           <td key={column} style={styles.td}>
                             {String(claim.data?.[column] ?? "")}
                           </td>
                         ))}
-                        <td style={styles.td}>
-                          <div style={{ display: "flex", gap: "6px" }}>
-                            <button
+                        {canManage && (
+                          <td style={styles.td}>
+                            <div
                               style={{
-                                ...styles.viewButton,
-                                background: "#FEF3C7",
-                                color: "#92400E",
-                                borderColor: "#FDE68A",
-                                padding: "4px 8px",
-                                fontSize: "12px",
+                                display: "flex",
+                                gap: "6px",
+                                flexWrap: "wrap",
+                                minWidth: 210,
                               }}
-                              onClick={() => handleOpenEdit(claim)}
-                              title="تعديل المطالبة"
                             >
-                              ✏️ تعديل
-                            </button>
-                            {onDeleteClaim && (
+                              {onOpenDetails && (
+                                <button
+                                  style={{
+                                    ...styles.viewButton,
+                                    background: claim.pdf_url ? "#DCFCE7" : "#F8FAFC",
+                                    color: claim.pdf_url ? "#166534" : "#334155",
+                                    borderColor: claim.pdf_url ? "#A7F3D0" : "#E2E8F0",
+                                    ...actionButtonStyle,
+                                  }}
+                                  onClick={() => onOpenDetails(claim)}
+                                  title="تفاصيل المطالبة والأقساط ومرفق PDF"
+                                >
+                                  {claim.pdf_url ? "📄 PDF/تفاصيل" : "🧾 تفاصيل"}
+                                </button>
+                              )}
+                              {claim.payment_status !== "خالي الطرف" &&
+                                claim.payment_status !== "جاري السداد" &&
+                                onStartPayment && (
+                                  <button
+                                    style={{
+                                      ...styles.viewButton,
+                                      background: "#EFF6FF",
+                                      color: "#1D4ED8",
+                                      borderColor: "#BFDBFE",
+                                      ...actionButtonStyle,
+                                    }}
+                                    onClick={() => onStartPayment(claim)}
+                                    title="بدء سداد المطالبة"
+                                  >
+                                    ▶️ بدء السداد
+                                  </button>
+                                )}
+
+                              {claim.payment_status === "جاري السداد" &&
+                                onPayInstallment && (
+                                  <button
+                                    style={{
+                                      ...styles.viewButton,
+                                      background: "#ECFDF5",
+                                      color: "#047857",
+                                      borderColor: "#A7F3D0",
+                                      ...actionButtonStyle,
+                                    }}
+                                    onClick={() => onPayInstallment(claim)}
+                                    title="تسديد قسط"
+                                  >
+                                    💵 تسديد قسط
+                                  </button>
+                                )}
+
+                              {claim.payment_status !== "خالي الطرف" &&
+                                onSettleClaim && (
+                                  <button
+                                    style={{
+                                      ...styles.viewButton,
+                                      background: "#F5F3FF",
+                                      color: "#6D28D9",
+                                      borderColor: "#DDD6FE",
+                                      ...actionButtonStyle,
+                                    }}
+                                    onClick={() => onSettleClaim(claim)}
+                                    title="تسوية المطالبة"
+                                  >
+                                    🤝 تسوية
+                                  </button>
+                                )}
+
                               <button
                                 style={{
-                                  ...styles.deleteButton,
-                                  padding: "4px 8px",
-                                  fontSize: "12px",
+                                  ...styles.viewButton,
+                                  background: "#FEF3C7",
+                                  color: "#92400E",
+                                  borderColor: "#FDE68A",
+                                  ...actionButtonStyle,
                                 }}
-                                onClick={() => onDeleteClaim(claim.id)}
-                                title="حذف المطالبة"
+                                onClick={() => handleOpenEdit(claim)}
+                                title="تعديل المطالبة"
                               >
-                                🗑️ حذف
+                                ✏️ تعديل
                               </button>
-                            )}
-                          </div>
-                        </td>
+                              {onDeleteClaim && (
+                                <button
+                                  style={{
+                                    ...styles.deleteButton,
+                                    ...actionButtonStyle,
+                                  }}
+                                  onClick={() => onDeleteClaim(claim.id)}
+                                  title="حذف المطالبة"
+                                >
+                                  🗑️ حذف
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
 
-                {claims.length > 300 && (
+                {visibleClaims.length > 300 && (
                   <div style={styles.infoBox}>
                     يتم عرض أول 300 سجل في الشاشة فقط.
                   </div>
@@ -245,7 +465,7 @@ export default function ClaimsPage({
               </div>
             )}
 
-            {claims.length === 0 && (
+            {visibleClaims.length === 0 && (
               <EmptyState text="لا توجد بيانات مطابقة للبحث." />
             )}
           </>
@@ -276,6 +496,71 @@ export default function ClaimsPage({
           </div>
         )}
       </div>
+
+      {/* Modal تأكيد حذف كل المطالبات */}
+      {showClearAll && (
+        <div
+          style={styles.modalOverlay}
+          onClick={() => !clearing && setShowClearAll(false)}
+        >
+          <div
+            style={{ ...styles.loginBox, width: "min(520px, 95%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={styles.closeButton}
+              onClick={() => setShowClearAll(false)}
+              disabled={clearing}
+            >
+              ×
+            </button>
+
+            <div style={{ fontSize: "38px", marginBottom: "8px" }}>🗑️</div>
+
+            <h3 style={styles.loginTitle}>حذف كل المطالبات</h3>
+
+            <p style={{ fontSize: "14px", lineHeight: 1.8, textAlign: "right" }}>
+              سيتم حذف <strong>{total}</strong> سجل مطالبة من قاعدة البيانات
+              نهائيًا، وهي موزعة على <strong>{sheets.length}</strong> تصنيف (شيت).
+              <br />
+              <span style={{ color: "#B91C1C", fontWeight: 700 }}>
+                لن يتم حذف بند «المطالبات» من القائمة، ولا التصنيفات، ولا أي بند آخر.
+              </span>
+              <br />
+              بعد الحذف يمكنك استيراد الشيت الجديد من زر «استيراد ملف Excel».
+            </p>
+
+            <div
+              style={{
+                marginTop: "20px",
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => setShowClearAll(false)}
+                disabled={clearing}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                style={{
+                  ...styles.primaryButton,
+                  background: "#DC2626",
+                }}
+                onClick={handleClearAll}
+                disabled={clearing}
+              >
+                {clearing ? "جاري الحذف..." : "🗑️ تأكيد حذف كل المطالبات"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal تعديل المطالبة */}
       {editingClaim && (

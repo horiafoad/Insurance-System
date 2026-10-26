@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -135,6 +135,160 @@ function checkIdleAndRestart() {
 }
 
 /* =====================================================
+   LOCAL FILE STORAGE (desktop only)
+   ملفات المرفقات تُحفظ في مجلد على جهاز العميل، والمرجع local://
+   يُخزَّن في قاعدة بيانات Supabase دون رفع أي ملف للسحابة.
+   ===================================================== */
+
+function filesRoot() {
+  const base = path.join(
+    app.getPath('documents'),
+    'ASU-Engineering-System-Files'
+  );
+  fs.mkdirSync(base, { recursive: true });
+  return base;
+}
+
+function sanitizeRelPath(relPath) {
+  const clean = String(relPath || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .trim();
+  if (!clean) throw new Error('empty path');
+  const parts = clean.split('/');
+  if (parts.some((p) => !p || p === '.' || p === '..')) {
+    throw new Error('invalid path');
+  }
+  return parts.join('/');
+}
+
+function resolveLocalAbs(relPath) {
+  const safe = sanitizeRelPath(relPath);
+  return path.join(filesRoot(), ...safe.split('/'));
+}
+
+function localMimeOf(absPath) {
+  const ext = path.extname(absPath).replace('.', '').toLowerCase();
+  const map = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    xls: 'application/vnd.ms-excel',
+    csv: 'text/csv',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    txt: 'text/plain',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+function registerLocalFilesIpc() {
+  ipcMain.handle('local-files:save', (_event, { relPath, base64, contentType }) => {
+    try {
+      const abs = resolveLocalAbs(relPath);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, Buffer.from(String(base64 || ''), 'base64'));
+      return { ok: true, absPath: abs, dir: filesRoot() };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('local-files:read', (_event, { relPath }) => {
+    try {
+      const abs = resolveLocalAbs(relPath);
+      if (!fs.existsSync(abs)) return { ok: false, error: 'file not found' };
+      const buf = fs.readFileSync(abs);
+      return {
+        ok: true,
+        base64: buf.toString('base64'),
+        contentType: localMimeOf(abs),
+        size: buf.length,
+      };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('local-files:remove', (_event, { relPath }) => {
+    try {
+      const abs = resolveLocalAbs(relPath);
+      if (fs.existsSync(abs)) fs.unlinkSync(abs);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('local-files:exists', (_event, { relPath }) => {
+    try {
+      const abs = resolveLocalAbs(relPath);
+      return { ok: true, exists: fs.existsSync(abs) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('local-files:open', async (_event, { relPath }) => {
+    try {
+      const abs = resolveLocalAbs(relPath);
+      if (!fs.existsSync(abs)) return { ok: false, error: 'file not found' };
+      const errMsg = await shell.openPath(abs);
+      return { ok: !errMsg, error: errMsg || null };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('local-files:dir', () => {
+    try {
+      return { ok: true, dir: filesRoot() };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+}
+
+registerLocalFilesIpc();
+
+/* =====================================================
+   SELF-TEST (ASU_SELFTEST=1) — يتحقق من منطق التخزين المحلي
+   ===================================================== */
+
+function runLocalFilesSelfTest() {
+  const assert = (cond, msg) => {
+    if (!cond) throw new Error("self-test FAILED: " + msg);
+    console.log('[selftest] ok:', msg);
+  };
+  assert(
+    sanitizeRelPath('issues-files/pdf_1_a.pdf') === 'issues-files/pdf_1_a.pdf',
+    'sanitizeRelPath basic'
+  );
+  const abs = path.join(
+    filesRoot(),
+    ...sanitizeRelPath('issues-files/pdf_1_a.pdf').split('/')
+  );
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, Buffer.from('hello'));
+  assert(fs.readFileSync(abs, 'utf8') === 'hello', 'save/read roundtrip');
+  assert(localMimeOf(abs) === 'application/pdf', 'mime from extension');
+  fs.unlinkSync(abs);
+  assert(!fs.existsSync(abs), 'remove ok');
+  let threw = false;
+  try {
+    sanitizeRelPath('../evil.pdf');
+  } catch {
+    threw = true;
+  }
+  assert(threw, 'path traversal blocked');
+  console.log('[selftest] ALL PASSED');
+}
+
+/* =====================================================
    WINDOW
    ===================================================== */
 
@@ -149,6 +303,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
     autoHideMenuBar: true,
   });
@@ -183,6 +338,12 @@ function createWindow() {
    ===================================================== */
 
 app.whenReady().then(() => {
+  if (process.env.ASU_SELFTEST === '1') {
+    runLocalFilesSelfTest();
+    app.quit();
+    return;
+  }
+
   createWindow();
   setupAutoUpdater();
 
