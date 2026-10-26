@@ -201,6 +201,43 @@ export default function UserManagement({ currentUser }) {
     }));
   };
 
+  /* كل عمليات الكتابة على المستخدمين (إنشاء/تعديل/حذف) تتم من الخادم عبر
+     Edge Function «auth-login» بصلاحية service_role، لأن جدول users لا يمنح
+     anon صلاحية INSERT/UPDATE/DELETE — والقراءة وحدها متاحة للواجهة. */
+  const callUsersApi = async (body) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("auth-login", {
+        headers: { "x-session-token": getSessionToken() || "" },
+        body,
+      });
+      if (error) {
+        return { ok: false, error: error.message || "تعذر الاتصال بالخادم." };
+      }
+      if (!data?.ok) {
+        return { ok: false, error: data?.error || "فشل الطلب." };
+      }
+      return { ok: true, user: data.user };
+    } catch (err) {
+      return { ok: false, error: err?.message || "تعذر الاتصال بالخادم." };
+    }
+  };
+
+  /* ترجمة أخطاء الخادم إلى رسائل عربية مفهومة. */
+  const describeUsersApiError = (raw) => {
+    const text = String(raw || "").trim();
+    if (/Forbidden/i.test(text))
+      return "صلاحيتك الحالية لا تسمح بهذا الإجراء. سجّلي الدخول بحساب مدير (super_admin).";
+    if (/Missing required fields/i.test(text))
+      return "من فضلك أدخلي اسم المستخدم وكلمة المرور والاسم الكامل.";
+    if (/duplicate key|users_username_key|already exists/i.test(text))
+      return "اسم المستخدم مستخدم بالفعل. اختاري اسمًا آخر.";
+    if (/create failed|update failed|delete failed/i.test(text))
+      return text.replace(/^[a-z_]+ failed:\s*/i, "");
+    if (/Failed to send a request|Failed to fetch|NetworkError/i.test(text))
+      return "تعذر الاتصال بالخادم. تأكدي من الإنترنت وحاولي مرة أخرى.";
+    return text || "خطأ غير معروف.";
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.username.trim() || !formData.fullName.trim()) {
@@ -209,68 +246,47 @@ export default function UserManagement({ currentUser }) {
     }
 
     try {
+      const basePayload = {
+        username: formData.username.trim(),
+        fullName: formData.fullName.trim(),
+        role: formData.role,
+        sectorId: formData.sectorId ? Number(formData.sectorId) : null,
+        departmentId: formData.departmentId
+          ? Number(formData.departmentId)
+          : null,
+        ...(permissionsEnabled ? { permissions: formData.permissions } : {}),
+      };
+
       if (editingUserId) {
-        // Update user
-        const updatePayload = {
-          username: formData.username.trim(),
-          full_name: formData.fullName.trim(),
-          role: formData.role,
-          sector_id: formData.sectorId
-            ? Number(formData.sectorId)
-            : null,
-          department_id: formData.departmentId
-            ? Number(formData.departmentId)
-            : null,
-          ...(permissionsEnabled
-            ? { permissions: formData.permissions }
-            : {}),
-        };
-        if (formData.password) {
-          updatePayload.password = formData.password;
-        }
+        const result = await callUsersApi({
+          action: "update_user",
+          id: editingUserId,
+          ...basePayload,
+          ...(formData.password ? { password: formData.password } : {}),
+        });
 
-        const { error: updateError } = await supabase
-          .from("users")
-          .update(updatePayload)
-          .eq("id", editingUserId);
-
-        if (updateError) {
-          console.error(updateError);
-          alert("حدث خطأ أثناء تعديل المستخدم: " + updateError.message);
+        if (!result.ok) {
+          console.error("update_user:", result.error);
+          alert("حدث خطأ أثناء تعديل المستخدم: " + describeUsersApiError(result.error));
           return;
         }
 
         alert("تم تعديل بيانات المستخدم بنجاح.");
       } else {
-        // Create user
         if (!formData.password) {
           alert("من فضلك أدخلي كلمة المرور.");
           return;
         }
 
-        const { error: insertError } = await supabase
-          .from("users")
-          .insert({
-            username: formData.username.trim(),
-            password: formData.password,
-            full_name: formData.fullName.trim(),
-            role: formData.role,
-            sector_id: formData.sectorId
-              ? Number(formData.sectorId)
-              : null,
-            department_id: formData.departmentId
-              ? Number(formData.departmentId)
-              : null,
-            ...(permissionsEnabled
-              ? { permissions: formData.permissions }
-              : {}),
-          })
-          .select()
-          .single();
+        const result = await callUsersApi({
+          action: "create_user",
+          ...basePayload,
+          password: formData.password,
+        });
 
-        if (insertError) {
-          console.error(insertError);
-          alert("حدث خطأ أثناء إنشاء المستخدم: " + insertError.message);
+        if (!result.ok) {
+          console.error("create_user:", result.error);
+          alert("حدث خطأ أثناء إنشاء المستخدم: " + describeUsersApiError(result.error));
           return;
         }
 
@@ -300,11 +316,11 @@ export default function UserManagement({ currentUser }) {
     }
 
     try {
-      const { error } = await supabase.from("users").delete().eq("id", id);
+      const result = await callUsersApi({ action: "delete_user", id });
 
-      if (error) {
-        console.error(error);
-        alert("حدث خطأ أثناء حذف المستخدم: " + error.message);
+      if (!result.ok) {
+        console.error("delete_user:", result.error);
+        alert("حدث خطأ أثناء حذف المستخدم: " + describeUsersApiError(result.error));
         return;
       }
 
