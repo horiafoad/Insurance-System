@@ -119,6 +119,7 @@ export default function NotificationTypesManager({
         type: field.type,
         required: field.required,
         options: fieldOptions(field),
+        calc: field.calc || "",
       })),
     });
     setError("");
@@ -250,6 +251,7 @@ export default function NotificationTypesManager({
             type: field.type || "text",
             required: Boolean(field.required),
             options,
+            ...(field.calc ? { calc: field.calc } : {}),
           };
         }),
         updated_at: new Date().toISOString(),
