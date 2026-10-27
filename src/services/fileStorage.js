@@ -152,6 +152,25 @@ export function buildAsuRef(bucket, path) {
 }
 
 /* ------------------------------------------------------------------
+                         Supabase (cloud) references
+------------------------------------------------------------------ */
+
+/** البادئة الثابتة لملفات التخزين السحابي المشترك. */
+export const SUPABASE_REF_PREFIX = "supabase://";
+
+/* كل الملفات تُحفظ داخل هذا البِكِت (موجود ومهيّأ)، مع مسار يبدأ باسم
+   البِكِت المنطقي — حتى تعمل كل الشاشات دون الحاجة لإنشاء بِكِتات جديدة. */
+export const SUPABASE_SHARED_BUCKET = "executive-orders";
+
+export function isSupabaseRef(value) {
+  return typeof value === "string" && value.startsWith(SUPABASE_REF_PREFIX);
+}
+
+export function buildSupabaseRef(bucket, path) {
+  return `${SUPABASE_REF_PREFIX}${bucket}/${encodeR2Path(path)}`;
+}
+
+/* ------------------------------------------------------------------
                             Local references
 ------------------------------------------------------------------ */
 
@@ -202,6 +221,17 @@ export function resolveRef(input, fallback = {}) {
   }
 
   if (typeof input === "string" && input) {
+    if (isSupabaseRef(input)) {
+      const rest = input.slice(SUPABASE_REF_PREFIX.length);
+      const slash = rest.indexOf("/");
+      if (slash <= 0) return null;
+      return {
+        provider: STORAGE_PROVIDER.SUPABASE,
+        bucket: rest.slice(0, slash),
+        path: decodeR2Path(rest.slice(slash + 1)),
+        url: input,
+      };
+    }
     if (isR2Ref(input)) {
       const rest = input.slice(R2_REF_PREFIX.length);
       const slash = rest.indexOf("/");
@@ -662,18 +692,22 @@ export async function uploadFile(bucket, path, body, options = {}) {
   }
 
   if (provider !== STORAGE_PROVIDER.R2) {
+    // كل الملفات في بِكِت واحد موجود، مع مسار يحمل اسم البِكِت المنطقي.
+    const physicalBucket = SUPABASE_SHARED_BUCKET;
+    const physicalPath =
+      bucket === SUPABASE_SHARED_BUCKET ? path : `${bucket}/${path}`;
+
     const { error } = await supabase.storage
-      .from(bucket)
-      .upload(path, body, { contentType, upsert });
+      .from(physicalBucket)
+      .upload(physicalPath, body, { contentType, upsert });
     if (error) throw error;
 
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
     return {
       provider: STORAGE_PROVIDER.SUPABASE,
-      bucket,
-      path,
-      key: path,
-      url: data.publicUrl,
+      bucket: physicalBucket,
+      path: physicalPath,
+      key: physicalPath,
+      url: buildSupabaseRef(physicalBucket, physicalPath),
       size: body?.size ?? null,
       mimeType: contentType,
     };
@@ -712,6 +746,25 @@ export async function getFileUrl(input, options = {}) {
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     return getLocalObjectUrl(ref.url, ref.path);
   }
+
+  // ملفات السحابة تُعرض برابط موقّع قصير الأجل (البِكِت خاص)، فيفتحها أي مستخدم.
+  if (ref.provider === STORAGE_PROVIDER.SUPABASE) {
+    if (!ref.bucket || !ref.path) return ref.url || "";
+    const cached = readCache(ref.bucket, ref.path);
+    if (cached) return cached;
+    try {
+      const ttl = 3600;
+      const { data, error } = await supabase.storage
+        .from(ref.bucket)
+        .createSignedUrl(ref.path, ttl);
+      if (error || !data || !data.signedUrl) return ref.url || "";
+      writeCache(ref.bucket, ref.path, data.signedUrl, ttl);
+      return data.signedUrl;
+    } catch {
+      return ref.url || "";
+    }
+  }
+
   if (!isRemoteSignedRef(ref)) return ref.url || "";
   if (!ref.path || !ref.bucket) return "";
 
@@ -858,11 +911,10 @@ export async function fileExists(input, options = {}) {
 
   if (ref.provider !== STORAGE_PROVIDER.R2) {
     if (!ref.bucket || !ref.path) return false;
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from(ref.bucket)
-      .list(ref.path, { limit: 1 });
-    if (error) return false;
-    return Boolean(data && data.length);
+      .createSignedUrl(ref.path, 60);
+    return !error;
   }
 
   const result = await callBackend("exists", { key: `${ref.bucket}/${ref.path}` });
@@ -1004,7 +1056,12 @@ export async function getLocalStorageDir() {
  */
 export function useFileUrl(value) {
   const needsResolve =
-    isR2Ref(value) || isAsuRef(value) || isLocalRef(value) ? value : null;
+    isR2Ref(value) ||
+    isAsuRef(value) ||
+    isLocalRef(value) ||
+    isSupabaseRef(value)
+      ? value
+      : null;
   const [resolved, setResolved] = React.useState("");
 
   React.useEffect(() => {
