@@ -166,6 +166,15 @@ export function isSupabaseRef(value) {
   return typeof value === "string" && value.startsWith(SUPABASE_REF_PREFIX);
 }
 
+/* مشاريع Supabase القديمة التي توقفت (تجاوزت حصة التخزين المجانية)،
+   فروابطها لم تعد تعمل. نتعامل معها كملفات غير متاحة بدل رابط مكسور. */
+const RETIRED_SUPABASE_REFS = ["jpybzalxcezxhokzmwdx", "lchjchemghjddthwiwcu"];
+
+export function isLegacyUnavailableUrl(value) {
+  if (typeof value !== "string" || !/^https?:\/\//i.test(value)) return false;
+  return RETIRED_SUPABASE_REFS.some((ref) => value.includes(ref));
+}
+
 export function buildSupabaseRef(bucket, path) {
   return `${SUPABASE_REF_PREFIX}${bucket}/${encodeR2Path(path)}`;
 }
@@ -743,6 +752,7 @@ function isRemoteSignedRef(ref) {
 export async function getFileUrl(input, options = {}) {
   const ref = resolveRef(input, options);
   if (!ref) return "";
+  if (isLegacyUnavailableUrl(ref.url)) return "";
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     return getLocalObjectUrl(ref.url, ref.path);
   }
@@ -802,6 +812,11 @@ export async function getSignedFileUrl(input, options = {}) {
 export async function downloadFile(input, options = {}) {
   const ref = resolveRef(input, options);
   if (!ref) throw new Error("لا يوجد مسار للملف.");
+  if (isLegacyUnavailableUrl(ref.url)) {
+    throw new Error(
+      "هذا الملف كان على تخزين سحابي قديم (Supabase) توقّف، ولم يعد متاحًا."
+    );
+  }
 
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     const native = nativeLocalFiles();
@@ -999,6 +1014,11 @@ export async function openLocalFile(input, options = {}) {
 export async function openFile(input, options = {}) {
   const ref = resolveRef(input, options);
   if (!ref) throw new Error("لا يوجد ملف لفتحه.");
+  if (isLegacyUnavailableUrl(ref.url)) {
+    throw new Error(
+      "هذا الملف كان على تخزين سحابي قديم (Supabase) توقّف، ولم يعد متاحًا."
+    );
+  }
 
   if (ref.provider === STORAGE_PROVIDER.LOCAL) {
     const native = nativeLocalFiles();
@@ -1055,11 +1075,13 @@ export async function getLocalStorageDir() {
  * src/components/FileLink.jsx لأن هذا البناء لا يفعّل JSX داخل .js
  */
 export function useFileUrl(value) {
+  const legacy = isLegacyUnavailableUrl(value);
   const needsResolve =
-    isR2Ref(value) ||
-    isAsuRef(value) ||
-    isLocalRef(value) ||
-    isSupabaseRef(value)
+    !legacy &&
+    (isR2Ref(value) ||
+      isAsuRef(value) ||
+      isLocalRef(value) ||
+      isSupabaseRef(value))
       ? value
       : null;
   const [resolved, setResolved] = React.useState("");
@@ -1079,6 +1101,8 @@ export function useFileUrl(value) {
     };
   }, [needsResolve]);
 
+  // روابط المشاريع القديمة المتوقفة لا تُعرض كرابط مكسور
+  if (legacy) return "";
   // روابط http تُعاد كما هي بلا حالة ولا إعادة رسم — سلوك قديم تمامًا
   if (!needsResolve) return value || "";
   return resolved;

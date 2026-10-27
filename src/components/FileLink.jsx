@@ -18,6 +18,7 @@ import {
   isR2Ref,
   isAsuRef,
   isLocalRef,
+  isLegacyUnavailableUrl,
   useFileUrl,
   downloadFileToDisk,
   openLocalFile,
@@ -26,12 +27,16 @@ import {
 /** رابط خاص (r2 أو asu) يحتاج توقيعًا عند الفتح وتنزيلًا عبر المحتوى. */
 const isPrivateRef = (ref) => isR2Ref(ref) || isAsuRef(ref);
 
+/** ملف كان على مشروع Supabase قديم توقّف (تجاوز حصة التخزين). */
+const LEGACY_TITLE = "الملف كان على تخزين سحابي قديم توقّف، ولم يعد متاحًا";
+
 /**
  * بديل <a href={record.file_url}>.
  * القيم القديمة (http) تمر كما هي بلا أي تأخير في العرض.
  */
 export function FileAnchor({ fileRef, children, ...anchorProps }) {
   const local = isLocalRef(fileRef);
+  const legacy = isLegacyUnavailableUrl(fileRef);
   const url = useFileUrl(fileRef);
 
   async function handleClick(event) {
@@ -60,8 +65,8 @@ export function FileAnchor({ fileRef, children, ...anchorProps }) {
     return (
       <span
         className={className}
-        style={style}
-        title={title}
+        style={legacy ? { ...style, opacity: 0.55, cursor: "not-allowed" } : style}
+        title={legacy ? LEGACY_TITLE : title}
         aria-disabled="true"
       >
         {children}
@@ -91,6 +96,7 @@ export function FileDownloadLink({
   const url = useFileUrl(fileRef);
   const remoteR2 = isPrivateRef(fileRef);
   const local = isLocalRef(fileRef);
+  const legacy = isLegacyUnavailableUrl(fileRef);
 
   const handleClick = (event) => {
     if (local) {
@@ -120,8 +126,8 @@ export function FileDownloadLink({
     return (
       <span
         className={className}
-        style={style}
-        title={title}
+        style={legacy ? { ...style, opacity: 0.55, cursor: "not-allowed" } : style}
+        title={legacy ? LEGACY_TITLE : title}
         aria-disabled="true"
       >
         {children}
