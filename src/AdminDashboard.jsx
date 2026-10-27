@@ -34,6 +34,7 @@ import OrgStructurePage from "./dashboard/OrgStructurePage";
 import PushNotificationsPanel from "./dashboard/PushNotificationsPanel";
 import AdminPushDevicesPanel from "./dashboard/AdminPushDevicesPanel";
 import NotificationsPage from "./dashboard/NotificationsPage";
+import NotificationArchivePage from "./dashboard/NotificationArchivePage";
 import {
   getSectionConfig,
   NOTIFICATION_SECTION_LIST,
@@ -2597,6 +2598,11 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
             />
           );
         })}
+
+        {activeMenu === "notifications_archive" &&
+          canAccessMenu(currentUser, "notifications_archive") && (
+            <NotificationArchivePage currentUser={currentUser} />
+          )}
 
         {activeMenu === "faculty_salary_archive" &&
           canAccessMenu(currentUser, "faculty_salary_archive") && (

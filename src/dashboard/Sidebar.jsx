@@ -368,6 +368,19 @@ export default function Sidebar({
               </button>
             );
           })}
+
+          <button
+            onClick={() => navigate("notifications_archive")}
+            style={{
+              ...styles.smallMenuButton,
+              ...(activeMenu === "notifications_archive"
+                ? styles.smallMenuButtonActive
+                : {}),
+            }}
+          >
+            <span>🗂️</span>
+            <span>أرشيف التبليغات</span>
+          </button>
         </>
       )}
     </aside>

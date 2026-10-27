@@ -94,6 +94,16 @@ const NOTIFICATION_MENU_SECTION = {
 };
 
 export function canAccessMenu(user, menuId) {
+  /* أرشيف التبليغات صفحة موحّدة: تُتاح لمن يملك صلاحية عرض أي قسم تبليغات. */
+  if (menuId === "notifications_archive") {
+    if (!user) return false;
+    if (user.permissions == null) return true;
+    if (!Array.isArray(user.permissions)) return false;
+    return user.permissions.some((permission) =>
+      /^notifications_(faculty|employees|contracts)_/.test(String(permission))
+    );
+  }
+
   const section = NOTIFICATION_MENU_SECTION[menuId];
   if (section) {
     /* أي صلاحية داخل قسم التبليغات تمنح الوصول للعرض،
