@@ -43,6 +43,34 @@ const sectionBoxStyle = {
   marginBottom: 14,
 };
 
+/* مبالغ الشيت (إجمالي العقد / أجور الموسمين) لعرضها أثناء إنشاء التبليغ. */
+function amountNumber(value) {
+  const num = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(num) ? num : null;
+}
+
+function formatAmountValue(value) {
+  const num = amountNumber(value);
+  if (num === null) return String(value ?? "—");
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function collectMemberAmounts(sources) {
+  const merged = new Map();
+  (sources || []).forEach((amounts) => {
+    if (!amounts || typeof amounts !== "object") return;
+    Object.entries(amounts).forEach(([label, value]) => {
+      if (merged.has(label)) return;
+      if (String(value ?? "").trim() === "") return;
+      merged.set(label, value);
+    });
+  });
+  return [...merged.entries()];
+}
+
 function initialValues(report) {
   const details =
     report && report.details && typeof report.details === "object"
@@ -166,6 +194,23 @@ export default function NotificationFormModal({
     () => (members || []).find((member) => member.id === memberId) || null,
     [members, memberId]
   );
+
+  /* المبالغ تُجمع من: الشيت المختار، العضو المختار من الفهرس، أو مطابقة رقم العقد. */
+  const memberAmounts = useMemo(() => {
+    const byNumber = (members || []).find(
+      (member) =>
+        memberNumber &&
+        String(member.external_id || "").trim() === String(memberNumber).trim()
+    );
+    return collectMemberAmounts([
+      sheetSelection?.record?.amounts,
+      selectedMember?.metadata?.amounts,
+      byNumber?.metadata?.amounts,
+    ]);
+  }, [members, memberNumber, selectedMember, sheetSelection]);
+
+  const deductionAmount = amountNumber(values.amount);
+  const hasDeduction = deductionAmount !== null && deductionAmount > 0;
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -882,6 +927,63 @@ export default function NotificationFormModal({
                     style={inputStyle}
                   />
                 </div>
+              </div>
+            )}
+
+            {memberAmounts.length > 0 && (
+              <div
+                style={{
+                  background: "#F5F3FF",
+                  border: "1px solid #DDD6FE",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  marginTop: 14,
+                }}
+              >
+                <div style={{ fontSize: 12.5, fontWeight: 900, color: "#5B21B6", marginBottom: 8 }}>
+                  💰 مبالغ {memberName || cfg.memberLabel} من الشيت
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {memberAmounts.map(([label, value]) => {
+                    const base = amountNumber(value);
+                    const remaining =
+                      base !== null && hasDeduction ? base - deductionAmount : null;
+                    return (
+                      <div
+                        key={label}
+                        style={{
+                          background: "#fff",
+                          border: "1px solid #E9D5FF",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          minWidth: 175,
+                        }}
+                      >
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#6B21A8" }}>{label}</div>
+                        <div style={{ fontSize: 15, fontWeight: 900, color: "#0F2942", marginTop: 2 }}>
+                          {formatAmountValue(value)}
+                        </div>
+                        {remaining !== null && (
+                          <div
+                            style={{
+                              fontSize: 11.5,
+                              fontWeight: 900,
+                              marginTop: 3,
+                              color: remaining >= 0 ? "#047857" : "#B91C1C",
+                            }}
+                          >
+                            المتبقي بعد {formatAmountValue(deductionAmount)}: {formatAmountValue(remaining)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {!hasDeduction && (
+                  <div style={{ fontSize: 11, color: "#7C3AED", marginTop: 7, lineHeight: 1.8 }}>
+                    اكتب «قيمة الصرف / قيمة الخصم» في تفاصيل التبليغ ليظهر المتبقي من كل بند تلقائيًا.
+                  </div>
+                )}
               </div>
             )}
           </div>
