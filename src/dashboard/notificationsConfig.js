@@ -230,13 +230,30 @@ export function currentYearMonth() {
 /* وصف مختصر يُستخدم في الجداول وكشف الشهر */
 export function reportSummary(report) {
   if (!report) return "";
+  const details =
+    report.details && typeof report.details === "object" ? report.details : {};
+  const calcMode = details._calc_mode || "";
   const parts = [];
   if (report.reason) parts.push(`السبب: ${report.reason}`);
   if (report.promotion_from || report.promotion_to) {
     parts.push(`الترقية: ${report.promotion_from || "—"} ← ${report.promotion_to || "—"}`);
   }
   if (report.new_payment_method) parts.push(`طريقة الدفع: ${report.new_payment_method}`);
-  if (report.amount != null && report.amount !== "") parts.push(`المبلغ: ${report.amount}`);
+  if (report.amount != null && report.amount !== "") {
+    const amountLabel =
+      calcMode === "deduct"
+        ? "الخصم"
+        : calcMode === "refund"
+          ? "الاسترداد"
+          : "المبلغ";
+    parts.push(`${amountLabel}: ${report.amount}`);
+  }
+  if (calcMode && details._calc_days != null && details._calc_days !== "") {
+    parts.push(`الأيام: ${details._calc_days}`);
+  }
+  if (calcMode && details._total_after != null && details._total_after !== "") {
+    parts.push(`الإجمالي بعد: ${details._total_after}`);
+  }
   if (report.effective_date) parts.push(`السريان: ${formatDate(report.effective_date)}`);
   if (parts.length === 0 && report.notes) parts.push(report.notes);
   return parts.join(" • ");
@@ -260,6 +277,12 @@ export const FIELD_LABELS = {
   contract_start: "تاريخ بداية العقد",
   contract_end: "تاريخ نهاية العقد",
   contract_value: "قيمة العقد",
+  contract_number: "رقم العقد الجديد",
+  contract_days: "عدد أيام العقد",
+  deduction_days: "عدد الأيام المخصومة",
+  refund_days: "عدد الأيام المستردة",
+  refund_reason: "سبب الاسترداد",
+  resignation_date: "تاريخ الاستقالة",
   notes: "ملاحظات",
 };
 
@@ -273,6 +296,8 @@ export function typeFields(type) {
       type: String(field.type || "text"),
       required: Boolean(field.required),
       options: Array.isArray(field.options) ? field.options : [],
+      /* calc: "deduct" | "refund" — حقل أيام يُحسب منه خصم/استرداد تلقائي */
+      calc: field.calc ? String(field.calc) : "",
     }));
 }
 
@@ -291,7 +316,10 @@ export function displayFields(report, type) {
     : {};
 
   const legacy = Object.keys(details)
-    .filter((key) => key !== "notes" && !seen.has(key))
+    .filter(
+      (key) =>
+        key !== "notes" && !seen.has(key) && !String(key).startsWith("_")
+    )
     .map((key) => ({
       key,
       label: FIELD_LABELS[key] || key,

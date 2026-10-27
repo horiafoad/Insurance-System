@@ -58,6 +58,15 @@ function formatAmountValue(value) {
   });
 }
 
+function formatRateValue(value) {
+  const num = amountNumber(value);
+  if (num === null) return String(value ?? "—");
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
 function collectMemberAmounts(sources) {
   const merged = new Map();
   (sources || []).forEach((amounts) => {
@@ -212,6 +221,29 @@ export default function NotificationFormModal({
   const deductionAmount = amountNumber(values.amount);
   const hasDeduction = deductionAmount !== null && deductionAmount > 0;
 
+  /* حساب تلقائي لأنواع «خصم / استرداد / استقالة»: الإجمالي ÷ 30 × عدد الأيام */
+  const calcField = useMemo(
+    () => fields.find((field) => field.calc === "deduct" || field.calc === "refund") || null,
+    [fields]
+  );
+  const calcMode = calcField?.calc || "";
+  const baseTotal = useMemo(() => {
+    const entry = memberAmounts.find(([label]) => /اجمال|إجمال/.test(label));
+    return entry ? amountNumber(entry[1]) : null;
+  }, [memberAmounts]);
+  const calcDays = calcField ? amountNumber(values[calcField.key]) : null;
+  const dailyRate = baseTotal !== null ? baseTotal / 30 : null;
+  const calcAmount =
+    dailyRate !== null && calcDays !== null
+      ? Math.round(dailyRate * calcDays * 100) / 100
+      : null;
+  const totalAfter =
+    baseTotal !== null && calcAmount !== null
+      ? Math.round(
+          (calcMode === "deduct" ? baseTotal - calcAmount : baseTotal + calcAmount) * 100
+        ) / 100
+      : null;
+
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!report?.id) return undefined;
@@ -326,6 +358,14 @@ export default function NotificationFormModal({
     if (selectedType.code === "payment_method_change" && !values.new_payment_method) {
       return "اختر طريقة الدفع الجديدة.";
     }
+    if (calcMode) {
+      if (baseTotal === null) {
+        return `لا توجد مبالغ محفوظة لهذا ${cfg.memberLabel}. اختره من فهرس المتعاقدين أولًا حتى تُحسب الأيام على الإجمالي.`;
+      }
+      if (!(Number(calcDays) > 0)) {
+        return `أدخل ${calcField?.label || "عدد الأيام"} أكبر من صفر.`;
+      }
+    }
     return "";
   };
 
@@ -370,6 +410,19 @@ export default function NotificationFormModal({
       });
       details.notes = notes;
 
+      /* نحفظ نتيجة الحسبة التلقائية للخصم/الاسترداد داخل التفاصيل. */
+      const computedAmount = calcMode && calcAmount !== null ? calcAmount : null;
+      if (calcMode) {
+        details._calc_mode = calcMode;
+        details._base_total =
+          baseTotal !== null ? Math.round(baseTotal * 100) / 100 : null;
+        details._daily_rate =
+          dailyRate !== null ? Math.round(dailyRate * 10000) / 10000 : null;
+        details._calc_days = calcDays;
+        details._calc_amount = computedAmount;
+        details._total_after = totalAfter;
+      }
+
       const payload = {
         section,
         member_id: member?.id || null,
@@ -387,9 +440,11 @@ export default function NotificationFormModal({
         promotion_from: values.promotion_from || null,
         promotion_to: values.promotion_to || null,
         amount:
-          values.amount !== "" && values.amount != null && Number.isFinite(Number(values.amount))
-            ? Number(values.amount)
-            : null,
+          computedAmount !== null
+            ? computedAmount
+            : values.amount !== "" && values.amount != null && Number.isFinite(Number(values.amount))
+              ? Number(values.amount)
+              : null,
         notes: notes || null,
         details,
         updated_at: now,
@@ -992,6 +1047,53 @@ export default function NotificationFormModal({
             <div style={{ fontSize: 14, fontWeight: 900, color: "#0F2942", marginBottom: 12 }}>
               3) تفاصيل {selectedType?.name || "التبليغ"}
             </div>
+
+            {calcMode && (
+              <div
+                style={{
+                  background: "#FFFBEB",
+                  border: "1px solid #FDE68A",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  marginBottom: 12,
+                  fontSize: 12,
+                  lineHeight: 2,
+                  color: "#334155",
+                }}
+              >
+                <div style={{ fontWeight: 900, color: "#92400E", marginBottom: 4 }}>
+                  🧮 الحسبة التلقائية: الإجمالي ÷ 30 × عدد الأيام
+                </div>
+                {baseTotal === null ? (
+                  <div style={{ color: "#B91C1C", fontWeight: 800 }}>
+                    ⚠️ اختر المتعاقد أولًا — لا توجد مبالغ محفوظة له في الفهرس.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      الإجمالي (من الشيت): <b>{formatAmountValue(baseTotal)}</b>
+                    </div>
+                    <div>
+                      قيمة اليوم: {formatAmountValue(baseTotal)} ÷ 30 ={" "}
+                      <b>{formatRateValue(dailyRate)}</b>
+                    </div>
+                    <div>
+                      {calcMode === "deduct" ? "قيمة الخصم" : "قيمة الاسترداد"}:{" "}
+                      {formatRateValue(dailyRate)} × <b>{calcDays ?? 0}</b> يوم ={" "}
+                      <b style={{ color: calcMode === "deduct" ? "#B91C1C" : "#047857" }}>
+                        {formatAmountValue(calcAmount ?? 0)}
+                      </b>
+                    </div>
+                    <div>
+                      الإجمالي بعد {calcMode === "deduct" ? "الخصم" : "الاسترداد"}:{" "}
+                      <b style={{ fontSize: 14, color: "#0F2942" }}>
+                        {formatAmountValue(totalAfter ?? baseTotal)}
+                      </b>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {!selectedType ? (
               <div style={{ color: "#64748B", fontSize: 13 }}>اختر نوع التبليغ لعرض الحقول المناسبة.</div>
