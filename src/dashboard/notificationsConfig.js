@@ -227,6 +227,15 @@ export function currentYearMonth() {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
+export function formatAmount(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 /* وصف مختصر يُستخدم في الجداول وكشف الشهر */
 export function reportSummary(report) {
   if (!report) return "";
@@ -252,7 +261,7 @@ export function reportSummary(report) {
     parts.push(`الأيام: ${details._calc_days}`);
   }
   if (calcMode && details._total_after != null && details._total_after !== "") {
-    parts.push(`الإجمالي بعد: ${details._total_after}`);
+    parts.push(`★ المبلغ النهائي بعد ${calcMode === "deduct" ? "الخصم" : "الاسترداد"}: ${formatAmount(details._total_after)}`);
   }
   if (report.effective_date) parts.push(`السريان: ${formatDate(report.effective_date)}`);
   if (parts.length === 0 && report.notes) parts.push(report.notes);

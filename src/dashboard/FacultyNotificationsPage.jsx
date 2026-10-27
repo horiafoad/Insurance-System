@@ -82,6 +82,15 @@ function formatDateTime(value) {
   return `${datePart} - ${timePart}`;
 }
 
+function formatAmount(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 // ============================================================================
 // المكون الرئيسي
 // ============================================================================
@@ -1339,6 +1348,60 @@ function NotificationDetailModal({ notification, currentUser, onClose, onSuccess
             </div>
           </div>
         </div>
+
+        {/* المبالغ المحسوبة */}
+        {notification.notificationData && (
+          <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "24px", marginBottom: "24px" }}>
+            <h3 style={{ fontSize: "18px", fontWeight: "700", color: "#1E293B", marginBottom: "16px" }}>
+              المبالغ المحسوبة
+            </h3>
+            {notification.notificationData._calc_mode && (
+              <div
+                style={{
+                  background: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: 12,
+                  padding: "16px",
+                }}
+              >
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px", marginBottom: "12px" }}>
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#64748B", marginBottom: "4px" }}>الإجمالي الأصلي</div>
+                    <div style={{ fontSize: "16px", fontWeight: "600", color: "#1E293B" }}>
+                      {formatAmount(notification.notificationData._base_total)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#64748B", marginBottom: "4px" }}>
+                      {notification.notificationData._calc_mode === "deduct" ? "قيمة الخصم" : "قيمة الاسترداد"}
+                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: "600", color: notification.notificationData._calc_mode === "deduct" ? "#B91C1C" : "#047857" }}>
+                      {formatAmount(notification.notificationData._calc_amount)}
+                    </div>
+                  </div>
+                </div>
+                {notification.notificationData._total_after !== null && notification.notificationData._total_after !== "" && (
+                  <div
+                    style={{
+                      background: "#ECFDF5",
+                      border: "2px solid #10B981",
+                      borderRadius: 10,
+                      padding: "12px 16px",
+                      marginTop: "8px",
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", fontWeight: "700", color: "#047857", marginBottom: "4px" }}>
+                      💰 المبلغ النهائي بعد {notification.notificationData._calc_mode === "deduct" ? "الخصم" : "الاسترداد"}
+                    </div>
+                    <div style={{ fontSize: "20px", fontWeight: "900", color: "#0F2942" }}>
+                      {formatAmount(notification.notificationData._total_after)} جنيه
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* إجراءات سير العمل */}
         <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "24px", marginBottom: "24px" }}>

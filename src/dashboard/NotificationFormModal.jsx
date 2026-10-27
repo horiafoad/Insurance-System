@@ -49,21 +49,21 @@ function amountNumber(value) {
   return Number.isFinite(num) ? num : null;
 }
 
-function formatAmountValue(value) {
-  const num = amountNumber(value);
-  if (num === null) return String(value ?? "—");
-  return num.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 function formatRateValue(value) {
   const num = amountNumber(value);
   if (num === null) return String(value ?? "—");
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
+  });
+}
+
+function formatAmount(value) {
+  const num = amountNumber(value);
+  if (num === null) return String(value ?? "—");
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -1016,7 +1016,7 @@ export default function NotificationFormModal({
                       >
                         <div style={{ fontSize: 11, fontWeight: 800, color: "#6B21A8" }}>{label}</div>
                         <div style={{ fontSize: 15, fontWeight: 900, color: "#0F2942", marginTop: 2 }}>
-                          {formatAmountValue(value)}
+                          {formatAmount(value)}
                         </div>
                         {remaining !== null && (
                           <div
@@ -1027,7 +1027,7 @@ export default function NotificationFormModal({
                               color: remaining >= 0 ? "#047857" : "#B91C1C",
                             }}
                           >
-                            المتبقي بعد {formatAmountValue(deductionAmount)}: {formatAmountValue(remaining)}
+                            المتبقي بعد {formatAmount(deductionAmount)}: {formatAmount(remaining)}
                           </div>
                         )}
                       </div>
@@ -1071,27 +1071,52 @@ export default function NotificationFormModal({
                 ) : (
                   <>
                     <div>
-                      الإجمالي (من الشيت): <b>{formatAmountValue(baseTotal)}</b>
+                      الإجمالي (من الشيت): <b>{formatAmount(baseTotal)}</b>
                     </div>
                     <div>
-                      قيمة اليوم: {formatAmountValue(baseTotal)} ÷ 30 ={" "}
+                      قيمة اليوم: {formatAmount(baseTotal)} ÷ 30 ={" "}
                       <b>{formatRateValue(dailyRate)}</b>
                     </div>
                     <div>
                       {calcMode === "deduct" ? "قيمة الخصم" : "قيمة الاسترداد"}:{" "}
                       {formatRateValue(dailyRate)} × <b>{calcDays ?? 0}</b> يوم ={" "}
                       <b style={{ color: calcMode === "deduct" ? "#B91C1C" : "#047857" }}>
-                        {formatAmountValue(calcAmount ?? 0)}
+                        {formatAmount(calcAmount ?? 0)}
                       </b>
                     </div>
                     <div>
                       الإجمالي بعد {calcMode === "deduct" ? "الخصم" : "الاسترداد"}:{" "}
                       <b style={{ fontSize: 14, color: "#0F2942" }}>
-                        {formatAmountValue(totalAfter ?? baseTotal)}
+                        {formatAmount(totalAfter ?? baseTotal)}
                       </b>
                     </div>
                   </>
                 )}
+              </div>
+            )}
+
+            {calcMode && totalAfter !== null && baseTotal !== null && (
+              <div
+                style={{
+                  background: "#ECFDF5",
+                  border: "2px solid #10B981",
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  marginBottom: 12,
+                  fontSize: 13,
+                  lineHeight: 2,
+                  color: "#065F46",
+                }}
+              >
+                <div style={{ fontWeight: 900, color: "#047857", marginBottom: 6, fontSize: 14 }}>
+                  💰 المبلغ النهائي بعد {calcMode === "deduct" ? "الخصم" : "الاسترداد"}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: "#0F2942", letterSpacing: "0.5px" }}>
+                  {formatAmount(totalAfter)} جنيه
+                </div>
+                <div style={{ fontSize: 11, color: "#64748B", marginTop: 4, fontWeight: 700 }}>
+                  هذه القيمة تُحفظ تلقائيًا وستظهر في تبليغات البيرول
+                </div>
               </div>
             )}
 
