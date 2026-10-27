@@ -220,23 +220,31 @@ export function extractAmountColumns(headers) {
     .slice(0, 8);
 }
 
+/** إزالة تكرار آخر جزء في رقم الصرف: 000003-30300104-30300104 → 000003-30300104 */
+export function collapseRepeatedNumberSuffix(value) {
+  const number = normalizeMemberNumber(value);
+  const match = number.match(/^(.+)-([0-9]+)-([0-9]+)$/);
+  if (!match) return number;
+  return match[2] === match[3] ? `${match[1]}-${match[2]}` : number;
+}
+
 /** بناء قائمة الأعضاء من صفوف الشيت وفق الأعمدة المختارة. */
 export function buildSheetRecords(rows, headerIndex, mapping) {
   if (!mapping || mapping.name < 0) return [];
 
-  const records = [];
-  const seen = new Set();
   const headerName = cleanArabicText(rows[headerIndex]?.[mapping.name]);
   const amountColumns = extractAmountColumns(rows[headerIndex]).filter(
     (column) => column.index !== mapping.name && column.index !== mapping.number
   );
+
+  const candidates = [];
 
   for (let index = headerIndex + 1; index < rows.length; index += 1) {
     const row = rows[index] || [];
     const full_name = cleanArabicText(row[mapping.name]);
     if (!full_name || full_name === headerName) continue;
 
-    const external_id =
+    const rawId =
       mapping.number >= 0 ? normalizeMemberNumber(row[mapping.number]) : "";
     const job_title =
       mapping.job >= 0 ? cleanArabicText(row[mapping.job]) : "";
@@ -248,27 +256,56 @@ export function buildSheetRecords(rows, headerIndex, mapping) {
       ? departmentRaw
       : "";
 
-    const key = external_id
-      ? `number:${external_id}`
-      : `name:${normalizeArabicForSearch(full_name)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
     const amounts = {};
-    amountColumns.forEach(({ index, label }) => {
-      const value = String(row[index] ?? "").trim();
+    amountColumns.forEach(({ index: columnIndex, label }) => {
+      const value = String(row[columnIndex] ?? "").trim();
       if (value) amounts[label] = value;
     });
 
-    records.push({
+    candidates.push({
       full_name,
-      external_id,
+      rawId,
+      collapsedId: collapseRepeatedNumberSuffix(rawId),
       job_title,
       department,
       amounts,
       rowNumber: index + 1,
     });
   }
+
+  /* تنظيف الأرقام المكررة آخرها آمن فقط لو الناتج فريد؛ لو رقمين مختلفين
+     يتطابقان بعد التنظيف (شخصان بنفس الرقم في الشيت) نُبقي كل رقم كما هو. */
+  const collapsedCounts = new Map();
+  candidates.forEach(({ collapsedId }) => {
+    if (!collapsedId) return;
+    collapsedCounts.set(collapsedId, (collapsedCounts.get(collapsedId) || 0) + 1);
+  });
+
+  const records = [];
+  const seen = new Set();
+
+  candidates.forEach((candidate) => {
+    const external_id =
+      candidate.collapsedId &&
+      collapsedCounts.get(candidate.collapsedId) === 1
+        ? candidate.collapsedId
+        : candidate.rawId;
+
+    const key = external_id
+      ? `number:${external_id}`
+      : `name:${normalizeArabicForSearch(candidate.full_name)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    records.push({
+      full_name: candidate.full_name,
+      external_id,
+      job_title: candidate.job_title,
+      department: candidate.department,
+      amounts: candidate.amounts,
+      rowNumber: candidate.rowNumber,
+    });
+  });
 
   return records;
 }
