@@ -128,6 +128,7 @@ function normalizeMember(input) {
     job_title: input.job_title || "",
     department: input.department || "",
     is_active: input.is_active !== false,
+    metadata: input.metadata || null,
   };
 }
 
