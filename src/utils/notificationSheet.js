@@ -200,6 +200,26 @@ export function detectColumnMapping(headers) {
   return mapping;
 }
 
+/* أعمدة المبالغ (أجور/إجمالي/خصم...) تُحفظ مع العضو لعرضها في الفهرس،
+   مع استثناء أعمدة الهوية والتواريخ حتى لا تُقرأ بالخطأ كمبالغ. */
+const AMOUNT_HEADER_PATTERN =
+  /(اجور|أجور|اجمال|إجمال|مبلغ|قيمة|خصم|بدل|حافز|مكافا|راتب|مرتب|صافي|استحقاق)/;
+const AMOUNT_HEADER_EXCLUDE =
+  /(رقم|كود|اسم|الوظيف|المسمى|الادارة|الإدارة|القسم|القطاع|تاريخ|ملاحظ|بيان)/;
+
+/** استخراج أعمدة المبالغ من صف العناوين (بحد أقصى 8 أعمدة). */
+export function extractAmountColumns(headers) {
+  return (headers || [])
+    .map((header, index) => ({ index, label: cleanArabicText(header) }))
+    .filter(({ label }) => {
+      const compact = label.replace(/\s+/g, "");
+      if (!compact) return false;
+      if (AMOUNT_HEADER_EXCLUDE.test(compact)) return false;
+      return AMOUNT_HEADER_PATTERN.test(compact);
+    })
+    .slice(0, 8);
+}
+
 /** بناء قائمة الأعضاء من صفوف الشيت وفق الأعمدة المختارة. */
 export function buildSheetRecords(rows, headerIndex, mapping) {
   if (!mapping || mapping.name < 0) return [];
@@ -207,6 +227,9 @@ export function buildSheetRecords(rows, headerIndex, mapping) {
   const records = [];
   const seen = new Set();
   const headerName = cleanArabicText(rows[headerIndex]?.[mapping.name]);
+  const amountColumns = extractAmountColumns(rows[headerIndex]).filter(
+    (column) => column.index !== mapping.name && column.index !== mapping.number
+  );
 
   for (let index = headerIndex + 1; index < rows.length; index += 1) {
     const row = rows[index] || [];
@@ -231,11 +254,18 @@ export function buildSheetRecords(rows, headerIndex, mapping) {
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const amounts = {};
+    amountColumns.forEach(({ index, label }) => {
+      const value = String(row[index] ?? "").trim();
+      if (value) amounts[label] = value;
+    });
+
     records.push({
       full_name,
       external_id,
       job_title,
       department,
+      amounts,
       rowNumber: index + 1,
     });
   }

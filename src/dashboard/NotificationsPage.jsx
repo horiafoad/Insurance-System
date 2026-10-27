@@ -67,6 +67,24 @@ function escFilter(value) {
   return String(value || "").replace(/[%_,()]/g, " ").trim();
 }
 
+/* مبالغ الشيت المحفوظة في metadata.amounts (أجور موسمين / إجمالي العقد...) */
+function memberAmounts(member) {
+  const amounts = member?.metadata?.amounts;
+  if (!amounts || typeof amounts !== "object") return [];
+  return Object.entries(amounts).filter(
+    ([, value]) => String(value ?? "").trim() !== ""
+  );
+}
+
+function formatMemberAmount(value) {
+  const num = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(num)) return String(value ?? "—");
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => {
     switch (character) {
@@ -895,7 +913,9 @@ export default function NotificationsPage({
         </head>
         <body>
           <h1>ملف ${escapeHtml(cfg.memberLabel)}: ${escapeHtml(profileMember.full_name)}</h1>
-          <div class="sub">${escapeHtml(cfg.numberLabel)}: ${escapeHtml(profileMember.external_id || "—")} • عدد التبليغات: ${profileReports.length}</div>
+          <div class="sub">${escapeHtml(cfg.numberLabel)}: ${escapeHtml(profileMember.external_id || "—")} • عدد التبليغات: ${profileReports.length}${memberAmounts(profileMember)
+            .map(([label, value]) => ` • ${escapeHtml(label)}: ${formatMemberAmount(value)}`)
+            .join("")}</div>
           <table>
             <tr><th>النوع</th><th>الشهر/السنة</th><th>الحالة</th><th>مدخل البيرول</th><th>مراجع البيرول</th><th>ملخص</th></tr>
             ${rows || '<tr><td colspan="6">لا توجد تبليغات</td></tr>'}
@@ -1760,6 +1780,26 @@ export default function NotificationsPage({
                 <div style={{ fontSize: 12.5, color: "#64748B", marginTop: 3 }}>
                   {cfg.numberLabel}: {profileMember.external_id || "—"} • جميع التبليغات السابقة والحالية
                 </div>
+                {memberAmounts(profileMember).length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    {memberAmounts(profileMember).map(([label, value]) => (
+                      <span
+                        key={label}
+                        style={{
+                          background: "#fff",
+                          border: "1px solid #BAE6FD",
+                          borderRadius: 999,
+                          padding: "4px 10px",
+                          fontSize: 11.5,
+                          fontWeight: 900,
+                          color: "#0C4A6E",
+                        }}
+                      >
+                        {label}: {formatMemberAmount(value)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <button type="button" onClick={() => setProfileMember(null)} style={{ ...smallButtonStyle, color: "#B91C1C" }}>✕ إغلاق</button>
             </div>

@@ -34,6 +34,29 @@ const smallButtonStyle = {
   cursor: "pointer",
 };
 
+/* مبالغ الشيت (أجور موسمين / إجمالي العقد...) محفوظة في metadata.amounts */
+function amountEntries(member) {
+  const amounts = member?.metadata?.amounts;
+  if (!amounts || typeof amounts !== "object") return [];
+  return Object.entries(amounts).filter(
+    ([, value]) => String(value ?? "").trim() !== ""
+  );
+}
+
+function toAmountNumber(value) {
+  const num = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(num) ? num : null;
+}
+
+function formatAmount(value) {
+  const num = toAmountNumber(value);
+  if (num === null) return String(value ?? "—");
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function NotificationMembersPanel({
   section,
   members,
@@ -99,6 +122,19 @@ export default function NotificationMembersPanel({
       })
       .sort((a, b) => String(a.full_name || "").localeCompare(String(b.full_name || ""), "ar"));
   }, [members, reportsByMember, search]);
+
+  /* إجمالي كل بند مبالغ للصفوف المعروضة (يحترم البحث). */
+  const amountTotals = useMemo(() => {
+    const map = new Map();
+    rows.forEach((member) => {
+      amountEntries(member).forEach(([label, value]) => {
+        const num = toAmountNumber(value);
+        if (num === null) return;
+        map.set(label, (map.get(label) || 0) + num);
+      });
+    });
+    return [...map.entries()];
+  }, [rows]);
 
   const openAdd = () => {
     setEditingMember(null);
@@ -187,6 +223,7 @@ export default function NotificationMembersPanel({
         file_name: meta.fileName || "",
         sheet_name: meta.sheetName || "",
         imported_at: new Date().toISOString(),
+        amounts: record.amounts || {},
       },
       updated_at: new Date().toISOString(),
     }));
@@ -341,6 +378,27 @@ export default function NotificationMembersPanel({
           </div>
         </div>
 
+        {amountTotals.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            {amountTotals.map(([label, total]) => (
+              <span
+                key={label}
+                style={{
+                  background: "#F0F9FF",
+                  border: "1px solid #BAE6FD",
+                  borderRadius: 999,
+                  padding: "5px 12px",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: "#0C4A6E",
+                }}
+              >
+                إجمالي {label}: {formatAmount(total)}
+              </span>
+            ))}
+          </div>
+        )}
+
         {error && (
           <div style={{ marginTop: 12, background: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 9, padding: "9px 12px", fontSize: 12.5 }}>
             ⚠️ {error}
@@ -414,6 +472,26 @@ export default function NotificationMembersPanel({
                       ? ` • آخر تبليغ: ${statusMeta(member.latest.status).label} — ${formatDateTime(member.latest.created_at)}`
                       : " • لا توجد تبليغات بعد"}
                   </div>
+                  {amountEntries(member).length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+                      {amountEntries(member).map(([label, value]) => (
+                        <span
+                          key={label}
+                          style={{
+                            background: "#F8FAFC",
+                            border: "1px solid #E2E8F0",
+                            borderRadius: 999,
+                            padding: "3px 9px",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            color: "#0F2942",
+                          }}
+                        >
+                          {label}: {formatAmount(value)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
