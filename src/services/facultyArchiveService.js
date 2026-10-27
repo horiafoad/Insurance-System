@@ -24,9 +24,10 @@ export const FACULTY_ALIASES_TABLE = "faculty_member_aliases";
 export const FACULTY_DOCUMENTS_TABLE = "faculty_member_documents";
 export const FACULTY_LINKS_TABLE = "faculty_member_links";
 
-/* وثائق الأرشيف تُحفظ في التخزين السحابي المشترك تحت مسار faculty-archive/
-   حتى يفتحها أي مستخدم من أي جهاز — لا ترتبط بجهاز من رفعها. */
-export const FACULTY_ARCHIVE_BUCKET = "faculty-archive";
+/* وثائق الأرشيف تُحفظ على جهاز القسم (خادم التخزين المحلي) تحت مسار
+   faculty-archive/، ويُفتحها أي مستخدم عبر رابط موقّع — بلا استهلاك Supabase. */
+export const FACULTY_ARCHIVE_BUCKET = "executive-orders";
+export const FACULTY_ARCHIVE_PREFIX = "faculty-archive";
 
 /* ------------------------------------------------------------------ */
 /* سجل الأقسام التي يمكن الربط بها                                     */
@@ -412,7 +413,7 @@ export function buildDocumentPath(member, file, { year, month } = {}) {
   const original = String(file?.name || "document.pdf")
     .replace(/[\\/:*?"<>|]/g, "_")
     .slice(0, 80);
-  return `${code}/${yearPart}/${monthPart}/${Date.now()}-${original}`;
+  return `${FACULTY_ARCHIVE_PREFIX}/${code}/${yearPart}/${monthPart}/${Date.now()}-${original}`;
 }
 
 /**

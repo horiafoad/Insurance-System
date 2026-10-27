@@ -685,7 +685,7 @@ export default function StudyLeavesPage({
             <div style={styles.infoBox}>
               كود الموظف: <strong>{pdfLeave.employeeCode || "—"}</strong>
               <div style={smallNote}>
-                الملف يُحفظ في التخزين المشترك ويُفتح لأي مستخدم من أي جهاز.
+                الملف يُحفظ على جهاز القسم ويُفتح لأي مستخدم من أي جهاز.
               </div>
             </div>
 

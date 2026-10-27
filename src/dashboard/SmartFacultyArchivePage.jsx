@@ -747,8 +747,8 @@ function MemberDetail({ member, onClose, onChanged, currentUser }) {
           {tab === "documents" && (
             <div>
               <div style={infoBoxStyle}>
-                📁 الملفات تُحفظ في التخزين المشترك وتُفتح لأي مستخدم من أي
-                جهاز — وليست مرتبطة بجهاز من رفعها.
+                📁 الملفات تُحفظ على جهاز القسم وتُفتح لأي مستخدم من أي جهاز —
+                بلا استهلاك Supabase.
               </div>
               {!documents.length && (
                 <div style={emptyStyle}>
@@ -1516,8 +1516,8 @@ export default function SmartFacultyArchivePage({ currentUser }) {
             {PAGE_TITLE}
           </div>
           <div style={{ fontSize: 12.5, lineHeight: 1.7, color: "#66788F", marginTop: 3 }}>
-            📁 ملفات الأرشيف تُحفظ في التخزين المشترك وتُفتح لأي مستخدم من أي
-            جهاز.
+            📁 ملفات الأرشيف تُحفظ على جهازك (خادم القسم) وتُفتح لأي مستخدم من
+            أي جهاز — بلا استهلاك Supabase.
           </div>
         </div>
       </div>
@@ -1919,8 +1919,8 @@ export default function SmartFacultyArchivePage({ currentUser }) {
               lineHeight: 1.9,
             }}
           >
-            📎 كل وثائق الأرشيف الذكي. الملفات محفوظة في التخزين المشترك
-            وتُفتح لأي مستخدم من أي جهاز.
+            📎 كل وثائق الأرشيف الذكي. الملفات محفوظة على جهاز القسم وتُفتح
+            لأي مستخدم من أي جهاز.
           </div>
 
           {!documents.length && (
