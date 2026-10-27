@@ -298,7 +298,7 @@ export async function parseNotificationSheet(file) {
       (row || []).some((cell) => String(cell ?? "").trim())
     ).length;
     if (!best || nonEmpty > best.nonEmpty) {
-      best = { sheetName, rows, nonEmpty };
+      best = { sheetName, sheet, rows, nonEmpty };
     }
   });
 
@@ -310,6 +310,34 @@ export async function parseNotificationSheet(file) {
   const headers = best.rows[headerIndex] || [];
   const mapping = detectColumnMapping(headers);
   const records = buildSheetRecords(best.rows, headerIndex, mapping);
+
+  /* المبالغ تُقرأ من القيم الخام (raw) حتى لا تفقد كسورها عند الجمع،
+     بينما تظل الأسماء والأرقام مقروءة كنص للحفاظ على الأصفار البادئة. */
+  const amountColumns = extractAmountColumns(headers).filter(
+    (column) => column.index !== mapping.name && column.index !== mapping.number
+  );
+  if (amountColumns.length) {
+    const rawRows = XLSX.utils.sheet_to_json(best.sheet, {
+      header: 1,
+      defval: "",
+      raw: true,
+    });
+    records.forEach((record) => {
+      const rawRow = rawRows[record.rowNumber - 1] || [];
+      const amounts = {};
+      amountColumns.forEach(({ index, label }) => {
+        const rawValue = rawRow[index];
+        const text = String(rawValue ?? "").trim();
+        if (!text) return;
+        const num =
+          typeof rawValue === "number"
+            ? rawValue
+            : Number(text.replace(/[^\d.-]/g, ""));
+        amounts[label] = Number.isFinite(num) ? num : text;
+      });
+      if (Object.keys(amounts).length) record.amounts = amounts;
+    });
+  }
 
   return {
     fileName: file.name,
