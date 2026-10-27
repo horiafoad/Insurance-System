@@ -61,6 +61,15 @@ function formatAmount(value) {
   });
 }
 
+function formatRate(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
 function calcModeOf(report) {
   const details =
     report?.details && typeof report.details === "object" ? report.details : {};
@@ -110,6 +119,7 @@ function summarizeMonth(rows) {
         }
       }
       if (report.status === "final_reviewed") acc.completed += 1;
+      else if (report.status === "entry_reviewed") acc.entry += 1;
       else if (report.status === "rejected") acc.rejected += 1;
       else if (report.status === "draft") acc.drafts += 1;
       else acc.pending += 1;
@@ -121,6 +131,7 @@ function summarizeMonth(rows) {
       refunds: 0,
       disbursed: 0,
       completed: 0,
+      entry: 0,
       pending: 0,
       rejected: 0,
       drafts: 0,
@@ -154,7 +165,7 @@ export default function NotificationArchivePage({ currentUser }) {
     [currentUser]
   );
 
-  const [section, setSection] = useState(accessibleSections[0]?.id || "");
+  const [section, setSection] = useState("all");
   const [filterYear, setFilterYear] = useState("all");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -326,7 +337,7 @@ export default function NotificationArchivePage({ currentUser }) {
           <td>خصومات: ${formatAmount(summary.deductions)}</td>
           <td>استردادات: ${formatAmount(summary.refunds)}</td>
           <td>مصروف: ${formatAmount(summary.disbursed)}</td>
-          <td>مكتمل: ${summary.completed} • معلّق: ${summary.pending} • مرفوض: ${summary.rejected}</td>
+          <td>مكتمل: ${summary.completed} • مراجعة المدخل: ${summary.entry} • معلّق: ${summary.pending} • مرفوض: ${summary.rejected}</td>
         </tr>`;
       })
       .join("");
@@ -569,7 +580,8 @@ export default function NotificationArchivePage({ currentUser }) {
                     مصروف: {formatAmount(summary.disbursed)}
                   </span>
                   <span style={{ fontSize: 11.5, fontWeight: 900, color: "#334155", background: "#F1F5F9", borderRadius: 999, padding: "4px 10px" }}>
-                    🟢 {summary.completed} • 🟡 {summary.pending} • 🔴 {summary.rejected}
+                    🟢 {summary.completed} • 🔵 {summary.entry} • 🟡 {summary.pending} • 🔴 {summary.rejected}
+                    {summary.drafts > 0 ? ` • 📝 ${summary.drafts}` : ""}
                   </span>
                   <button
                     type="button"
@@ -678,7 +690,7 @@ export default function NotificationArchivePage({ currentUser }) {
                                         🧮 {mode === "deduct" ? "حسبة الخصم" : "حسبة الاسترداد"}
                                       </div>
                                       <div>الإجمالي قبل: <b>{formatAmount(details._base_total)}</b></div>
-                                      <div>قيمة اليوم: <b>{formatAmount(details._daily_rate)}</b> × الأيام: <b>{details._calc_days ?? "—"}</b></div>
+                                      <div>قيمة اليوم: <b>{formatRate(details._daily_rate)}</b> × الأيام: <b>{details._calc_days ?? "—"}</b></div>
                                       <div>
                                         {mode === "deduct" ? "قيمة الخصم" : "قيمة الاسترداد"}:{" "}
                                         <b style={{ color: mode === "deduct" ? "#B91C1C" : "#047857" }}>
