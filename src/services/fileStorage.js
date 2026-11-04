@@ -350,12 +350,52 @@ export function resetStorageConfigCache() {
   presignCache.clear();
 }
 
+/** يقرأ جسم خطأ Edge Function (Supabase يخفي التفاصيل ويرجّع رسالة عامة). */
+async function readFunctionError(error) {
+  const info = { status: 0, message: "", missing: [] };
+  try {
+    const response = error && error.context;
+    if (!response || typeof response.clone !== "function") return info;
+    info.status = Number(response.status) || 0;
+    const body = await response.clone().json();
+    info.message = String((body && (body.error || body.message)) || "");
+    if (Array.isArray(body && body.missing)) info.missing = body.missing;
+  } catch {
+    /* الجسم ليس JSON — نكمل بالرسالة العامة */
+  }
+  return info;
+}
+
 async function callBackend(action, payload = {}) {
   const { data, error } = await supabase.functions.invoke(R2_FUNCTION, {
     headers: sessionHeaders(),
     body: { action, ...payload },
   });
-  if (error) throw new Error(error.message || "storage backend unavailable");
+  if (error) {
+    const info = await readFunctionError(error);
+    if (info.status === 503 && /r2 not configured/i.test(info.message)) {
+      const names = info.missing.length ? ` (${info.missing.join(", ")})` : "";
+      const err = new Error(`خادم التخزين الاحتياطي R2 غير مهيّأ${names}.`);
+      err.code = "storage_backend_unconfigured";
+      throw err;
+    }
+    if (info.status === 401 || /unauthorized/i.test(info.message)) {
+      const err = new Error(
+        "انتهت جلسة الدخول أو غير صالحة — سجّلي الخروج ثم الدخول وأعيدي المحاولة."
+      );
+      err.code = "storage_unauthorized";
+      throw err;
+    }
+    if (info.status === 404) {
+      throw new Error(
+        "دالة التخزين file-storage غير منشورة على مشروع Supabase الحالي."
+      );
+    }
+    if (info.message) {
+      throw new Error(`${info.message} (${info.status || "Error"})`);
+    }
+    throw new Error(error.message || "storage backend unavailable");
+  }
   if (!data || !data.ok) {
     throw new Error((data && data.error) || "storage request failed");
   }
@@ -401,7 +441,16 @@ async function callAsuBackend(action, payload = {}) {
     throw gatewayUnavailableError("storage gateway unreachable");
   }
   if (res.status === 502 || res.status === 503 || res.status === 504) {
-    throw gatewayUnavailableError(`storage gateway offline (${res.status})`);
+    let detail = "";
+    try {
+      const body = await res.clone().json();
+      detail = String((body && (body.error || body.message)) || "");
+    } catch {
+      /* الجسم ليس JSON */
+    }
+    throw gatewayUnavailableError(
+      `storage gateway offline (${res.status})${detail ? `: ${detail}` : ""}`
+    );
   }
   let data = null;
   try {
@@ -693,6 +742,17 @@ export async function uploadFile(bucket, path, body, options = {}) {
         } catch (r2err) {
           // نُظهر خطأ الرجوع الاحتياطي مع الإشارة لسبب السقوط
           r2err.cause = err;
+          if (
+            r2err.code === "storage_backend_unconfigured" ||
+            /R2 غير مهيّأ/i.test(r2err.message || "")
+          ) {
+            const gatewayReason = err.message || "storage gateway unavailable";
+            throw new Error(
+              `تعذّر الرفع: خادم التخزين في القسم غير متصل (${gatewayReason})، ` +
+                `والخادم الاحتياطي R2 غير مهيّأ على Supabase. ` +
+                `شغّل خادم التخزين/النفق أو أضف إعدادات R2 في Edge Secrets ثم أعد المحاولة.`
+            );
+          }
           throw r2err;
         }
       }
