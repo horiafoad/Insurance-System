@@ -670,10 +670,37 @@ async function uploadViaAsu(bucket, path, body, { contentType, upsert }) {
 }
 
 /**
+ * رفع إلى Supabase Storage — الخيار الاحتياطي الدائم.
+ * يعمل دائمًا من أي جهاز ولا يعتمد على خادم القسم أو النفق، فيُستخدم
+ * عند تعذّر بوابة خادم D حتى لا يفشل الرفع في اللحظة الحرجة.
+ * (البِكِت واحد مشترك، والمسار يبدأ باسم البِكِت المنطقي.)
+ */
+async function uploadViaSupabase(bucket, path, body, { contentType, upsert }) {
+  const physicalBucket = SUPABASE_SHARED_BUCKET;
+  const physicalPath = bucket === SUPABASE_SHARED_BUCKET ? path : `${bucket}/${path}`;
+
+  const { error } = await supabase.storage
+    .from(physicalBucket)
+    .upload(physicalPath, body, { contentType, upsert });
+  if (error) throw error;
+
+  return {
+    provider: STORAGE_PROVIDER.SUPABASE,
+    bucket: physicalBucket,
+    path: physicalPath,
+    key: physicalPath,
+    url: buildSupabaseRef(physicalBucket, physicalPath),
+    size: body?.size ?? null,
+    mimeType: contentType,
+  };
+}
+
+/**
  * رفع ملف جديد.
  *   supabase → supabase.storage (سلوك مطابق تمامًا لما كان قبل التحويل)
  *   asu      → PUT عبر بوابة خادم D بتوكن الجلسة، وعند تعذّر البوابة
- *              يسقط الرفع تلقائيًا إلى R2 (الخيار الاحتياطي)
+ *              يسقط الرفع تلقائيًا إلى Supabase Storage (متاح دائمًا)
+ *              ثم إلى R2 إن كان مهيأً
  *   r2       → presigned PUT إلى R2 مباشرة (المفاتيح تبقى في الخادم)
  *
  * @returns {{ provider, bucket, path, key, url, size, mimeType }}
@@ -681,6 +708,7 @@ async function uploadViaAsu(bucket, path, body, { contentType, upsert }) {
  *     مزوّد supabase → رابط عام (كما كان)
  *     مزوّد r2       → مرجع r2:// ثابت يُحلّ عند العرض
  *     مزوّد asu      → مرجع asu:// ثابت يُحلّ عند العرض
+ *                      (وإن تعذّرت البوابة وقت الرفع: مرجع supabase://)
  */
 export async function uploadFile(bucket, path, body, options = {}) {
   const {
@@ -734,26 +762,28 @@ export async function uploadFile(bucket, path, body, options = {}) {
     try {
       return await uploadViaAsu(bucket, path, body, { contentType, upsert });
     } catch (err) {
-      // خادم D غير متاح (شبكة/نفق/5xx) → نرفع إلى R2 كخيار احتياطي.
-      // أخطاء الصلاحيات أو المدخلات لا تسقط للرجوع الاحتياطي.
+      // خادم D غير متاح (شبكة/نفق/5xx) → نخزّن الملف على السحابة بدل
+      // إفشال العملية. أخطاء الصلاحيات أو المدخلات لا تسقط للرجوع الاحتياطي.
       if (err && err.gatewayUnavailable) {
         try {
-          return await uploadViaR2(bucket, path, body, { contentType, upsert });
-        } catch (r2err) {
-          // نُظهر خطأ الرجوع الاحتياطي مع الإشارة لسبب السقوط
-          r2err.cause = err;
-          if (
-            r2err.code === "storage_backend_unconfigured" ||
-            /R2 غير مهيّأ/i.test(r2err.message || "")
-          ) {
+          return await uploadViaSupabase(bucket, path, body, {
+            contentType,
+            upsert,
+          });
+        } catch (supabaseErr) {
+          // السحابة نفسها تعذّرت (حصة/شبكة) → آخر محاولة مع R2 إن كان مهيأً.
+          try {
+            return await uploadViaR2(bucket, path, body, { contentType, upsert });
+          } catch (r2err) {
+            r2err.cause = err;
             const gatewayReason = err.message || "storage gateway unavailable";
+            const cloudReason = supabaseErr.message || "cloud storage failed";
             throw new Error(
-              `تعذّر الرفع: خادم التخزين في القسم غير متصل (${gatewayReason})، ` +
-                `والخادم الاحتياطي R2 غير مهيّأ على Supabase. ` +
-                `شغّل خادم التخزين/النفق أو أضف إعدادات R2 في Edge Secrets ثم أعد المحاولة.`
+              `تعذّر الرفع: خادم التخزين في القسم غير متصل الآن (${gatewayReason})، ` +
+                `كما تعذّر الحفظ على التخزين السحابي (${cloudReason}). ` +
+                `أعيدي المحاولة بعد قليل، أو أبلغي مسؤول النظام إذا تكرر.`
             );
           }
-          throw r2err;
         }
       }
       throw err;
@@ -761,25 +791,7 @@ export async function uploadFile(bucket, path, body, options = {}) {
   }
 
   if (provider !== STORAGE_PROVIDER.R2) {
-    // كل الملفات في بِكِت واحد موجود، مع مسار يحمل اسم البِكِت المنطقي.
-    const physicalBucket = SUPABASE_SHARED_BUCKET;
-    const physicalPath =
-      bucket === SUPABASE_SHARED_BUCKET ? path : `${bucket}/${path}`;
-
-    const { error } = await supabase.storage
-      .from(physicalBucket)
-      .upload(physicalPath, body, { contentType, upsert });
-    if (error) throw error;
-
-    return {
-      provider: STORAGE_PROVIDER.SUPABASE,
-      bucket: physicalBucket,
-      path: physicalPath,
-      key: physicalPath,
-      url: buildSupabaseRef(physicalBucket, physicalPath),
-      size: body?.size ?? null,
-      mimeType: contentType,
-    };
+    return uploadViaSupabase(bucket, path, body, { contentType, upsert });
   }
 
   return uploadViaR2(bucket, path, body, { contentType, upsert });
