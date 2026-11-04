@@ -424,6 +424,17 @@ function gatewayUnavailableError(message) {
   return err;
 }
 
+/** أخطاء تعني أن البوابة/النفق غير متاحين الآن (وليست خطأً في التطبيق). */
+function isGatewayUnavailableStatus(status) {
+  const code = Number(status) || 0;
+  return (
+    code === 502 ||
+    code === 503 ||
+    code === 504 ||
+    (code >= 520 && code <= 526)
+  );
+}
+
 async function callAsuBackend(action, payload = {}) {
   if (!ASU_GATEWAY) throw gatewayUnavailableError("storage gateway not configured");
   let res;
@@ -440,7 +451,7 @@ async function callAsuBackend(action, payload = {}) {
     // فشل الشبكة/النفق تمامًا — البوابة غير متاحة
     throw gatewayUnavailableError("storage gateway unreachable");
   }
-  if (res.status === 502 || res.status === 503 || res.status === 504) {
+  if (isGatewayUnavailableStatus(res.status)) {
     let detail = "";
     try {
       const body = await res.clone().json();
@@ -643,7 +654,7 @@ async function uploadViaAsu(bucket, path, body, { contentType, upsert }) {
   } catch {
     throw gatewayUnavailableError("storage gateway unreachable (upload)");
   }
-  if (res.status === 502 || res.status === 503 || res.status === 504) {
+  if (isGatewayUnavailableStatus(res.status)) {
     throw gatewayUnavailableError(`storage gateway offline (${res.status})`);
   }
 
