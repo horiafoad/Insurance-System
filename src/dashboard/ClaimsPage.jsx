@@ -28,6 +28,14 @@ const actionButtonStyle = {
   whiteSpace: "nowrap",
 };
 
+const claimsTh = {
+  ...styles.th,
+  position: "sticky",
+  top: 0,
+  zIndex: 2,
+  boxShadow: "0 1px 0 #E2E8F0",
+};
+
 export default function ClaimsPage({
   claims,
   allClaims,
@@ -274,16 +282,16 @@ export default function ClaimsPage({
                 <table style={styles.table}>
                   <thead>
                     <tr>
-                      {canManage && <th style={styles.th}>التصنيف</th>}
-                      {canManage && <th style={styles.th}>حالة السداد</th>}
-                      <th style={styles.th}>رقم الصف</th>
-                      {canManage && <th style={styles.th}>المتبقي</th>}
+                      {canManage && <th style={claimsTh}>التصنيف</th>}
+                      {canManage && <th style={claimsTh}>حالة السداد</th>}
+                      <th style={claimsTh}>رقم الصف</th>
+                      {canManage && <th style={claimsTh}>المتبقي</th>}
                       {columns.map((column) => (
-                        <th key={column} style={styles.th}>
+                        <th key={column} style={claimsTh}>
                           {column}
                         </th>
                       ))}
-                      {canManage && <th style={styles.th}>إجراءات المدير</th>}
+                      {canManage && <th style={claimsTh}>إجراءات المدير</th>}
                     </tr>
                   </thead>
                   <tbody>
