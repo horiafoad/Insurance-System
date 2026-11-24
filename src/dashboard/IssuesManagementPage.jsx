@@ -1119,7 +1119,7 @@ export default function IssuesManagementPage() {
     .issues-table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
     .issues-table thead th { position: sticky; top: 0; z-index: 2; }
     .issues-table thead th:not(:last-child), .issues-table tbody td:not(:last-child) { border-left: 1px solid #D6E4F6; }
-    .issues-table thead th { border-bottom: 2px solid #AFC7EE; }
+    .issues-table thead th { border-bottom: 2px solid #AFC7EE; box-shadow: inset 0 -2px 0 #AFC7EE; }
     .issues-table tbody tr:nth-child(odd) { background: #FFFFFF; }
     .issues-table tbody tr:nth-child(even) { background: #EEF5FF; }
     .issues-table tbody td { border-bottom: 2px solid #DCE9FB !important; transition: background .12s ease, box-shadow .12s ease; }
@@ -1994,7 +1994,11 @@ export default function IssuesManagementPage() {
             <div
               ref={tableRef}
               tabIndex={0}
-              style={{ overflowX: "auto", outline: "none" }}
+              style={{
+                overflow: "auto",
+                maxHeight: "calc(100vh - 220px)",
+                outline: "none",
+              }}
               onFocus={() =>
                 setCursor((cur) => (cur.r < 0 ? { r: 0, c: 0 } : cur))
               }

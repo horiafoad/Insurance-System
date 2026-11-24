@@ -28,6 +28,15 @@ const actionButtonStyle = {
   whiteSpace: "nowrap",
 };
 
+/* رأس جدول ثابت (Freeze) — يبقى ظاهرًا أثناء التمرير داخل الجدول. */
+const stickyTh = {
+  ...styles.th,
+  position: "sticky",
+  top: 0,
+  zIndex: 3,
+  boxShadow: "inset 0 -1px 0 #E2E8F0",
+};
+
 export default function ClaimsPage({
   claims,
   allClaims,
@@ -274,16 +283,16 @@ export default function ClaimsPage({
                 <table style={styles.table}>
                   <thead>
                     <tr>
-                      {canManage && <th style={styles.th}>التصنيف</th>}
-                      {canManage && <th style={styles.th}>حالة السداد</th>}
-                      <th style={styles.th}>رقم الصف</th>
-                      {canManage && <th style={styles.th}>المتبقي</th>}
+                      {canManage && <th style={stickyTh}>التصنيف</th>}
+                      {canManage && <th style={stickyTh}>حالة السداد</th>}
+                      <th style={stickyTh}>رقم الصف</th>
+                      {canManage && <th style={stickyTh}>المتبقي</th>}
                       {columns.map((column) => (
-                        <th key={column} style={styles.th}>
+                        <th key={column} style={stickyTh}>
                           {column}
                         </th>
                       ))}
-                      {canManage && <th style={styles.th}>إجراءات المدير</th>}
+                      {canManage && <th style={stickyTh}>إجراءات المدير</th>}
                     </tr>
                   </thead>
                   <tbody>
