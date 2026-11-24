@@ -6,6 +6,7 @@ import NetworkBanner from "./NetworkBanner";
 import { supabase } from "./supabaseClient";
 import { hasPermission } from "./utils/permissions";
 import { notifyPushEvent } from "./utils/pushNotifications";
+import { notifyWhatsAppRequestCreated } from "./utils/whatsappNotifications";
 import { useRealtimeSync } from "./utils/realtimeSync";
 import {
   getSessionToken,
@@ -1237,6 +1238,10 @@ const updatedMovements = qrLetter.movements.map((movement) =>
         serviceType: selectedService?.title,
         appUrl: window.location.origin,
       });
+
+      // إشعار استلام WhatsApp — fire-and-forget. الخادم يقرأ الهاتف من صف
+      // الطلب ولا يرسل شيئًا ما لم يكن WHATSAPP_AUTO_SEND=true.
+      notifyWhatsAppRequestCreated(data.id);
 
       alert(
         `تم إرسال طلب ${

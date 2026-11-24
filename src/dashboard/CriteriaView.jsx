@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "../supabaseClient";
 import { styles } from "./styles";
 import { ClaimStat, EmptyState } from "./ui";
-import { notifyPushEvent, getAppBase } from "../utils/pushNotifications";
+import { notifyPushEvent } from "../utils/pushNotifications";
 import { hasPermission } from "../utils/permissions";
 import {
   RECEIVED_STATUS,
@@ -15,89 +15,68 @@ import {
   canTransitionToStatus,
   formatEgyptDateTime,
 } from "../utils/serviceRequestRules";
+import {
+  WHATSAPP_OFFICIAL_NUMBER_DISPLAY,
+  WHATSAPP_NOTIFIABLE_STATUSES,
+  buildWhatsAppPreviewMessage,
+  isNotifiableStatus,
+  normalizePhoneToIntl,
+  normalizeStatus,
+  statusArabicLabel,
+  notifyWhatsAppStatusChange,
+  updateServiceRequestViaServer,
+} from "../utils/whatsappNotifications";
+import WhatsAppNotificationsModal from "./WhatsAppNotificationsModal";
 
 /* =========================================================================
-   DEMO WHATSAPP — معاينة إشعار عند إتمام الطلب
-   مرحلة التجربة فقط: بدون WhatsApp API، بدون إرسال فعلي، بدون مفاتيح سرية.
+   WhatsApp — معاينة الرسائل + الربط بالإرسال التلقائي الرسمي
+   -------------------------------------------------------------------------
+   الإرسال الفعلي يتم من Supabase Edge Functions فقط (send-whatsapp /
+   update-service-request). لا توجد أي مفاتيح Meta في هذه الواجهة.
    ========================================================================= */
 
-// خط WhatsApp الرسمي لإدارة الاستحقاقات (رقم الإرسال المعلن).
-const WHATSAPP_DEMO_NUMBER = "01055662546";
-const WHATSAPP_DEMO_NOTE =
-  "رقم الإرسال الرسمي – الإرسال الفعلي يتفعل عند تفعيل WhatsApp Business Platform.";
+const WHATSAPP_OFFICIAL_NOTE =
+  "رقم الإرسال الرسمي – يتم الإرسال تلقائيًا من الخادم بعد اكتمال إعداد WhatsApp Business Platform.";
 
-// الرابط العام للمتابعة — نفس نطاق التطبيق مع معامل track (يُفتح منه نموذج متابعة الطلب).
-function requestTrackingUrl(requestId) {
-  let base = "";
+// فتح واتساب يدويًا من حساب الموظف (احتياطي فقط، غير مفعّل افتراضيًا).
+// الإرسال الرسمي لا يستخدم هذا المسار إطلاقًا.
+const MANUAL_WHATSAPP_FALLBACK =
+  import.meta.env.VITE_WHATSAPP_MANUAL_FALLBACK === "true";
 
-  if (typeof window !== "undefined") {
-    const protocol = window.location.protocol;
-
-    if (protocol === "http:" || protocol === "https:") {
-      base = getAppBase();
-    }
-  }
-
-  // احتياط داخل تطبيق الأندرويد (capacitor/file://) — نفس الرابط العام المستخدم
-  // أصلًا في المشروع لروابط متابعة الخطابات QR.
-  if (!base) {
-    base = "https://insurance-system-9et.pages.dev/";
-  }
-
-  return base + "?track=" + encodeURIComponent(String(requestId));
+// نص المعاينة بنفس منطق الرسالة التي يرسلها الخادم.
+function buildWhatsAppCompletedMessage(request, status = COMPLETED_STATUS) {
+  return buildWhatsAppPreviewMessage(request, status, {
+    includeRejectionReason: true,
+  });
 }
 
-// تحويل رقم مقدم الطلب إلى صيغة دولية +20 لاستخدام wa.me (يمنع فتح الرابط برقم خاطئ).
-function normalizePhoneToIntl(rawPhone) {
-  const digits = String(rawPhone || "").replace(/\D/g, "");
-
-  if (!digits) return null;
-
-  if (digits.startsWith("20") && digits.length === 12) {
-    return digits;
+// رسائل أخطاء الخادم بالعربية (أكواد Edge Function).
+function describeUpdateError(error) {
+  switch (String(error || "")) {
+    case "update_conflict":
+      return "تم تعديل هذا الطلب من موظف آخر. أعد تحميل القائمة ثم حاول مجددًا.";
+    case "unauthorized":
+      return "انتهت جلسة الدخول. يرجى إعادة تسجيل الدخول ثم المحاولة.";
+    case "forbidden":
+      return "لا تملك صلاحية تعديل الطلبات.";
+    case "request_not_found":
+      return "لم يعد هذا الطلب موجودًا. أعد تحميل القائمة.";
+    case "invalid_status_transition":
+      return "لا يمكن انتقال الحالة إلى «تم الاستلام من قبل مقدم الطلب» إلا من «تم التنفيذ».";
+    case "required_field":
+    case "required_field_empty":
+      return "أحد الحقول الإجبارية فارغ. راجع بيانات الطلب.";
+    case "invalid_status":
+      return "قيمة الحالة غير معروفة.";
+    default:
+      return error
+        ? "تعذر حفظ التحديث (" + error + ")."
+        : "يرجى إعادة تسجيل الدخول والمحاولة.";
   }
-
-  if (digits.startsWith("0") && digits.length === 11) {
-    return "20" + digits.slice(1);
-  }
-
-  return null;
 }
 
-// نص رسالة WhatsApp بالشكل النهائي المقترح للمراسلة.
-function buildWhatsAppCompletedMessage(request) {
-  const trackingUrl = requestTrackingUrl(request?.id);
-  const notes = String(request?.notes || "").trim();
-
-  const lines = [
-    "إدارة الاستحقاقات – كلية الهندسة – جامعة عين شمس",
-    "",
-    "السيد/السيدة مقدم الطلب،",
-    "",
-    "نحيطكم علمًا بأنه تم الانتهاء من تنفيذ طلبكم رقم " +
-      (request?.id ?? "") +
-      ".",
-  ];
-
-  // ملاحظة الموظف على الطلب تُضاف تلقائيًا في الرسالة إن وجدت (لا يُعرض قسم إذا لم توجد).
-  if (notes) {
-    lines.push("", "ملاحظات إدارة الاستحقاقات:", notes);
-  }
-
-  lines.push(
-    "",
-    "لمتابعة تفاصيل الطلب:",
-    trackingUrl,
-    "",
-    "مع خالص التحية،",
-    "إدارة الاستحقاقات"
-  );
-
-  return lines.join("\n");
-}
-
-// تجهيز رابط wa.me الرسمي للمحادثة مع مقدم الطلب (لا يرسل أي شيء).
-function getWhatsAppOpenUrl(request) {
+// تجهيز رابط wa.me للعرض اليدوي فقط (لا يرسل أي شيء).
+function getWhatsAppOpenUrl(request, status = request?.status) {
   const hasPhone = Boolean(
     request?.phone && String(request.phone).trim()
   );
@@ -123,7 +102,7 @@ function getWhatsAppOpenUrl(request) {
       "https://wa.me/" +
       intlNumber +
       "?text=" +
-      encodeURIComponent(buildWhatsAppCompletedMessage(request)),
+      encodeURIComponent(buildWhatsAppCompletedMessage(request, status)),
   };
 }
 
@@ -161,16 +140,19 @@ function routeWhatsAppOpen(waUrl) {
 
 function WhatsAppPreviewModal({ request, onClose }) {
   const [copied, setCopied] = useState(false);
+  const [previewStatus, setPreviewStatus] = useState(
+    normalizeStatus(request?.status) || COMPLETED_STATUS
+  );
 
   if (!request) return null;
 
-  const message = buildWhatsAppCompletedMessage(request);
+  const message = buildWhatsAppCompletedMessage(request, previewStatus);
   const intlNumber = normalizePhoneToIntl(request.phone);
   const hasPhone = Boolean(request.phone && String(request.phone).trim());
   const invalidPhone = hasPhone && !intlNumber;
 
   const handleOpenWhatsApp = () => {
-    const open = getWhatsAppOpenUrl(request);
+    const open = getWhatsAppOpenUrl(request, previewStatus);
 
     if (!open.ok) {
       if (open.reason === "no-phone") {
@@ -255,7 +237,7 @@ function WhatsAppPreviewModal({ request, onClose }) {
               </strong>
 
               <small style={{ opacity: 0.85, fontSize: 11, lineHeight: 1.5 }}>
-                عرض الشكل النهائي للإدارة — بدون إرسال فعلي
+                عرض الشكل النهائي — الإرسال التلقائي يتم من الخادم
               </small>
             </div>
           </div>
@@ -324,11 +306,37 @@ function WhatsAppPreviewModal({ request, onClose }) {
 
             <div style={{ fontSize: 13, color: "#166534", lineHeight: 1.7 }}>
               <strong>
-                رقم الإرسال التجريبي: {WHATSAPP_DEMO_NUMBER}
+                رقم الإرسال الرسمي:{" "}
+                <span dir="ltr">{WHATSAPP_OFFICIAL_NUMBER_DISPLAY}</span>
               </strong>
 
-              <div>{WHATSAPP_DEMO_NOTE}</div>
+              <div>{WHATSAPP_OFFICIAL_NOTE}</div>
             </div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#334155",
+                marginBottom: 5,
+              }}
+            >
+              معاينة رسالة الحالة
+            </label>
+            <select
+              value={statusArabicLabel(previewStatus)}
+              onChange={(event) => setPreviewStatus(event.target.value)}
+              style={{ ...styles.input, marginBottom: 0 }}
+            >
+              {WHATSAPP_NOTIFIABLE_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
           </div>
 
           {!hasPhone ? (
@@ -360,9 +368,9 @@ function WhatsAppPreviewModal({ request, onClose }) {
                 fontSize: 12,
               }}
             >
-              سيُفتح WhatsApp على الرقم{" "}
-              <strong dir="ltr">{request.phone}</strong> — لن تُرسل الرسالة
-              تلقائيًا، يضغط المستخدم زر الإرسال يدويًا.
+              المستلم: <strong dir="ltr">{request.phone}</strong> — الإرسال
+              التلقائي يتم من الرقم الرسمي بعد تغيير الحالة. زر «فتح WhatsApp»
+              للعرض اليدوي فقط من حسابك الشخصي، وليس للإرسال الرسمي.
             </div>
           )}
 
@@ -398,7 +406,7 @@ function WhatsAppPreviewModal({ request, onClose }) {
               }}
               onClick={handleOpenWhatsApp}
             >
-              💬 فتح WhatsApp للعرض
+              💬 فتح للعرض (حسابك)
             </button>
           </div>
         </div>
@@ -727,6 +735,7 @@ export function ServiceRequestsView({
   const [toast, setToast] = useState("");
   const [rejectPending, setRejectPending] = useState(null);
   const [waPreviewRequest, setWaPreviewRequest] = useState(null);
+  const [waLogOpen, setWaLogOpen] = useState(false);
 
   const activeServiceFilter = onServiceFilterChange
     ? selectedService
@@ -839,41 +848,30 @@ export function ServiceRequestsView({
     window.setTimeout(() => setToast(""), 3200);
   };
 
-  // إرسال رسمي حقيقي عبر Meta Cloud API عند اكتمال الطلب.
-  // لا يرسل شيئًا الآن: يتفعل فقط عند توفير رقم إدارة رسمي + مفاتيح،
-  // بوضع VITE_WHATSAPP_OFFICIAL_ENABLED=true في .env وتفعيل edge function
-  // send-whatsapp بمتغيراته السرية.
-  const notifyOfficialWhatsApp = async (row) => {
-    const enabled =
-      import.meta.env.VITE_WHATSAPP_OFFICIAL_ENABLED === "true";
-    if (!enabled) return;
-
-    const open = getWhatsAppOpenUrl(row);
-    if (!open.ok) return;
-
-    try {
-      await supabase.functions.invoke("send-whatsapp", {
-        body: {
-          to: open.to,
-          text: buildWhatsAppCompletedMessage(row),
-        },
-      });
-    } catch (officialError) {
-      console.error("send-whatsapp edge function error:", officialError);
-    }
+  // إشعار WhatsApp احتياطي من المتصفح — يُستخدم فقط إذا تعذّر استدعاء
+  // update-service-request (مثل عدم نشر الدالة بعد). الخادم يتحقق من الجلسة
+  // والصلاحية ويقرأ الهاتف من صف الطلب، ولا يثق بأي نص من المتصفح.
+  const notifyWhatsAppFallback = async (row, previousStatus) => {
+    if (!isNotifiableStatus(row?.status)) return null;
+    return notifyWhatsAppStatusChange({
+      requestId: row?.id,
+      previousStatus,
+      status: row?.status,
+      updatedAt: row?.updated_at,
+    });
   };
 
-  // عند اكتمال الطلب: فتح معاينة الإشعار + محاولة فتح محادثة WhatsApp
-  // إلى مقدم الطلب مباشرة، مع الإرسال الرسمي الاحتياطي عند تفعيله.
-  const autoOpenWhatsAppAfterCompletion = (row) => {
+  // عند اكتمال الطلب: عرض المعاينة فقط. فتح واتساب من حساب الموظف
+  // احتياطي اختياري ولا يُستخدم للإرسال الرسمي.
+  const showWhatsAppCompletionPreview = (row) => {
     setWaPreviewRequest(row);
 
-    const open = getWhatsAppOpenUrl(row);
-    if (open.ok) {
-      routeWhatsAppOpen(open.url);
+    if (MANUAL_WHATSAPP_FALLBACK) {
+      const open = getWhatsAppOpenUrl(row, row?.status);
+      if (open.ok) {
+        routeWhatsAppOpen(open.url);
+      }
     }
-
-    notifyOfficialWhatsApp(row);
   };
 
   const saveRequestUpdate = async (id, overrideStatus, overrideNotes) => {
@@ -925,25 +923,75 @@ export function ServiceRequestsView({
     });
 
     try {
-      const { error: updateError } = await supabase
-        .from("service_requests")
-        .update({
-          status: newStatus,
-          notes: newNotes || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
+      let savedRow = null;
+      let notification = null;
 
-      if (updateError) {
-        console.error(updateError);
+      // المسار الرسمي: يتحقق الخادم من الجلسة والصلاحية، يحفظ الحالة، ثم
+      // يحاول إرسال إشعار WhatsApp. فشل الإشعار لا يلغي الحفظ.
+      const serverResult = await updateServiceRequestViaServer({
+        id,
+        status: newStatus,
+        notes: newNotes || null,
+        expectedStatus: previous.status,
+      });
+
+      if (serverResult?.ok && serverResult.data) {
+        savedRow = serverResult.data;
+        notification = serverResult.notification || null;
+      } else if (serverResult?.unavailable) {
+        // توافق خلفي: الدالة لم تُنشر بعد. نحفظ مباشرة كما كان النظام يعمل،
+        // ثم نستدعي دالة الإشعار (التي تتحقق من الصلاحية بدورها).
+        const { data: directRow, error: updateError } = await supabase
+          .from("service_requests")
+          .update({
+            status: newStatus,
+            notes: newNotes || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.error(updateError);
+          setRequests((current) =>
+            current.map((item) => (item.id === id ? previous : item))
+          );
+          setError("حدث خطأ أثناء حفظ التحديث: " + updateError.message);
+          return;
+        }
+
+        savedRow =
+          directRow || {
+            ...previous,
+            status: newStatus,
+            notes: newNotes,
+          };
+
+        notification = await notifyWhatsAppFallback(savedRow, previous.status);
+      } else {
         setRequests((current) =>
           current.map((item) => (item.id === id ? previous : item))
         );
-        setError("حدث خطأ أثناء حفظ التحديث: " + updateError.message);
+        setError(
+          "تعذر حفظ التحديث: " + describeUpdateError(serverResult?.error)
+        );
         return;
       }
 
-      showToast("تم تحديث الطلب بنجاح.");
+      setRequests((current) =>
+        current.map((item) => (item.id === id ? savedRow : item))
+      );
+
+      if (notification?.ok === false) {
+        showToast("تم تحديث الطلب، لكن تعذر إرسال إشعار WhatsApp.");
+      } else if (notification?.skipped) {
+        showToast("تم تحديث الطلب. إشعار WhatsApp بانتظار تفعيل الإعداد.");
+      } else if (notification?.sent) {
+        showToast("تم تحديث الطلب وإرسال إشعار WhatsApp.");
+      } else {
+        showToast("تم تحديث الطلب بنجاح.");
+      }
 
       // إشعار الموبايل (fire-and-forget) عند تغيير الحالة أو إضافة ملاحظة.
       if (newStatus !== previous.status) {
@@ -959,14 +1007,12 @@ export function ServiceRequestsView({
         });
       }
 
-      // عندما يصبح الطلب "تم التنفيذ" لأول مرة: فتح معاينة إشعار WhatsApp
-      // + محاولة فتح المحادثة مع مقدم الطلب (يدويًا حاليًا ورسميًا لاحقًا).
-      if (newStatus === "تم التنفيذ" && previous.status !== "تم التنفيذ") {
-        autoOpenWhatsAppAfterCompletion({
-          ...previous,
-          status: newStatus,
-          notes: newNotes,
-        });
+      // معاينة إشعار الاكتمال فقط (بدون فتح واتساب تلقائيًا).
+      if (
+        newStatus === COMPLETED_STATUS &&
+        previous.status !== COMPLETED_STATUS
+      ) {
+        showWhatsAppCompletionPreview(savedRow);
       }
     } catch (updateError) {
       console.error(updateError);
@@ -1161,35 +1207,70 @@ export function ServiceRequestsView({
     setError("");
 
     try {
-      const { data: savedRow, error: saveError } = await supabase
-        .from("service_requests")
-        .update({
-          name: editingRequest.name,
-          job_title: editingRequest.job_title,
-          phone: editingRequest.phone,
-          service_type: editingRequest.service_type,
-          certificate_type: editingRequest.certificate_type || null,
-          request_month: Number(editingRequest.request_month),
-          request_year: Number(editingRequest.request_year),
-          notes: editingRequest.notes || null,
-          status: editingRequest.status,
-          directed_to: editingRequest.directed_to?.trim() || null,
-          requested_details: editingRequest.requested_details?.trim() || null,
-          applicant_notes: editingRequest.applicant_notes?.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingRequest.id)
-        .select()
-        .single();
+      const fields = {
+        name: editingRequest.name,
+        job_title: editingRequest.job_title,
+        phone: editingRequest.phone,
+        service_type: editingRequest.service_type,
+        certificate_type: editingRequest.certificate_type || null,
+        request_month: Number(editingRequest.request_month),
+        request_year: Number(editingRequest.request_year),
+        directed_to: editingRequest.directed_to?.trim() || null,
+        requested_details: editingRequest.requested_details?.trim() || null,
+        applicant_notes: editingRequest.applicant_notes?.trim() || null,
+      };
 
-      // لا نعرض نجاحًا إلا بعد تأكيد التحديث من قاعدة البيانات فعلاً.
-      if (saveError) {
-        console.error("Save request update error:", saveError);
+      let savedRow = null;
+      let notification = null;
+
+      const serverResult = await updateServiceRequestViaServer({
+        id: editingRequest.id,
+        status: editingRequest.status,
+        notes: editingRequest.notes || null,
+        fields,
+        expectedStatus: prevRequest.status,
+      });
+
+      if (serverResult?.ok && serverResult.data) {
+        savedRow = serverResult.data;
+        notification = serverResult.notification || null;
+      } else if (serverResult?.unavailable) {
+        // توافق خلفي: حفظ مباشر كما كان قبل نشر الدالة.
+        const { data: directRow, error: saveError } = await supabase
+          .from("service_requests")
+          .update({
+            ...fields,
+            notes: editingRequest.notes || null,
+            status: editingRequest.status,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", editingRequest.id)
+          .select()
+          .single();
+
+        if (saveError) {
+          console.error("Save request update error:", saveError);
+          setRequests((curr) =>
+            curr.map((r) => (r.id === editingRequest.id ? prevRequest : r))
+          );
+          setError("حدث خطأ أثناء حفظ تعديل الطلب: " + saveError.message);
+          return;
+        }
+
+        savedRow = directRow || editingRequest;
+        if (editingRequest.status !== prevRequest.status) {
+          notification = await notifyWhatsAppFallback(
+            savedRow,
+            prevRequest.status
+          );
+        }
+      } else {
         setRequests((curr) =>
           curr.map((r) => (r.id === editingRequest.id ? prevRequest : r))
         );
         setError(
-          "حدث خطأ أثناء حفظ تعديل الطلب: " + saveError.message
+          "حدث خطأ أثناء حفظ تعديل الطلب: " +
+            describeUpdateError(serverResult?.error)
         );
         return;
       }
@@ -1203,7 +1284,15 @@ export function ServiceRequestsView({
       );
 
       setEditingRequest(null);
-      showToast("تم حفظ تعديل الطلب بنجاح.");
+      if (notification?.ok === false) {
+        showToast("تم حفظ التعديل، لكن تعذر إرسال إشعار WhatsApp.");
+      } else if (notification?.skipped) {
+        showToast("تم حفظ التعديل. إشعار WhatsApp بانتظار تفعيل الإعداد.");
+      } else if (notification?.sent) {
+        showToast("تم حفظ التعديل وإرسال إشعار WhatsApp.");
+      } else {
+        showToast("تم حفظ تعديل الطلب بنجاح.");
+      }
 
       // إشعار الموبايل (fire-and-forget) عند تغيير الحالة أو إضافة ملاحظة.
       if (editingRequest.status !== prevRequest.status) {
@@ -1221,13 +1310,12 @@ export function ServiceRequestsView({
         });
       }
 
-      // عندما يصبح الطلب "تم التنفيذ" لأول مرة: فتح معاينة إشعار WhatsApp
-      // + محاولة فتح المحادثة مع مقدم الطلب (يدويًا حاليًا ورسميًا لاحقًا).
+      // معاينة إشعار الاكتمال فقط (بدون فتح واتساب تلقائيًا).
       if (
-        editingRequest.status === "تم التنفيذ" &&
-        prevRequest.status !== "تم التنفيذ"
+        editingRequest.status === COMPLETED_STATUS &&
+        prevRequest.status !== COMPLETED_STATUS
       ) {
-        autoOpenWhatsAppAfterCompletion(confirmedRow);
+        showWhatsAppCompletionPreview(confirmedRow);
       }
     } catch (saveException) {
       console.error("Save request exception:", saveException);
@@ -1319,13 +1407,24 @@ export function ServiceRequestsView({
           <button style={styles.primaryButton} onClick={exportExcel}>
             📊 تصدير Excel
           </button>
+          {canManageRequests && (
+            <button
+              style={styles.secondaryButton}
+              onClick={() => setWaLogOpen(true)}
+              title="عرض سجل إشعارات WhatsApp وإعادة محاولة الفاشل"
+            >
+              📨 سجل إشعارات WhatsApp
+            </button>
+          )}
         </div>
       </div>
 
       <div style={styles.infoBox}>
-        💬 <strong>وضع تجريبي WhatsApp:</strong> عند وصول أي طلب بحالة «تم
-        التنفيذ» يظهر زر «معاينة رسالة WhatsApp» لعرض شكل الإشعار المقترح —
-        لا يتم إرسال أي رسالة فعلية في هذه المرحلة.
+        💬 <strong>إشعارات WhatsApp:</strong> عند تغيير الحالة إلى «جديدة /
+        قيد التنفيذ / تم التنفيذ / مرفوضة» يحاول الخادم إرسال إشعار تلقائي من
+        الرقم الرسمي بعد نجاح الحفظ. الإرسال الحقيقي لا يبدأ إلا بعد تفعيل
+        إعدادات Meta وضبط <strong>WHATSAPP_AUTO_SEND=true</strong>. زر
+        «معاينة» يعرض شكل الرسالة دون إرسال.
       </div>
 
       {loading && <div style={styles.infoBox}>جاري تحميل الطلبات...</div>}
@@ -1662,6 +1761,24 @@ export function ServiceRequestsView({
                             💬 معاينة رسالة WhatsApp
                           </button>
                         )}
+
+                        {currentStatus !== COMPLETED_STATUS &&
+                          isNotifiableStatus(currentStatus) && (
+                            <button
+                              style={{
+                                ...styles.viewButton,
+                                background: "#ECFDF5",
+                                color: "#047857",
+                                borderColor: "#A7F3D0",
+                                padding: "4px 8px",
+                                fontSize: "12px",
+                              }}
+                              onClick={() => setWaPreviewRequest(request)}
+                              title="معاينة إشعار WhatsApp لهذه الحالة"
+                            >
+                              👁️ معاينة الإشعار
+                            </button>
+                          )}
 
                         <button
                           style={{
@@ -2039,12 +2156,17 @@ export function ServiceRequestsView({
         </div>
       )}
 
-      {/* Modal معاينة إشعار WhatsApp (تجريبي) */}
+      {/* Modal معاينة إشعار WhatsApp */}
       {waPreviewRequest && (
         <WhatsAppPreviewModal
           request={waPreviewRequest}
           onClose={() => setWaPreviewRequest(null)}
         />
+      )}
+
+      {/* Modal سجل إشعارات WhatsApp */}
+      {waLogOpen && (
+        <WhatsAppNotificationsModal onClose={() => setWaLogOpen(false)} />
       )}
 
       {/* Modal تأكيد رفض الطلب */}
