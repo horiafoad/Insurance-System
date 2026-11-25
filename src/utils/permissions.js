@@ -5,6 +5,11 @@
 export const PERMISSIONS = [
   { id: "letters", title: "حركة الخطابات", icon: "📨" },
   { id: "entitlements", title: "الاستحقاقات", icon: "💰" },
+  {
+    id: "claims_manage",
+    title: "المطالبات: إدارة (تعديل/تسوية/أقساط/PDF)",
+    icon: "🛠️",
+  },
   { id: "requests", title: "الطلبات", icon: "📄" },
   { id: "reports", title: "التقارير", icon: "📊" },
   { id: "user_management", title: "إدارة المستخدمين", icon: "👥" },

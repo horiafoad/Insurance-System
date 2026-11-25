@@ -2516,7 +2516,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               onOpenDetails={setClaimDetails}
               canManage={
                 currentUser?.role === "super_admin" ||
-                currentUser?.role === "admin"
+                currentUser?.role === "admin" ||
+                hasPermission(currentUser, "claims_manage")
               }
             />
           )}
@@ -2828,7 +2829,8 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
           onUndoInstallment={handleUndoInstallment}
           canManage={
             currentUser?.role === "super_admin" ||
-            currentUser?.role === "admin"
+            currentUser?.role === "admin" ||
+            hasPermission(currentUser, "claims_manage")
           }
         />
       )}
