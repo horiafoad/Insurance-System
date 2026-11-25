@@ -98,6 +98,16 @@ const NOTIFICATION_MENU_SECTION = {
   notifications_contracts: "contracts",
 };
 
+/* إدارة المطالبات: الأدوار الإدارية أو صلاحية إدارة المطالبات أو الاستحقاقات. */
+export function canManageClaims(user) {
+  if (!user) return false;
+  if (["super_admin", "admin", "creator"].includes(user.role)) return true;
+  return (
+    hasPermission(user, "claims_manage") ||
+    hasPermission(user, "entitlements")
+  );
+}
+
 export function canAccessMenu(user, menuId) {
   /* أرشيف التبليغات صفحة موحّدة: تُتاح لمن يملك صلاحية عرض أي قسم تبليغات. */
   if (menuId === "notifications_archive") {

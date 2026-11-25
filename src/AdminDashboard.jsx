@@ -72,6 +72,7 @@ import {
   hasAnyPermission,
   hasPermission,
   canAccessMenu,
+  canManageClaims,
 } from "./utils/permissions";
 import { useRealtimeSync, applyRowChange } from "./utils/realtimeSync";
 import { parseClaimsWorkbook } from "./services/claimsExcelImport";
@@ -2514,11 +2515,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
               onPayInstallment={handleOpenInstallment}
               onSettleClaim={handleOpenSettle}
               onOpenDetails={setClaimDetails}
-              canManage={
-                currentUser?.role === "super_admin" ||
-                currentUser?.role === "admin" ||
-                hasPermission(currentUser, "claims_manage")
-              }
+              canManage={canManageClaims(currentUser)}
             />
           )}
 
@@ -2827,11 +2824,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
           onDownloadPdf={downloadClaimPdf}
           onDeletePdf={handleDeleteClaimPdf}
           onUndoInstallment={handleUndoInstallment}
-          canManage={
-            currentUser?.role === "super_admin" ||
-            currentUser?.role === "admin" ||
-            hasPermission(currentUser, "claims_manage")
-          }
+          canManage={canManageClaims(currentUser)}
         />
       )}
     </div>
