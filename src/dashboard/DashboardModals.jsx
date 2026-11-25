@@ -145,6 +145,13 @@ const STANDARD_CLAIM_KEYS = new Set([
   "ملاحظات",
 ]);
 
+const PAYMENT_STATUS_OPTIONS = [
+  "خالي الطرف",
+  "جاري السداد",
+  "لم يسدد",
+  "بدون وجه حق",
+];
+
 export function ClaimFormModal({
   claimForm,
   setClaimForm,
@@ -157,6 +164,13 @@ export function ClaimFormModal({
   const extraColumns = columns.filter(
     (key) => !STANDARD_CLAIM_KEYS.has(key) && !hiddenColumns.includes(key)
   );
+  const totalAmount = Number(claimForm.amount) || 0;
+  const paidInstallments = [0, 1, 2, 3].map(
+    (index) => Number(claimForm.installmentAmounts?.[index]) || 0
+  );
+  const paidSum = paidInstallments.reduce((sum, value) => sum + value, 0);
+  const remainingAmount = totalAmount - paidSum;
+  const showInstallments = claimForm.paymentStatus === "جاري السداد";
 
   return (
     <Modal title="＋ إضافة مطالبة جديدة" onClose={onClose}>
@@ -225,7 +239,7 @@ export function ClaimFormModal({
           />
         </Field>
 
-        <Field label="المبلغ">
+        <Field label="المبلغ الإجمالي">
           <input
             type="number"
             value={claimForm.amount}
@@ -235,7 +249,7 @@ export function ClaimFormModal({
                 amount: e.target.value,
               })
             }
-            placeholder="قيمة المطالبة"
+            placeholder="إجمالي قيمة المطالبة"
             style={styles.input}
           />
         </Field>
@@ -259,6 +273,110 @@ export function ClaimFormModal({
             <option value="مرفوضة">مرفوضة</option>
           </select>
         </Field>
+
+        <Field label="حالة السداد">
+          <select
+            value={claimForm.paymentStatus || ""}
+            onChange={(e) =>
+              setClaimForm((prev) => ({
+                ...prev,
+                paymentStatus: e.target.value,
+              }))
+            }
+            style={styles.input}
+          >
+            <option value="">اختر حالة السداد</option>
+            {PAYMENT_STATUS_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        {showInstallments && (
+          <Field label="الأقساط المسددة (4 أقساط)" full>
+            <div
+              style={{
+                padding: "12px 14px",
+                background: "#F8FAFC",
+                border: "1px solid #E2E8F0",
+                borderRadius: 12,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 18,
+                  marginBottom: 12,
+                  fontSize: 13,
+                  fontWeight: 800,
+                }}
+              >
+                <span style={{ color: "#334155" }}>
+                  المبلغ الإجمالي:{" "}
+                  <span dir="ltr">{totalAmount.toFixed(2)}</span>
+                </span>
+                <span style={{ color: "#166534" }}>
+                  إجمالي المسدد: <span dir="ltr">{paidSum.toFixed(2)}</span>
+                </span>
+                <span
+                  style={{
+                    color: remainingAmount < 0 ? "#B91C1C" : "#1D4ED8",
+                  }}
+                >
+                  المتبقي: <span dir="ltr">{remainingAmount.toFixed(2)}</span>
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {[0, 1, 2, 3].map((index) => (
+                  <label
+                    key={index}
+                    style={{
+                      display: "block",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "#475569",
+                    }}
+                  >
+                    القسط {index + 1}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={claimForm.installmentAmounts?.[index] ?? ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setClaimForm((prev) => {
+                          const next = [...(prev.installmentAmounts || [])];
+                          next[index] = value;
+                          return { ...prev, installmentAmounts: next };
+                        });
+                      }}
+                      placeholder="المبلغ المسدد"
+                      style={{ ...styles.input, marginBottom: 0 }}
+                    />
+                  </label>
+                ))}
+              </div>
+
+              {remainingAmount < 0 && (
+                <div style={{ ...styles.errorBox, marginTop: 10 }}>
+                  مجموع الأقساط المسددة أكبر من المبلغ الإجمالي — راجعي
+                  الأرقام قبل الحفظ.
+                </div>
+              )}
+            </div>
+          </Field>
+        )}
 
         <Field label="ملاحظات" full>
           <textarea

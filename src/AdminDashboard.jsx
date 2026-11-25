@@ -1347,13 +1347,55 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         ملاحظات: claimForm.notes.trim(),
       };
 
-      const { error } = await supabase
+      const paymentStatus = claimForm.paymentStatus || null;
+      const totalAmount = Number(claimForm.amount) || 0;
+      const installmentValues = [0, 1, 2, 3].map(
+        (index) => Number(claimForm.installmentAmounts?.[index]) || 0
+      );
+      const paidSum = installmentValues.reduce((sum, value) => sum + value, 0);
+      const remainingToPlan = totalAmount - paidSum;
+
+      if (paymentStatus === "جاري السداد") {
+        if (remainingToPlan < -0.009) {
+          alert("مجموع الأقساط المسددة أكبر من المبلغ الإجمالي — راجعي الأرقام.");
+          return;
+        }
+        const emptySlots = installmentValues.filter((value) => value <= 0).length;
+        if (remainingToPlan > 0.009 && emptySlots === 0) {
+          alert(
+            "المتبقي لا يمكن توزيعه: كل الأقساط الأربعة مستخدمة. زيّدي المبلغ المسدد أو غيّري حالة السداد."
+          );
+          return;
+        }
+      }
+
+      const { data: created, error } = await supabase
         .from("claims")
         .insert({
           sheet_name: claimForm.sheetName.trim() || "إضافة يدوية",
           row_number: 0,
           data: manualData,
-        });
+          payment_status: paymentStatus,
+          total_amount: totalAmount,
+          paid_amount:
+            paymentStatus === "خالي الطرف"
+              ? totalAmount
+              : paymentStatus === "جاري السداد"
+                ? paidSum
+                : 0,
+          remaining_amount:
+            paymentStatus === "خالي الطرف" || paymentStatus === "بدون وجه حق"
+              ? 0
+              : paymentStatus === "جاري السداد"
+                ? remainingToPlan
+                : totalAmount,
+          started_at:
+            paymentStatus === "جاري السداد"
+              ? new Date().toISOString()
+              : null,
+        })
+        .select("id")
+        .single();
 
       if (error) {
         console.error(error);
@@ -1363,6 +1405,62 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         );
 
         return;
+      }
+
+      if (paymentStatus === "جاري السداد" && remainingToPlan >= -0.009) {
+        const emptyIndexes = [0, 1, 2, 3].filter(
+          (index) => installmentValues[index] <= 0
+        );
+        const share = emptyIndexes.length
+          ? Math.round((remainingToPlan / emptyIndexes.length) * 100) / 100
+          : 0;
+        let allocatedPending = 0;
+        const now = new Date().toISOString();
+
+        const installmentRows = [0, 1, 2, 3]
+          .map((index) => {
+            const paidValue = installmentValues[index];
+            if (paidValue > 0) {
+              return {
+                claim_id: created.id,
+                installment_number: index + 1,
+                amount: paidValue,
+                paid: true,
+                paid_at: now,
+                notes: "مسدد عند إضافة المطالبة",
+              };
+            }
+            if (!emptyIndexes.length || remainingToPlan <= 0.009) return null;
+            const isLast =
+              index === emptyIndexes[emptyIndexes.length - 1];
+            const amount = isLast
+              ? Math.round((remainingToPlan - allocatedPending) * 100) / 100
+              : share;
+            allocatedPending += amount;
+            const dueDate = new Date();
+            dueDate.setMonth(dueDate.getMonth() + index);
+            return {
+              claim_id: created.id,
+              installment_number: index + 1,
+              amount,
+              paid: false,
+              due_date: dueDate.toISOString().split("T")[0],
+            };
+          })
+          .filter(Boolean);
+
+        if (installmentRows.length) {
+          const { error: installmentError } = await supabase
+            .from("claim_installments")
+            .insert(installmentRows);
+          if (installmentError) {
+            console.error(installmentError);
+            setClaimError(
+              "تم حفظ المطالبة، لكن تعذر تسجيل خطة الأقساط: " +
+                installmentError.message
+            );
+          }
+        }
       }
 
       await loadClaims();

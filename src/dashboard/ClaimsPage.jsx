@@ -15,6 +15,7 @@ const formatAmount = (value) =>
  */
 export function normalizeClaimPaymentStatus(claim) {
   const raw = String(claim?.payment_status || "").trim();
+  if (raw === "بدون وجه حق" || raw === "بدون وجة حق") return "بدون وجه حق";
   if (raw === "جاري السداد") return "جاري السداد";
   if (["خالي الطرف", "مكتمل", "تم السداد"].includes(raw)) {
     return "خالي الطرف";
@@ -115,6 +116,11 @@ export default function ClaimsPage({
       { id: "unpaid", label: "لم يسدد", count: count("لم يسدد") },
       { id: "in_progress", label: "جاري السداد", count: count("جاري السداد") },
       { id: "settled", label: "خالي الطرف", count: count("خالي الطرف") },
+      {
+        id: "no_fault",
+        label: "بدون وجه حق",
+        count: count("بدون وجه حق"),
+      },
     ];
   }, [claims]);
 
@@ -125,7 +131,9 @@ export default function ClaimsPage({
         ? "جاري السداد"
         : activeTab === "settled"
           ? "خالي الطرف"
-          : "لم يسدد";
+          : activeTab === "no_fault"
+            ? "بدون وجه حق"
+            : "لم يسدد";
     return claims.filter(
       (claim) => normalizeClaimPaymentStatus(claim) === status
     );
@@ -321,17 +329,23 @@ export default function ClaimsPage({
                                   "خالي الطرف"
                                     ? "#DCFCE7"
                                     : normalizeClaimPaymentStatus(claim) ===
-                                        "جاري السداد"
-                                      ? "#FEF3C7"
-                                      : "#F1F5F9",
+                                        "بدون وجه حق"
+                                      ? "#EDE9FE"
+                                      : normalizeClaimPaymentStatus(claim) ===
+                                          "جاري السداد"
+                                        ? "#FEF3C7"
+                                        : "#F1F5F9",
                                 color:
                                   normalizeClaimPaymentStatus(claim) ===
                                   "خالي الطرف"
                                     ? "#166534"
                                     : normalizeClaimPaymentStatus(claim) ===
-                                        "جاري السداد"
-                                      ? "#92400E"
-                                      : "#334155",
+                                        "بدون وجه حق"
+                                      ? "#5B21B6"
+                                      : normalizeClaimPaymentStatus(claim) ===
+                                          "جاري السداد"
+                                        ? "#92400E"
+                                        : "#334155",
                                 padding: "2px 8px",
                                 borderRadius: "6px",
                                 fontSize: "12px",

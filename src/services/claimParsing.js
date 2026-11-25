@@ -4,11 +4,13 @@ export const PAYMENT_STATUS = {
   NOT_PAID: "لم يسدد",
   IN_PROGRESS: "جاري السداد",
   SETTLED: "خالي الطرف",
+  NO_FAULT: "بدون وجه حق",
 };
 
 export function normalizePaymentStatus(value) {
   if (!value) return null;
   const s = String(value).trim();
+  if (s === "بدون وجه حق" || s === "بدون وجة حق") return PAYMENT_STATUS.NO_FAULT;
   if (
     s === "خالي الطرف" ||
     s === "خالى الطرف" ||
