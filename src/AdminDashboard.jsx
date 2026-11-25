@@ -85,7 +85,6 @@ import {
   deleteClaimPdf,
 } from "./services/claimDocumentsService";
 import {
-  extractClaimIdentity,
   extractTotalAmount,
   startPayment as startClaimPayment,
   payInstallment as payClaimInstallment,
@@ -1328,14 +1327,6 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         },
         {}
       );
-      const identity = extractClaimIdentity(manualData);
-      if (!identity.claimNumber && !identity.claimantName) {
-        alert(
-          "من فضلك أدخلي اسم صاحب المطالبة أو رقم المطالبة من الأعمدة."
-        );
-        return;
-      }
-
       const paymentStatus = claimForm.paymentStatus || null;
       const totalAmount = extractTotalAmount(manualData);
       const installmentValues = [0, 1, 2, 3].map(
