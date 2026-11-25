@@ -1326,7 +1326,19 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
       setClaimLoading(true);
       setClaimError("");
 
+      const hiddenColumns = claimForm.hiddenColumns || [];
+      const extraData = Object.entries(claimForm.extraData || {}).reduce(
+        (acc, [key, value]) => {
+          if (!hiddenColumns.includes(key) && String(value ?? "").trim()) {
+            acc[key] = value;
+          }
+          return acc;
+        },
+        {}
+      );
+
       const manualData = {
+        ...extraData,
         "اسم صاحب المطالبة": claimForm.claimantName.trim(),
         "رقم المطالبة": claimForm.claimNumber.trim(),
         "تاريخ المطالبة": claimForm.claimDate || "",
@@ -2769,6 +2781,9 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
           claimForm={claimForm}
           setClaimForm={setClaimForm}
           claimLoading={claimLoading}
+          columns={Array.from(
+            new Set(claims.flatMap((claim) => Object.keys(claim.data || {})))
+          )}
           onClose={() => setShowClaimForm(false)}
           onSave={addManualClaim}
         />

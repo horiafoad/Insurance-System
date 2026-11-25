@@ -136,13 +136,28 @@ export function TaskFormModal({
   );
 }
 
+const STANDARD_CLAIM_KEYS = new Set([
+  "اسم صاحب المطالبة",
+  "رقم المطالبة",
+  "تاريخ المطالبة",
+  "المبلغ",
+  "الحالة",
+  "ملاحظات",
+]);
+
 export function ClaimFormModal({
   claimForm,
   setClaimForm,
   claimLoading,
+  columns = [],
   onClose,
   onSave,
 }) {
+  const hiddenColumns = claimForm.hiddenColumns || [];
+  const extraColumns = columns.filter(
+    (key) => !STANDARD_CLAIM_KEYS.has(key) && !hiddenColumns.includes(key)
+  );
+
   return (
     <Modal title="＋ إضافة مطالبة جديدة" onClose={onClose}>
       <div style={styles.manualClaimIntro}>
@@ -263,6 +278,78 @@ export function ClaimFormModal({
           />
         </Field>
       </div>
+
+      {extraColumns.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <div style={{ marginBottom: 8, textAlign: "right" }}>
+            <strong style={{ fontSize: 13, color: "#1E293B" }}>
+              📊 بيانات أعمدة المطالبات الحالية
+            </strong>
+            <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 3 }}>
+              نفس أعمدة ملفات المطالبات المستوردة — اكتبي منها ما تريدينه، و🗑️
+              تشيل الحقل اللي مش محتاجه من المطالبة الجديدة.
+            </div>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+              gap: 10,
+              maxHeight: 260,
+              overflowY: "auto",
+              paddingLeft: 4,
+            }}
+          >
+            {extraColumns.map((key) => (
+              <div
+                key={key}
+                style={{ display: "flex", gap: 6, alignItems: "center" }}
+              >
+                <input
+                  value={claimForm.extraData?.[key] ?? ""}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setClaimForm((prev) => ({
+                      ...prev,
+                      extraData: { ...(prev.extraData || {}), [key]: value },
+                    }));
+                  }}
+                  placeholder={key}
+                  style={{ ...styles.input, marginBottom: 0, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  title={`حذف حقل «${key}» من المطالبة الجديدة`}
+                  onClick={() =>
+                    setClaimForm((prev) => ({
+                      ...prev,
+                      hiddenColumns: [
+                        ...(prev.hiddenColumns || []),
+                        key,
+                      ],
+                      extraData: {
+                        ...(prev.extraData || {}),
+                        [key]: "",
+                      },
+                    }))
+                  }
+                  style={{
+                    border: "1px solid #FECACA",
+                    background: "#FEF2F2",
+                    color: "#B91C1C",
+                    borderRadius: 8,
+                    padding: "7px 9px",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={styles.modalActions}>
         <button style={styles.secondaryButton} onClick={onClose}>

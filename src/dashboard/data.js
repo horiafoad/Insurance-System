@@ -215,6 +215,8 @@ export const createEmptyClaim = () => ({
   amount: "",
   status: "",
   notes: "",
+  extraData: {},
+  hiddenColumns: [],
 });
 
 export const initialTasks = [
