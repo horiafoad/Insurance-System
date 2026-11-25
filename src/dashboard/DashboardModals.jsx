@@ -184,7 +184,6 @@ export function ClaimFormModal({
         <span style={styles.manualClaimIcon}>📋</span>
         <div>
           <strong>إضافة مطالبة جديدة</strong>
-          <p>اكتبي بيانات الأعمدة الموجودة في المطالبات، واستخدمي 🗑️ لاستبعاد أي حقل لا تريدينه.</p>
         </div>
       </div>
 
@@ -194,9 +193,6 @@ export function ClaimFormModal({
             <strong style={{ fontSize: 13, color: "#1E293B" }}>
               📊 أعمدة المطالبات
             </strong>
-            <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 3 }}>
-              نفس أعمدة ملفات المطالبات المستوردة — كل حقل له زر حذف بجانبه.
-            </div>
           </div>
           <div
             style={{
@@ -211,20 +207,40 @@ export function ClaimFormModal({
             {extraColumns.map((key) => (
               <div
                 key={key}
-                style={{ display: "flex", gap: 6, alignItems: "center" }}
+                style={{ display: "flex", gap: 6, alignItems: "flex-end" }}
               >
-                <input
-                  value={extraData[key] ?? ""}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setClaimForm((prev) => ({
-                      ...prev,
-                      extraData: { ...(prev.extraData || {}), [key]: value },
-                    }));
-                  }}
-                  placeholder={key}
-                  style={{ ...styles.input, marginBottom: 0, flex: 1 }}
-                />
+                <label style={{ flex: 1, display: "block", minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: "block",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#1E293B",
+                      marginBottom: 5,
+                    }}
+                  >
+                    {key}
+                  </span>
+                  <input
+                    value={extraData[key] ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setClaimForm((prev) => ({
+                        ...prev,
+                        extraData: { ...(prev.extraData || {}), [key]: value },
+                      }));
+                    }}
+                    placeholder="اكتبي القيمة"
+                    style={{
+                      ...styles.input,
+                      marginBottom: 0,
+                      background: "#FFFFFF",
+                      color: "#0F172A",
+                      borderColor: "#94A3B8",
+                      fontWeight: 600,
+                    }}
+                  />
+                </label>
                 <button
                   type="button"
                   title={"حذف حقل «" + key + "»"}
@@ -240,9 +256,9 @@ export function ClaimFormModal({
                     background: "#FEF2F2",
                     color: "#B91C1C",
                     borderRadius: 8,
-                    padding: "7px 9px",
+                    padding: "11px 10px",
                     cursor: "pointer",
-                    fontSize: 13,
+                    fontSize: 14,
                   }}
                 >
                   🗑️
