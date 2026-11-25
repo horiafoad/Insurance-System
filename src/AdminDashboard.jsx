@@ -85,6 +85,8 @@ import {
   deleteClaimPdf,
 } from "./services/claimDocumentsService";
 import {
+  extractClaimIdentity,
+  extractTotalAmount,
   startPayment as startClaimPayment,
   payInstallment as payClaimInstallment,
   undoInstallmentPayment,
@@ -1312,22 +1314,12 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
   };
 
   const addManualClaim = async () => {
-    if (
-      !claimForm.claimantName.trim() &&
-      !claimForm.claimNumber.trim()
-    ) {
-      alert(
-        "من فضلك أدخلي اسم صاحب المطالبة أو رقم المطالبة على الأقل."
-      );
-      return;
-    }
-
     try {
       setClaimLoading(true);
       setClaimError("");
 
       const hiddenColumns = claimForm.hiddenColumns || [];
-      const extraData = Object.entries(claimForm.extraData || {}).reduce(
+      const manualData = Object.entries(claimForm.extraData || {}).reduce(
         (acc, [key, value]) => {
           if (!hiddenColumns.includes(key) && String(value ?? "").trim()) {
             acc[key] = value;
@@ -1336,19 +1328,16 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
         },
         {}
       );
-
-      const manualData = {
-        ...extraData,
-        "اسم صاحب المطالبة": claimForm.claimantName.trim(),
-        "رقم المطالبة": claimForm.claimNumber.trim(),
-        "تاريخ المطالبة": claimForm.claimDate || "",
-        المبلغ: claimForm.amount || "",
-        الحالة: claimForm.status.trim(),
-        ملاحظات: claimForm.notes.trim(),
-      };
+      const identity = extractClaimIdentity(manualData);
+      if (!identity.claimNumber && !identity.claimantName) {
+        alert(
+          "من فضلك أدخلي اسم صاحب المطالبة أو رقم المطالبة من الأعمدة."
+        );
+        return;
+      }
 
       const paymentStatus = claimForm.paymentStatus || null;
-      const totalAmount = Number(claimForm.amount) || 0;
+      const totalAmount = extractTotalAmount(manualData);
       const installmentValues = [0, 1, 2, 3].map(
         (index) => Number(claimForm.installmentAmounts?.[index]) || 0
       );

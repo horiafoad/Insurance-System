@@ -136,21 +136,20 @@ export function TaskFormModal({
   );
 }
 
-const STANDARD_CLAIM_KEYS = new Set([
-  "اسم صاحب المطالبة",
-  "رقم المطالبة",
-  "تاريخ المطالبة",
-  "المبلغ",
-  "الحالة",
-  "ملاحظات",
-]);
-
 const PAYMENT_STATUS_OPTIONS = [
   "خالي الطرف",
   "جاري السداد",
   "لم يسدد",
   "بدون وجه حق",
 ];
+
+function parseClaimNumber(value) {
+  const clean = String(value ?? "")
+    .replace(/,/g, "")
+    .replace(/[^0-9.\-]/g, "");
+  const number = Number(clean);
+  return Number.isFinite(number) ? number : 0;
+}
 
 export function ClaimFormModal({
   claimForm,
@@ -161,12 +160,19 @@ export function ClaimFormModal({
   onSave,
 }) {
   const hiddenColumns = claimForm.hiddenColumns || [];
+  const extraData = claimForm.extraData || {};
   const extraColumns = columns.filter(
-    (key) => !STANDARD_CLAIM_KEYS.has(key) && !hiddenColumns.includes(key)
+    (key) => !hiddenColumns.includes(key) && !/^ق\s*\d+$/.test(String(key))
   );
-  const totalAmount = Number(claimForm.amount) || 0;
-  const paidInstallments = [0, 1, 2, 3].map(
-    (index) => Number(claimForm.installmentAmounts?.[index]) || 0
+  const totalAmount =
+    parseClaimNumber(
+      extraData["المبلغ الإجمالي"] ||
+        extraData["مبلغ مطلوب"] ||
+        extraData["المبلغ"] ||
+        extraData.amount
+    ) || 0;
+  const paidInstallments = [0, 1, 2, 3].map((index) =>
+    parseClaimNumber(claimForm.installmentAmounts?.[index])
   );
   const paidSum = paidInstallments.reduce((sum, value) => sum + value, 0);
   const remainingAmount = totalAmount - paidSum;
@@ -177,103 +183,77 @@ export function ClaimFormModal({
       <div style={styles.manualClaimIntro}>
         <span style={styles.manualClaimIcon}>📋</span>
         <div>
-          <strong>إضافة مطالبة يدويًا</strong>
-          <p>البيانات سيتم حفظها مباشرة في قاعدة بيانات Supabase.</p>
+          <strong>إضافة مطالبة جديدة</strong>
+          <p>اكتبي بيانات الأعمدة الموجودة في المطالبات، واستخدمي 🗑️ لاستبعاد أي حقل لا تريدينه.</p>
         </div>
       </div>
 
-      <div style={styles.formGrid}>
-        <Field label="اسم صاحب المطالبة">
-          <input
-            value={claimForm.claimantName}
-            onChange={(e) =>
-              setClaimForm({
-                ...claimForm,
-                claimantName: e.target.value,
-              })
-            }
-            placeholder="اسم صاحب المطالبة"
-            style={styles.input}
-          />
-        </Field>
-
-        <Field label="رقم المطالبة">
-          <input
-            value={claimForm.claimNumber}
-            onChange={(e) =>
-              setClaimForm({
-                ...claimForm,
-                claimNumber: e.target.value,
-              })
-            }
-            placeholder="رقم المطالبة"
-            style={styles.input}
-          />
-        </Field>
-
-        <Field label="التصنيف / الشيت">
-          <input
-            value={claimForm.sheetName}
-            onChange={(e) =>
-              setClaimForm({
-                ...claimForm,
-                sheetName: e.target.value,
-              })
-            }
-            placeholder="مثال: مطالبات أغسطس"
-            style={styles.input}
-          />
-        </Field>
-
-        <Field label="تاريخ المطالبة">
-          <input
-            type="date"
-            value={claimForm.claimDate}
-            onChange={(e) =>
-              setClaimForm({
-                ...claimForm,
-                claimDate: e.target.value,
-              })
-            }
-            style={styles.input}
-          />
-        </Field>
-
-        <Field label="المبلغ الإجمالي">
-          <input
-            type="number"
-            value={claimForm.amount}
-            onChange={(e) =>
-              setClaimForm({
-                ...claimForm,
-                amount: e.target.value,
-              })
-            }
-            placeholder="إجمالي قيمة المطالبة"
-            style={styles.input}
-          />
-        </Field>
-
-        <Field label="الحالة">
-          <select
-            value={claimForm.status}
-            onChange={(e) =>
-              setClaimForm({
-                ...claimForm,
-                status: e.target.value,
-              })
-            }
-            style={styles.input}
+      {extraColumns.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <div style={{ marginBottom: 8, textAlign: "right" }}>
+            <strong style={{ fontSize: 13, color: "#1E293B" }}>
+              📊 أعمدة المطالبات
+            </strong>
+            <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 3 }}>
+              نفس أعمدة ملفات المطالبات المستوردة — كل حقل له زر حذف بجانبه.
+            </div>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+              gap: 10,
+              maxHeight: 300,
+              overflowY: "auto",
+              paddingLeft: 4,
+            }}
           >
-            <option value="">اختار الحالة</option>
-            <option value="جديدة">جديدة</option>
-            <option value="قيد المراجعة">قيد المراجعة</option>
-            <option value="في انتظار مستندات">في انتظار مستندات</option>
-            <option value="تم التنفيذ">تم التنفيذ</option>
-            <option value="مرفوضة">مرفوضة</option>
-          </select>
-        </Field>
+            {extraColumns.map((key) => (
+              <div
+                key={key}
+                style={{ display: "flex", gap: 6, alignItems: "center" }}
+              >
+                <input
+                  value={extraData[key] ?? ""}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setClaimForm((prev) => ({
+                      ...prev,
+                      extraData: { ...(prev.extraData || {}), [key]: value },
+                    }));
+                  }}
+                  placeholder={key}
+                  style={{ ...styles.input, marginBottom: 0, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  title={"حذف حقل «" + key + "»"}
+                  onClick={() =>
+                    setClaimForm((prev) => ({
+                      ...prev,
+                      hiddenColumns: [...(prev.hiddenColumns || []), key],
+                      extraData: { ...(prev.extraData || {}), [key]: "" },
+                    }))
+                  }
+                  style={{
+                    border: "1px solid #FECACA",
+                    background: "#FEF2F2",
+                    color: "#B91C1C",
+                    borderRadius: 8,
+                    padding: "7px 9px",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
+      <div style={{ marginTop: 18 }}>
         <Field label="حالة السداد">
           <select
             value={claimForm.paymentStatus || ""}
@@ -293,180 +273,86 @@ export function ClaimFormModal({
             ))}
           </select>
         </Field>
-
-        {showInstallments && (
-          <Field label="الأقساط المسددة (4 أقساط)" full>
-            <div
-              style={{
-                padding: "12px 14px",
-                background: "#F8FAFC",
-                border: "1px solid #E2E8F0",
-                borderRadius: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 18,
-                  marginBottom: 12,
-                  fontSize: 13,
-                  fontWeight: 800,
-                }}
-              >
-                <span style={{ color: "#334155" }}>
-                  المبلغ الإجمالي:{" "}
-                  <span dir="ltr">{totalAmount.toFixed(2)}</span>
-                </span>
-                <span style={{ color: "#166534" }}>
-                  إجمالي المسدد: <span dir="ltr">{paidSum.toFixed(2)}</span>
-                </span>
-                <span
-                  style={{
-                    color: remainingAmount < 0 ? "#B91C1C" : "#1D4ED8",
-                  }}
-                >
-                  المتبقي: <span dir="ltr">{remainingAmount.toFixed(2)}</span>
-                </span>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                  gap: 10,
-                }}
-              >
-                {[0, 1, 2, 3].map((index) => (
-                  <label
-                    key={index}
-                    style={{
-                      display: "block",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#475569",
-                    }}
-                  >
-                    القسط {index + 1}
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={claimForm.installmentAmounts?.[index] ?? ""}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setClaimForm((prev) => {
-                          const next = [...(prev.installmentAmounts || [])];
-                          next[index] = value;
-                          return { ...prev, installmentAmounts: next };
-                        });
-                      }}
-                      placeholder="المبلغ المسدد"
-                      style={{ ...styles.input, marginBottom: 0 }}
-                    />
-                  </label>
-                ))}
-              </div>
-
-              {remainingAmount < 0 && (
-                <div style={{ ...styles.errorBox, marginTop: 10 }}>
-                  مجموع الأقساط المسددة أكبر من المبلغ الإجمالي — راجعي
-                  الأرقام قبل الحفظ.
-                </div>
-              )}
-            </div>
-          </Field>
-        )}
-
-        <Field label="ملاحظات" full>
-          <textarea
-            value={claimForm.notes}
-            onChange={(e) =>
-              setClaimForm({
-                ...claimForm,
-                notes: e.target.value,
-              })
-            }
-            placeholder="أي ملاحظات إضافية..."
-            style={{
-              ...styles.input,
-              minHeight: 100,
-              resize: "vertical",
-            }}
-          />
-        </Field>
       </div>
 
-      {extraColumns.length > 0 && (
-        <div style={{ marginTop: 18 }}>
-          <div style={{ marginBottom: 8, textAlign: "right" }}>
-            <strong style={{ fontSize: 13, color: "#1E293B" }}>
-              📊 بيانات أعمدة المطالبات الحالية
-            </strong>
-            <div style={{ fontSize: 11.5, color: "#64748B", marginTop: 3 }}>
-              نفس أعمدة ملفات المطالبات المستوردة — اكتبي منها ما تريدينه، و🗑️
-              تشيل الحقل اللي مش محتاجه من المطالبة الجديدة.
-            </div>
-          </div>
+      {showInstallments && (
+        <Field label="الأقساط المسددة (4 أقساط)" full>
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
-              gap: 10,
-              maxHeight: 260,
-              overflowY: "auto",
-              paddingLeft: 4,
+              padding: "12px 14px",
+              background: "#F8FAFC",
+              border: "1px solid #E2E8F0",
+              borderRadius: 12,
             }}
           >
-            {extraColumns.map((key) => (
-              <div
-                key={key}
-                style={{ display: "flex", gap: 6, alignItems: "center" }}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 18,
+                marginBottom: 12,
+                fontSize: 13,
+                fontWeight: 800,
+              }}
+            >
+              <span style={{ color: "#334155" }}>
+                المبلغ الإجمالي: <span dir="ltr">{totalAmount.toFixed(2)}</span>
+              </span>
+              <span style={{ color: "#166534" }}>
+                إجمالي المسدد: <span dir="ltr">{paidSum.toFixed(2)}</span>
+              </span>
+              <span
+                style={{ color: remainingAmount < 0 ? "#B91C1C" : "#1D4ED8" }}
               >
-                <input
-                  value={claimForm.extraData?.[key] ?? ""}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setClaimForm((prev) => ({
-                      ...prev,
-                      extraData: { ...(prev.extraData || {}), [key]: value },
-                    }));
-                  }}
-                  placeholder={key}
-                  style={{ ...styles.input, marginBottom: 0, flex: 1 }}
-                />
-                <button
-                  type="button"
-                  title={`حذف حقل «${key}» من المطالبة الجديدة`}
-                  onClick={() =>
-                    setClaimForm((prev) => ({
-                      ...prev,
-                      hiddenColumns: [
-                        ...(prev.hiddenColumns || []),
-                        key,
-                      ],
-                      extraData: {
-                        ...(prev.extraData || {}),
-                        [key]: "",
-                      },
-                    }))
-                  }
+                المتبقي: <span dir="ltr">{remainingAmount.toFixed(2)}</span>
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 10,
+              }}
+            >
+              {[0, 1, 2, 3].map((index) => (
+                <label
+                  key={index}
                   style={{
-                    border: "1px solid #FECACA",
-                    background: "#FEF2F2",
-                    color: "#B91C1C",
-                    borderRadius: 8,
-                    padding: "7px 9px",
-                    cursor: "pointer",
-                    fontSize: 13,
+                    display: "block",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#475569",
                   }}
                 >
-                  🗑️
-                </button>
+                  القسط {index + 1}
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={claimForm.installmentAmounts?.[index] ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setClaimForm((prev) => {
+                        const next = [...(prev.installmentAmounts || [])];
+                        next[index] = value;
+                        return { ...prev, installmentAmounts: next };
+                      });
+                    }}
+                    placeholder="المبلغ المسدد"
+                    style={{ ...styles.input, marginBottom: 0 }}
+                  />
+                </label>
+              ))}
+            </div>
+
+            {remainingAmount < 0 && (
+              <div style={{ ...styles.errorBox, marginTop: 10 }}>
+                مجموع الأقساط المسددة أكبر من المبلغ الإجمالي — راجعي الأرقام.
               </div>
-            ))}
+            )}
           </div>
-        </div>
+        </Field>
       )}
 
       <div style={styles.modalActions}>

@@ -209,12 +209,6 @@ export const createEmptyTask = () => ({
 
 export const createEmptyClaim = () => ({
   sheetName: "إضافة يدوية",
-  claimantName: "",
-  claimNumber: "",
-  claimDate: new Date().toISOString().split("T")[0],
-  amount: "",
-  status: "",
-  notes: "",
   paymentStatus: "",
   installmentAmounts: ["", "", "", ""],
   extraData: {},
