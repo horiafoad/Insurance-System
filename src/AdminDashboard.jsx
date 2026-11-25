@@ -1312,6 +1312,38 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
     }
   };
 
+  /* حذف نهائي لعمود من بيانات كل المطالبات — لا يظهر مجددًا في أعمدة النموذج. */
+  const deleteClaimColumnGlobally = async (key) => {
+    const { data: rows, error } = await supabase
+      .from("claims")
+      .select("id,data");
+    if (error) throw error;
+
+    const targets = (rows || []).filter(
+      (row) => row.data && Object.prototype.hasOwnProperty.call(row.data, key)
+    );
+    if (!targets.length) return 0;
+
+    for (let index = 0; index < targets.length; index += 40) {
+      const chunk = targets.slice(index, index + 40);
+      const results = await Promise.all(
+        chunk.map((row) => {
+          const nextData = { ...(row.data || {}) };
+          delete nextData[key];
+          return supabase
+            .from("claims")
+            .update({ data: nextData })
+            .eq("id", row.id);
+        })
+      );
+      const failed = results.find((result) => result.error);
+      if (failed) throw failed.error;
+    }
+
+    await loadClaims();
+    return targets.length;
+  };
+
   const addManualClaim = async () => {
     try {
       setClaimLoading(true);
@@ -2862,6 +2894,7 @@ export default function AdminDashboard({ currentUser, focusRequestId: propFocusI
           columns={Array.from(
             new Set(claims.flatMap((claim) => Object.keys(claim.data || {})))
           )}
+          onDeleteColumn={deleteClaimColumnGlobally}
           onClose={() => setShowClaimForm(false)}
           onSave={addManualClaim}
         />

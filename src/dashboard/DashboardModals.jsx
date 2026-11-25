@@ -156,9 +156,11 @@ export function ClaimFormModal({
   setClaimForm,
   claimLoading,
   columns = [],
+  onDeleteColumn,
   onClose,
   onSave,
 }) {
+  const [deletingColumn, setDeletingColumn] = useState(null);
   const hiddenColumns = claimForm.hiddenColumns || [];
   const extraData = claimForm.extraData || {};
   const extraColumns = columns.filter(
@@ -243,25 +245,52 @@ export function ClaimFormModal({
                 </label>
                 <button
                   type="button"
-                  title={"حذف حقل «" + key + "»"}
-                  onClick={() =>
-                    setClaimForm((prev) => ({
-                      ...prev,
-                      hiddenColumns: [...(prev.hiddenColumns || []), key],
-                      extraData: { ...(prev.extraData || {}), [key]: "" },
-                    }))
-                  }
+                  title={"حذف نهائي لبند «" + key + "» من كل المطالبات"}
+                  disabled={Boolean(deletingColumn)}
+                  onClick={async () => {
+                    if (deletingColumn) return;
+                    const confirmed = window.confirm(
+                      "حذف نهائي لبند «" +
+                        key +
+                        "» من كل المطالبات؟ لن يعود للظهور مجددًا."
+                    );
+                    if (!confirmed) return;
+                    setDeletingColumn(key);
+                    try {
+                      if (onDeleteColumn) await onDeleteColumn(key);
+                      setClaimForm((prev) => ({
+                        ...prev,
+                        hiddenColumns: [
+                          ...(prev.hiddenColumns || []),
+                          key,
+                        ],
+                        extraData: {
+                          ...(prev.extraData || {}),
+                          [key]: "",
+                        },
+                      }));
+                    } catch (error) {
+                      console.error(error);
+                      alert(
+                        "تعذر حذف البند: " +
+                          (error?.message || String(error))
+                      );
+                    } finally {
+                      setDeletingColumn(null);
+                    }
+                  }}
                   style={{
                     border: "1px solid #FECACA",
                     background: "#FEF2F2",
                     color: "#B91C1C",
                     borderRadius: 8,
                     padding: "11px 10px",
-                    cursor: "pointer",
+                    cursor: deletingColumn ? "wait" : "pointer",
                     fontSize: 14,
+                    opacity: deletingColumn ? 0.6 : 1,
                   }}
                 >
-                  🗑️
+                  {deletingColumn === key ? "…" : "🗑️"}
                 </button>
               </div>
             ))}
